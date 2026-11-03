@@ -4,9 +4,7 @@ use std::path::Path;
 use rusqlite::{params, Connection, Row};
 
 use crate::error::Result;
-use crate::models::{
-    ScanRun, SourceResult, SourceSyncState, TaskSnapshot, TodoSnapshot,
-};
+use crate::models::{ScanRun, SourceResult, SourceSyncState, TaskSnapshot, TodoSnapshot};
 use crate::paths::ensure_parent;
 
 const SCHEMA: &str = r#"
@@ -149,23 +147,24 @@ impl CacheStore {
     }
 
     fn init(&self) -> Result<()> {
-        self.conn
-            .execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=5000;")?;
+        self.conn.execute_batch(
+            "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=5000;",
+        )?;
         self.conn.execute_batch(SCHEMA)?;
         Ok(())
     }
 
-    pub fn begin_scan(
-        &self,
-        source: &str,
-        mode: &str,
-        scope: &str,
-        trigger: &str,
-    ) -> Result<i64> {
+    pub fn begin_scan(&self, source: &str, mode: &str, scope: &str, trigger: &str) -> Result<i64> {
         self.conn.execute(
             "INSERT INTO scan_run (source, mode, scope, trigger, started_at, status) \
              VALUES (?1, ?2, ?3, ?4, ?5, 'running')",
-            params![source, mode, scope, trigger, crate::collectors::common::now_seconds()],
+            params![
+                source,
+                mode,
+                scope,
+                trigger,
+                crate::collectors::common::now_seconds()
+            ],
         )?;
         Ok(self.conn.last_insert_rowid())
     }

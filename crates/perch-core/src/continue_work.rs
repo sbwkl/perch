@@ -186,7 +186,8 @@ impl ChannelProbe for SystemProbe {
             .args(["find", &format!("bundleID={bundle_id}")])
             .output()
             .map(|output| {
-                output.status.success() && !String::from_utf8_lossy(&output.stdout).trim().is_empty()
+                output.status.success()
+                    && !String::from_utf8_lossy(&output.stdout).trim().is_empty()
             })
             .unwrap_or(false)
     }
@@ -238,7 +239,7 @@ pub fn parse_ps_presence(source: &str, session_id: &str, listing: &str) -> CliPr
         if !is_cli {
             continue;
         }
-        if tokens.iter().any(|token| *token == session_id) {
+        if tokens.contains(&session_id) {
             return CliPresence::Session;
         }
         agent_running = true;
@@ -285,7 +286,8 @@ mod tests {
 
     #[test]
     fn qoder_activates_app_without_session_target() {
-        let plan = plan_continue(&task(SOURCE_QODER, None), &probe(false, CliPresence::None)).unwrap();
+        let plan =
+            plan_continue(&task(SOURCE_QODER, None), &probe(false, CliPresence::None)).unwrap();
         assert_eq!(plan.channel, ContinueChannel::App);
         assert_eq!(
             plan.action,
@@ -295,7 +297,11 @@ mod tests {
 
     #[test]
     fn claude_uses_terminal_resume() {
-        let plan = plan_continue(&task(SOURCE_CLAUDE, Some("cli")), &probe(true, CliPresence::Agent)).unwrap();
+        let plan = plan_continue(
+            &task(SOURCE_CLAUDE, Some("cli")),
+            &probe(true, CliPresence::Agent),
+        )
+        .unwrap();
         assert_eq!(plan.channel, ContinueChannel::Cli);
         assert_eq!(
             plan.action,
@@ -308,13 +314,21 @@ mod tests {
 
     #[test]
     fn codex_channel_comes_from_agent_kind() {
-        let desktop = plan_continue(&task(SOURCE_CODEX, Some("desktop")), &probe(false, CliPresence::None)).unwrap();
+        let desktop = plan_continue(
+            &task(SOURCE_CODEX, Some("desktop")),
+            &probe(false, CliPresence::None),
+        )
+        .unwrap();
         assert_eq!(
             desktop.action,
             ContinueAction::OpenUrl("codex://threads/ses_abc123".to_owned())
         );
 
-        let cli = plan_continue(&task(SOURCE_CODEX, Some("cli")), &probe(true, CliPresence::None)).unwrap();
+        let cli = plan_continue(
+            &task(SOURCE_CODEX, Some("cli")),
+            &probe(true, CliPresence::None),
+        )
+        .unwrap();
         assert_eq!(cli.channel, ContinueChannel::Cli);
         assert_eq!(
             cli.action,
@@ -327,16 +341,19 @@ mod tests {
 
     #[test]
     fn codex_unknown_falls_back_to_probe() {
-        let app = plan_continue(&task(SOURCE_CODEX, None), &probe(true, CliPresence::None)).unwrap();
+        let app =
+            plan_continue(&task(SOURCE_CODEX, None), &probe(true, CliPresence::None)).unwrap();
         assert_eq!(
             app.action,
             ContinueAction::OpenUrl("codex://threads/ses_abc123".to_owned())
         );
 
-        let cli = plan_continue(&task(SOURCE_CODEX, None), &probe(false, CliPresence::Agent)).unwrap();
+        let cli =
+            plan_continue(&task(SOURCE_CODEX, None), &probe(false, CliPresence::Agent)).unwrap();
         assert_eq!(cli.channel, ContinueChannel::Cli);
 
-        let fallback = plan_continue(&task(SOURCE_CODEX, None), &probe(false, CliPresence::None)).unwrap();
+        let fallback =
+            plan_continue(&task(SOURCE_CODEX, None), &probe(false, CliPresence::None)).unwrap();
         assert_eq!(
             fallback.action,
             ContinueAction::OpenUrl("codex://threads/ses_abc123".to_owned())
@@ -345,14 +362,22 @@ mod tests {
 
     #[test]
     fn opencode_prefers_running_app_then_cli_then_app() {
-        let app = plan_continue(&task(SOURCE_OPENCODE, None), &probe(true, CliPresence::Session)).unwrap();
+        let app = plan_continue(
+            &task(SOURCE_OPENCODE, None),
+            &probe(true, CliPresence::Session),
+        )
+        .unwrap();
         assert_eq!(app.channel, ContinueChannel::App);
         assert_eq!(
             app.action,
             ContinueAction::ActivateApp(OPENCODE_BUNDLE_ID.to_owned())
         );
 
-        let cli = plan_continue(&task(SOURCE_OPENCODE, None), &probe(false, CliPresence::Session)).unwrap();
+        let cli = plan_continue(
+            &task(SOURCE_OPENCODE, None),
+            &probe(false, CliPresence::Session),
+        )
+        .unwrap();
         assert_eq!(cli.channel, ContinueChannel::Cli);
         assert_eq!(
             cli.action,
@@ -362,10 +387,18 @@ mod tests {
             }
         );
 
-        let agent = plan_continue(&task(SOURCE_OPENCODE, None), &probe(false, CliPresence::Agent)).unwrap();
+        let agent = plan_continue(
+            &task(SOURCE_OPENCODE, None),
+            &probe(false, CliPresence::Agent),
+        )
+        .unwrap();
         assert_eq!(agent.channel, ContinueChannel::Cli);
 
-        let fallback = plan_continue(&task(SOURCE_OPENCODE, None), &probe(false, CliPresence::None)).unwrap();
+        let fallback = plan_continue(
+            &task(SOURCE_OPENCODE, None),
+            &probe(false, CliPresence::None),
+        )
+        .unwrap();
         assert_eq!(
             fallback.action,
             ContinueAction::ActivateApp(OPENCODE_BUNDLE_ID.to_owned())
@@ -374,7 +407,8 @@ mod tests {
 
     #[test]
     fn kilo_uses_probe_and_plain_cli_command() {
-        let cli = plan_continue(&task(SOURCE_KILO, None), &probe(false, CliPresence::Agent)).unwrap();
+        let cli =
+            plan_continue(&task(SOURCE_KILO, None), &probe(false, CliPresence::Agent)).unwrap();
         assert_eq!(
             cli.action,
             ContinueAction::Terminal {

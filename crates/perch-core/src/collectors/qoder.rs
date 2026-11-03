@@ -34,8 +34,9 @@ impl QoderCollector {
 
         let mut message_counts: HashMap<String, i64> = HashMap::new();
         if has_messages {
-            let mut stmt = conn
-                .prepare("SELECT session_id, COUNT(*) FROM chat_session_messages GROUP BY session_id")?;
+            let mut stmt = conn.prepare(
+                "SELECT session_id, COUNT(*) FROM chat_session_messages GROUP BY session_id",
+            )?;
             let rows = stmt.query_map([], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
             })?;
@@ -67,8 +68,9 @@ impl QoderCollector {
 
         let mut turn_status: HashMap<String, String> = HashMap::new();
         if has_turns {
-            let mut stmt =
-                conn.prepare("SELECT session_id, status FROM chat_session_turn_states ORDER BY rowid")?;
+            let mut stmt = conn.prepare(
+                "SELECT session_id, status FROM chat_session_turn_states ORDER BY rowid",
+            )?;
             let rows = stmt.query_map([], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             })?;
@@ -143,7 +145,11 @@ impl QoderCollector {
             let created_at = epoch_ms_to_seconds(row.created_at);
             let updated_at = epoch_ms_to_seconds(row.updated_at).or(created_at);
 
-            let raw_title = row.title.as_deref().map(str::trim).filter(|value| !value.is_empty());
+            let raw_title = row
+                .title
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty());
             let provisional = json_string(&extra, "provisionalTitle");
             let title_source_extra = json_string(&extra, "titleSource");
             let (title, title_source) = if let Some(title) = raw_title {
@@ -154,7 +160,10 @@ impl QoderCollector {
             } else if let Some(provisional) = provisional {
                 (provisional, "provisional".to_owned())
             } else {
-                (fallback_title(project_name.as_deref(), created_at), "fallback".to_owned())
+                (
+                    fallback_title(project_name.as_deref(), created_at),
+                    "fallback".to_owned(),
+                )
             };
 
             let archived = row.archived.unwrap_or(0) != 0;

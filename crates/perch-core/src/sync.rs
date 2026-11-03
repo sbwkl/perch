@@ -3,9 +3,7 @@ use std::time::Instant;
 
 use crate::collectors::common::now_seconds;
 use crate::collectors::{all_collectors, Collector};
-use crate::models::{
-    SourceReport, SourceResult, SourceScanStatus, SourceSyncState, SyncReport,
-};
+use crate::models::{SourceReport, SourceResult, SourceScanStatus, SourceSyncState, SyncReport};
 use crate::paths::SourcePaths;
 use crate::store::CacheStore;
 
@@ -99,15 +97,13 @@ impl ScanEngine {
                         }
                     }
                 }
-                SourceScanStatus::Partial => {
-                    match self.store.save_result(&result, scan_id) {
-                        Ok(()) => snapshot_saved = true,
-                        Err(store_error) => {
-                            status = SourceScanStatus::Error;
-                            error = Some(format!("写入快照失败：{store_error}"));
-                        }
+                SourceScanStatus::Partial => match self.store.save_result(&result, scan_id) {
+                    Ok(()) => snapshot_saved = true,
+                    Err(store_error) => {
+                        status = SourceScanStatus::Error;
+                        error = Some(format!("写入快照失败：{store_error}"));
                     }
-                }
+                },
                 SourceScanStatus::Unavailable | SourceScanStatus::Error => {}
             }
 
@@ -137,10 +133,13 @@ impl ScanEngine {
                 });
             }
 
-            if let Err(store_error) =
-                self.store
-                    .finish_scan(scan_id, status.as_str(), result.tasks.len(), missing_count, error.as_deref())
-            {
+            if let Err(store_error) = self.store.finish_scan(
+                scan_id,
+                status.as_str(),
+                result.tasks.len(),
+                missing_count,
+                error.as_deref(),
+            ) {
                 error = Some(match error {
                     Some(existing) => format!("{existing}；结束扫描记录失败：{store_error}"),
                     None => format!("结束扫描记录失败：{store_error}"),

@@ -78,9 +78,12 @@ fn task_view(
 ) -> TaskView {
     let todo_items = todos_by_task.remove(&task.key).unwrap_or_default();
     let todo_total = task.todo_total.unwrap_or(todo_items.len() as i64);
-    let todo_done = task
-        .todo_done
-        .unwrap_or_else(|| todo_items.iter().filter(|todo| todo.status == "completed").count() as i64);
+    let todo_done = task.todo_done.unwrap_or_else(|| {
+        todo_items
+            .iter()
+            .filter(|todo| todo.status == "completed")
+            .count() as i64
+    });
     let activity = task.updated_at.unwrap_or(task.seen_at);
     let (workspace_key, workspace_name, project_path) = workspace_of(task);
     TaskView {

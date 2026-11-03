@@ -169,10 +169,8 @@ impl CodexCollector {
             task.source_archived = entry.archived;
             task.model = entry.model;
             task.agent_kind = Some(agent_kind.to_owned());
-            task.resume_cmd = shell_cd_command(
-                entry.cwd.as_deref(),
-                &format!("codex resume {}", entry.id),
-            );
+            task.resume_cmd =
+                shell_cd_command(entry.cwd.as_deref(), &format!("codex resume {}", entry.id));
             task.refresh_fingerprint();
             tasks.push(task);
         }
@@ -335,7 +333,8 @@ fn read_index(path: &Path, warnings: &mut Vec<String>) -> HashMap<String, IndexE
             updated_at: value.get("updated_at").and_then(parse_timestamp_value),
         };
         match index.get(&id) {
-            Some(existing) if existing.updated_at.unwrap_or(0.0) > entry.updated_at.unwrap_or(0.0) => {}
+            Some(existing)
+                if existing.updated_at.unwrap_or(0.0) > entry.updated_at.unwrap_or(0.0) => {}
             _ => {
                 index.insert(id, entry);
             }
@@ -364,7 +363,8 @@ fn read_goals(path: &Path, warnings: &mut Vec<String>) -> HashMap<String, GoalEn
             return goals;
         }
     }
-    let mut statement = match conn.prepare("SELECT thread_id, objective, status FROM thread_goals") {
+    let mut statement = match conn.prepare("SELECT thread_id, objective, status FROM thread_goals")
+    {
         Ok(statement) => statement,
         Err(error) => {
             warnings.push(format!("查询 thread_goals 失败：{error}"));

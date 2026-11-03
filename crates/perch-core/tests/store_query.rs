@@ -83,7 +83,10 @@ fn tasks_without_project_share_a_no_project_group() {
     orphan.project_name = None;
     let normal = make_task("qoder", "normal", "alpha", now - 20.0);
     store
-        .save_result(&SourceResult::ok("qoder", vec![orphan, normal], Vec::new()), scan)
+        .save_result(
+            &SourceResult::ok("qoder", vec![orphan, normal], Vec::new()),
+            scan,
+        )
         .unwrap();
 
     let payload = build_bootstrap(&store, now).unwrap();
@@ -142,7 +145,10 @@ fn bootstrap_groups_by_workspace_and_splits_recent_older() {
 
     let payload = build_bootstrap(&store, now).unwrap();
 
-    assert_eq!(payload.counts.total, 2, "children and automation are excluded");
+    assert_eq!(
+        payload.counts.total, 2,
+        "children and automation are excluded"
+    );
     assert_eq!(payload.counts.recent, 1);
     assert_eq!(payload.counts.older, 1);
     assert_eq!(payload.counts.archived, 1);

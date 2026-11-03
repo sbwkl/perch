@@ -2,9 +2,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use perch_core::continue_work::{
-    plan_continue, ContinueAction, ContinuePlan, SystemProbe,
-};
+use perch_core::continue_work::{plan_continue, ContinueAction, ContinuePlan, SystemProbe};
 use perch_core::models::{BootstrapPayload, SyncReport};
 use perch_core::query::build_bootstrap;
 use perch_core::{paths, CacheStore, ScanEngine, SourcePaths, SourceProbe};
@@ -36,8 +34,11 @@ fn open_engine(app: &tauri::AppHandle, paths: &SourcePaths) -> Result<ScanEngine
 #[tauri::command]
 fn bootstrap(state: State<'_, AppState>) -> Result<BootstrapPayload, String> {
     let engine = state.engine.lock().map_err(|error| error.to_string())?;
-    build_bootstrap(engine.store(), perch_core::collectors::common::now_seconds())
-        .map_err(|error| error.to_string())
+    build_bootstrap(
+        engine.store(),
+        perch_core::collectors::common::now_seconds(),
+    )
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -62,10 +63,7 @@ struct ContinueOutcome {
 }
 
 #[tauri::command]
-fn continue_task(
-    state: State<'_, AppState>,
-    task_key: String,
-) -> Result<ContinueOutcome, String> {
+fn continue_task(state: State<'_, AppState>, task_key: String) -> Result<ContinueOutcome, String> {
     let task = {
         let engine = state.engine.lock().map_err(|error| error.to_string())?;
         engine

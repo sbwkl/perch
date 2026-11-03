@@ -17,10 +17,7 @@ pub(crate) fn scan_session_db(
     resume_builder: ResumeBuilder,
 ) -> SourceResult {
     if !db_path.is_file() {
-        return SourceResult::unavailable(
-            source,
-            format!("未找到数据库：{}", db_path.display()),
-        );
+        return SourceResult::unavailable(source, format!("未找到数据库：{}", db_path.display()));
     }
     match scan_inner(source, db_path, resume_builder) {
         Ok(result) => result,
@@ -119,7 +116,11 @@ fn build_task(source: &str, row: SessionRow, resume_builder: ResumeBuilder) -> T
     let idle = row.time_idle.unwrap_or(0);
     let running = !archived && busy > 0 && busy > idle;
 
-    let raw_title = row.title.as_deref().map(str::trim).filter(|value| !value.is_empty());
+    let raw_title = row
+        .title
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
     let (title, title_source) = match raw_title {
         Some(title) => (title.to_owned(), "source"),
         None => (

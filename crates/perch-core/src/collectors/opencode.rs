@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use super::session_db::{scan_session_db, ResumeBuilder};
 use super::Collector;
-use crate::models::{SourceResult, SOURCE_OPENCODE};
 use crate::collectors::common::shell_cd_command;
+use crate::models::{SourceResult, SOURCE_OPENCODE};
 
 pub struct OpenCodeCollector {
     primary: PathBuf,
@@ -29,10 +29,7 @@ impl Collector for OpenCodeCollector {
         let Some(path) = self.db_path() else {
             return SourceResult::unavailable(
                 SOURCE_OPENCODE,
-                format!(
-                    "未找到 OpenCode 数据库：{}",
-                    self.primary.display()
-                ),
+                format!("未找到 OpenCode 数据库：{}", self.primary.display()),
             );
         };
         scan_session_db(SOURCE_OPENCODE, &path, resume as ResumeBuilder)

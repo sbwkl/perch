@@ -49,8 +49,7 @@ pub fn is_generated_sandbox_path(path: &str, agent_dir: &str) -> bool {
         return false;
     };
     let mut components = relative.components();
-    let (Some(date), Some(leaf), None) =
-        (components.next(), components.next(), components.next())
+    let (Some(date), Some(leaf), None) = (components.next(), components.next(), components.next())
     else {
         return false;
     };
@@ -59,8 +58,9 @@ pub fn is_generated_sandbox_path(path: &str, agent_dir: &str) -> bool {
 
 pub fn is_default_project_path(path: &str) -> bool {
     let normalized = normalize_project_path(path);
-    source_home()
-        .is_some_and(|home| Path::new(&normalized) == home.join("Documents").join("Default Project"))
+    source_home().is_some_and(|home| {
+        Path::new(&normalized) == home.join("Documents").join("Default Project")
+    })
 }
 
 fn is_iso_date(value: &str) -> bool {
@@ -94,7 +94,10 @@ pub fn normalize_project_path(path: &str) -> String {
     }
     let expanded = if let Some(rest) = trimmed.strip_prefix("~/") {
         match std::env::var_os("HOME") {
-            Some(home) => PathBuf::from(home).join(rest).to_string_lossy().into_owned(),
+            Some(home) => PathBuf::from(home)
+                .join(rest)
+                .to_string_lossy()
+                .into_owned(),
             None => trimmed.to_owned(),
         }
     } else {

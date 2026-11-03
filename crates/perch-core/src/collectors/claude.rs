@@ -81,10 +81,9 @@ impl ClaudeCollector {
                             task.refresh_fingerprint();
                             todos.append(&mut task_todos);
                         }
-                        Err(error) => warnings.push(format!(
-                            "读取 {} 的 todo 失败：{error}",
-                            path.display()
-                        )),
+                        Err(error) => {
+                            warnings.push(format!("读取 {} 的 todo 失败：{error}", path.display()))
+                        }
                     }
                     tasks.push(task);
                 }
@@ -193,7 +192,10 @@ impl ClaudeCollector {
         let file_mtime = mtime_seconds(path);
         let created_at = first_ts.or(file_mtime);
         let updated_at = last_ts.or(file_mtime);
-        let project_path = cwd.as_deref().map(normalize_project_path).filter(|value| !value.is_empty());
+        let project_path = cwd
+            .as_deref()
+            .map(normalize_project_path)
+            .filter(|value| !value.is_empty());
         let project_name = project_path.as_deref().and_then(project_name);
 
         let (title, title_source) = if let Some(title) = custom_title {
@@ -201,7 +203,10 @@ impl ClaudeCollector {
         } else if let Some(title) = ai_title {
             (title, "ai")
         } else {
-            (fallback_title(project_name.as_deref(), created_at), "fallback")
+            (
+                fallback_title(project_name.as_deref(), created_at),
+                "fallback",
+            )
         };
 
         let mut task = TaskSnapshot::new(SOURCE_CLAUDE, &session_id);
@@ -216,10 +221,8 @@ impl ClaudeCollector {
         task.git_branch = git_branch;
         task.agent_kind = Some("cli".to_owned());
         task.message_count = Some(message_count);
-        task.resume_cmd = shell_cd_command(
-            cwd.as_deref(),
-            &format!("claude --resume {session_id}"),
-        );
+        task.resume_cmd =
+            shell_cd_command(cwd.as_deref(), &format!("claude --resume {session_id}"));
         task.refresh_fingerprint();
 
         Ok(Some(ParsedSession { task }))

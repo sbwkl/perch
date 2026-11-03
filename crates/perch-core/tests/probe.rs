@@ -31,7 +31,9 @@ fn probe_reports_changed_sources_once() {
     fs::write(&session, "{\"type\":\"user\"}\n").unwrap();
 
     let qoder = rusqlite::Connection::open(&paths.qoder_db).unwrap();
-    qoder.execute_batch("CREATE TABLE IF NOT EXISTS t (x INTEGER);").unwrap();
+    qoder
+        .execute_batch("CREATE TABLE IF NOT EXISTS t (x INTEGER);")
+        .unwrap();
 
     let mut probe = SourceProbe::new(&paths);
     assert!(probe.poll().is_empty(), "initial baseline must be quiet");

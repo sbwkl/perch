@@ -113,7 +113,11 @@ fn qoder_collector_maps_tasks_and_keeps_source_read_only() {
 
     assert_eq!(result.status, SourceScanStatus::Ok);
     assert_eq!(result.tasks.len(), 4);
-    let alpha = result.tasks.iter().find(|task| task.source_id == "s1").unwrap();
+    let alpha = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "s1")
+        .unwrap();
     assert_eq!(alpha.title, "Alpha 任务");
     assert_eq!(alpha.title_source, "ai");
     assert_eq!(alpha.project_path.as_deref(), Some("/Users/x/work/alpha"));
@@ -123,7 +127,11 @@ fn qoder_collector_maps_tasks_and_keeps_source_read_only() {
     assert!(!alpha.source_archived);
     assert!(alpha.parent_key.is_none());
 
-    let side = result.tasks.iter().find(|task| task.source_id == "s2").unwrap();
+    let side = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "s2")
+        .unwrap();
     assert_eq!(side.parent_key.as_deref(), Some("qoder:s1"));
     assert_eq!(side.title, "侧聊任务");
     assert_eq!(side.title_source, "provisional");
@@ -132,18 +140,29 @@ fn qoder_collector_maps_tasks_and_keeps_source_read_only() {
     assert!(side.source_unread);
     assert!(side.source_pinned);
 
-    let sandbox = result.tasks.iter().find(|task| task.source_id == "s4").unwrap();
+    let sandbox = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "s4")
+        .unwrap();
     assert_eq!(sandbox.title, "沙箱任务");
     assert_eq!(sandbox.project_path, None, "sandbox cwd is not a project");
     assert_eq!(sandbox.project_name, None);
     assert_eq!(sandbox.status_source.as_deref(), Some("idle"));
 
-    let waiting = result.tasks.iter().find(|task| task.source_id == "s5").unwrap();
+    let waiting = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "s5")
+        .unwrap();
     assert_eq!(waiting.status_source.as_deref(), Some("running"));
     assert_eq!(waiting.status_raw.as_deref(), Some("waiting_reply"));
 
     let after = fs::read(&db_path).unwrap();
-    assert_eq!(before, after, "collector must not modify the source database");
+    assert_eq!(
+        before, after,
+        "collector must not modify the source database"
+    );
 }
 
 fn write_claude_fixture(root: &Path) {
@@ -199,7 +218,9 @@ fn write_claude_fixture(root: &Path) {
 fn claude_collector_reads_titles_todos_and_ignores_subagents() {
     let temp = TempDir::new().unwrap();
     write_claude_fixture(temp.path());
-    let file_a = temp.path().join("projects/-Users-x-work-alpha/session-a.jsonl");
+    let file_a = temp
+        .path()
+        .join("projects/-Users-x-work-alpha/session-a.jsonl");
     let before = fs::read(&file_a).unwrap();
 
     let result = ClaudeCollector::new(temp.path().to_path_buf()).scan();
@@ -207,7 +228,11 @@ fn claude_collector_reads_titles_todos_and_ignores_subagents() {
     assert_eq!(result.status, SourceScanStatus::Ok, "{:?}", result.error);
     assert_eq!(result.tasks.len(), 2);
     assert_eq!(result.todos.len(), 2);
-    let first = result.tasks.iter().find(|task| task.source_id == "session-a").unwrap();
+    let first = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "session-a")
+        .unwrap();
     assert_eq!(first.title, "人工标题");
     assert_eq!(first.title_source, "custom");
     assert_eq!(first.message_count, Some(2));
@@ -220,7 +245,11 @@ fn claude_collector_reads_titles_todos_and_ignores_subagents() {
         Some("cd '/Users/x/work/alpha' && claude --resume session-a")
     );
 
-    let second = result.tasks.iter().find(|task| task.source_id == "session-b").unwrap();
+    let second = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "session-b")
+        .unwrap();
     assert_eq!(second.title, "第二个 AI 标题");
     assert_eq!(second.title_source, "ai");
 
@@ -302,7 +331,11 @@ fn codex_collector_dedupes_rollouts_and_applies_goal_status() {
 
     assert_eq!(result.status, SourceScanStatus::Ok, "{:?}", result.error);
     assert_eq!(result.tasks.len(), 2);
-    let first = result.tasks.iter().find(|task| task.source_id == "a").unwrap();
+    let first = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "a")
+        .unwrap();
     assert_eq!(first.title, "索引标题");
     assert!(!first.source_archived);
     assert_eq!(first.agent_kind.as_deref(), Some("desktop"));
@@ -316,7 +349,11 @@ fn codex_collector_dedupes_rollouts_and_applies_goal_status() {
         )
     );
 
-    let second = result.tasks.iter().find(|task| task.source_id == "b").unwrap();
+    let second = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "b")
+        .unwrap();
     assert_eq!(second.title, "自动化目标标题");
     assert_eq!(second.status_source.as_deref(), Some("blocked"));
     assert_eq!(second.status_raw.as_deref(), Some("blocked"));
@@ -351,7 +388,11 @@ fn codex_collector_ignores_generated_sandbox_cwd() {
     let result = CodexCollector::new(temp.path().to_path_buf()).scan();
 
     assert_eq!(result.status, SourceScanStatus::Ok, "{:?}", result.error);
-    let task = result.tasks.iter().find(|task| task.source_id == "c").unwrap();
+    let task = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "c")
+        .unwrap();
     assert_eq!(task.project_path, None, "sandbox cwd is not a project");
     assert_eq!(task.project_name, None);
 }
@@ -377,7 +418,11 @@ fn codex_running_status_follows_rollout_tail() {
 
     let collector = CodexCollector::new(temp.path().to_path_buf());
     let running = collector.scan();
-    let task = running.tasks.iter().find(|task| task.source_id == "live").unwrap();
+    let task = running
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "live")
+        .unwrap();
     assert_eq!(task.status_source.as_deref(), Some("running"));
     assert_eq!(task.status_raw.as_deref(), Some("task_started"));
 
@@ -391,7 +436,11 @@ fn codex_running_status_follows_rollout_tail() {
     drop(handle);
 
     let idle = collector.scan();
-    let task = idle.tasks.iter().find(|task| task.source_id == "live").unwrap();
+    let task = idle
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "live")
+        .unwrap();
     assert_eq!(
         task.status_source.as_deref(),
         Some("idle"),
@@ -470,8 +519,15 @@ fn opencode_collector_ignores_default_project_placeholder() {
     let result = OpenCodeCollector::new(db_path.clone(), temp.path().join("missing.db")).scan();
 
     assert_eq!(result.status, SourceScanStatus::Ok, "{:?}", result.error);
-    let task = result.tasks.iter().find(|task| task.source_id == "s3").unwrap();
-    assert_eq!(task.project_path, None, "placeholder directory is not a project");
+    let task = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "s3")
+        .unwrap();
+    assert_eq!(
+        task.project_path, None,
+        "placeholder directory is not a project"
+    );
     assert_eq!(task.project_name, None);
 }
 
@@ -557,9 +613,16 @@ fn opencode_collector_prefers_session_v2_and_infers_busy_status() {
         result.tasks.len(),
         3,
         "旧 session 行必须被忽略：{:?}",
-        result.tasks.iter().map(|task| &task.source_id).collect::<Vec<_>>()
+        result
+            .tasks
+            .iter()
+            .map(|task| &task.source_id)
+            .collect::<Vec<_>>()
     );
-    assert!(result.tasks.iter().all(|task| task.source_id.starts_with("v2_")));
+    assert!(result
+        .tasks
+        .iter()
+        .all(|task| task.source_id.starts_with("v2_")));
     assert!(result.todos.is_empty(), "旧表 todo 不应挂到 v2 任务上");
 
     let running = result
@@ -593,11 +656,21 @@ fn opencode_and_kilo_collectors_share_session_schema() {
     create_session_db(&opencode_path);
     let before = fs::read(&opencode_path).unwrap();
 
-    let opencode = OpenCodeCollector::new(opencode_path.clone(), temp.path().join("missing.db")).scan();
-    assert_eq!(opencode.status, SourceScanStatus::Ok, "{:?}", opencode.error);
+    let opencode =
+        OpenCodeCollector::new(opencode_path.clone(), temp.path().join("missing.db")).scan();
+    assert_eq!(
+        opencode.status,
+        SourceScanStatus::Ok,
+        "{:?}",
+        opencode.error
+    );
     assert_eq!(opencode.tasks.len(), 2);
     assert_eq!(opencode.todos.len(), 3);
-    let top = opencode.tasks.iter().find(|task| task.source_id == "s1").unwrap();
+    let top = opencode
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "s1")
+        .unwrap();
     assert_eq!(top.title, "Gamma 任务");
     assert_eq!(top.model.as_deref(), Some("kimi-k2"));
     assert_eq!(top.todo_total, Some(3));
@@ -606,7 +679,11 @@ fn opencode_and_kilo_collectors_share_session_schema() {
         top.resume_cmd.as_deref(),
         Some("cd '/Users/x/work/gamma' && opencode --session s1")
     );
-    let child = opencode.tasks.iter().find(|task| task.source_id == "s2").unwrap();
+    let child = opencode
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "s2")
+        .unwrap();
     assert_eq!(child.parent_key.as_deref(), Some("opencode:s1"));
     assert_eq!(child.status_source.as_deref(), Some("archived"));
 
@@ -617,7 +694,11 @@ fn opencode_and_kilo_collectors_share_session_schema() {
     create_session_db(&kilo_path);
     let kilo = KiloCollector::new(kilo_path).scan();
     assert_eq!(kilo.status, SourceScanStatus::Ok);
-    let kilo_top = kilo.tasks.iter().find(|task| task.source_id == "s1").unwrap();
+    let kilo_top = kilo
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "s1")
+        .unwrap();
     assert_eq!(
         kilo_top.resume_cmd.as_deref(),
         Some("cd '/Users/x/work/gamma' && kilo")
