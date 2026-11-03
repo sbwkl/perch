@@ -1,53 +1,100 @@
 # Perch
 
-> 多 agent 任务总览：把 Qoder / Claude Code / Codex / OpenCode / Kilo 的本地会话任务汇总到一处，
-> 支持跨 agent 全局置顶（MVP 唯一的任务操作）；默认只读采集，pin 只写入 Perch 自己的
-> `overlay.db`，**不改动任何 agent 的数据**。人工状态、标签、备注等后续加入；回写 agent 的动作
-> 单独开关与确认。
+> 多 agent 任务总览：把 Qoder、Claude Code、Codex、OpenCode、Kilo 的本地会话汇总到一处。
+> 先找到任务，再决定回哪个 agent 继续。
 
-**状态**：设计阶段（v0.3.3，产品决策已确认，待实现）。当前仓库只有设计文档与数据探测记录，没有可运行代码。
+![Perch 主界面](docs/images/overview.png)
 
-- 设计方案：[docs/DESIGN.md](docs/DESIGN.md)
-- 命名参考：[docs/NAMING.md](docs/NAMING.md)
-- 本机数据探测：[docs/DATA-PROBE.md](docs/DATA-PROBE.md)
+Perch 只读取各 agent 已落盘的会话元数据，把散落在不同侧边栏里的任务放进同一个列表。
+它不会写入、修改或删除任何 agent 的数据，也不发起网络请求。
 
-## 一句话
+**当前状态**：v0.1.0，早期可用版本，仅支持 macOS，尚未提供签名安装包，需要从源码构建。
+功能边界与后续计划见 [ROADMAP.md](ROADMAP.md)。
 
-你同时用多个 coding agent，任务散落在各自的侧边栏里。Perch 只读它们的本地会话元数据，
-给你一个跨 agent 的总览：**先找到任务，再决定回哪个 agent 继续**。全局置顶存在 Perch 自己的
-数据里，源 agent 的置顶/归档/删除默认一概不碰；人工状态、标签、备注和回写动作后续单独加入。
+## 它能做什么
 
-## 数据一致性
+- **统一任务列表**：五个来源的任务按最近活动时间平铺展示，行内标注 workspace。
+- **三种视图**：最近（近 7 天）、全部任务、已归档；可按 workspace 或来源筛选。
+- **实时感知**：窗口可见时每 3 秒探测源变化，变更后自动重扫并刷新界面；也可用 `⌘R` 手动刷新。
+- **详情面板**：展示模型、分支、消息数、标题来源、待办进度和恢复命令。
+- **继续工作**：按来源决定激活 App 还是在终端恢复会话，命令由 Rust 侧固定模板生成。
+- **只读保证**：SQLite 只读连接 + 只读 JSONL；界面脚注和详情面板都明确标注不改动源数据。
 
-- 源是唯一事实来源；`cache.db` 是可重建的快照，`overlay.db` 是用户数据。
-- 启动先读快照秒开，后台做全量对账；聚焦/手动刷新用签名跳过未变源；每 6 小时再全量对账一次。
-- 窗口可见时每 3–5 秒对全部 source 做 probe（SQLite `data_version`/指纹、JSONL manifest/offset、
-  hooks 事件）；隐藏/最小化暂停，关闭后下次启动追平；任意源的新任务/新信息通常几秒内出现，
-  不写源、不常驻 daemon。Trae CN 仅在安装 hooks 后可见。
-- 只有完整扫描成功才标记 `source_missing`；源不可用/部分失败不会误删快照。
-- 全局 pin 永远只存 `overlay.db`，即使源里删除或迁移了任务，也不会丢。
+### 界面预览
 
-详细方案与方案对比见 [DESIGN §8](docs/DESIGN.md)。
+| 已归档视图 | 详情面板 |
+| --- | --- |
+| ![已归档视图](docs/images/archived.png) | ![详情面板](docs/images/inspector.png) |
 
-## 形态
+## 支持的来源
 
-- macOS 原生 `.app`：Tauri v2 + Rust 后端 + 系统 WKWebView 前端（不是 Electron）
-- 三栏布局：智能列表 / Workspaces / 来源 → 任务列表（Global pinned + workspace 分组，近 7 天展开、更早折叠）→ Inspector 详情
-- MVP 任务操作只有全局 pin/unpin；状态、标签、备注、隐藏、重命名等后续实现
-- 启动即读本地快照秒开，后台扫描源；MVP 无本地 HTTP 服务、无云、无外部请求、无常驻 daemon
-- Rust core 可独立 `cargo test`；前端 Svelte 5 + TypeScript + Vite
-- 产物：`cargo tauri build` → `Perch.app` / `.dmg`
+| 来源 | 读取位置（默认） | 继续工作的方式 |
+| --- | --- | --- |
+| Qoder | `~/Library/Application Support/com.qoder.app.stable/main.sqlite` | 激活 Qoder App（官方暂不支持会话级深链） |
+| Claude Code | `~/.claude/projects/**/*.jsonl` 与 `~/.claude/tasks/` | 打开终端执行 `claude --resume <session-id>` |
+| Codex | `~/.codex/sessions`、`archived_sessions`、`session_index.jsonl` | App 会话用 `codex://threads/<id>`；CLI 会话用终端 `codex resume <id>` |
+| OpenCode | `~/.local/share/opencode/opencode.db` | App 运行中则激活 App；否则终端 `opencode --session <id>` |
+| Kilo | `~/.local/share/kilo/kilo.db` | App 运行中则激活 App；否则终端 `kilo` |
 
-## 与 usage-ledger 的关系
+各来源的字段映射、状态推断规则与已知限制见 [docs/SOURCES.md](docs/SOURCES.md)。
 
-两个项目互相独立：
+Trae CN 与 ChatGPT 桌面目前没有可用的本地任务数据，因此不会出现在列表中；
+如果未来出现稳定的只读数据源，会以独立采集器加入。
 
-| | usage-ledger | Perch |
-|---|---|---|
-| 回答的问题 | 我花了多少 token / credits | 我的任务在哪个 agent、现在什么状态 |
-| 主键 | 一次模型调用（turn） | 一个 agent 会话 / 线程（task） |
-| 数据方向 | 只读源 → token 归档 | 只读源 → 任务快照 + 独立覆盖层 |
-| 形态 | Python CLI + 单文件 HTML | Rust + Tauri macOS app |
+## 快速开始
 
-可选（P2）：Perch 只读连接 usage-ledger 的 `usage.db`，按 `session_id` 给每个任务附带
-token / credits；两条轨道分别标注，永不相加。没有安装 usage-ledger 时该功能自动隐藏。
+要求：macOS、Xcode Command Line Tools、Rust stable、Node.js 20+。
+
+```bash
+npm install
+npm run tauri dev
+```
+
+构建本地应用：
+
+```bash
+npm run tauri build
+```
+
+产物位于 `src-tauri/target/release/bundle/macos/Perch.app`（以及 `.dmg`）。
+当前未做 codesign / notarize，首次打开可能需要右键 → 打开。
+
+开发、测试、环境变量与故障排查见 [DEVELOPMENT.md](DEVELOPMENT.md)。
+
+## 只读与隐私
+
+- 采集只使用 SQLite `SQLITE_OPEN_READ_ONLY` + `PRAGMA query_only=ON`，JSONL 只读打开。
+- 不读取消息正文、prompt、tool 输出、附件或思考过程；只读取标题、项目路径、时间、模型、分支、
+  计数、待办 subject、状态与置顶/未读标志等元数据。
+- 不发起任何网络请求，没有遥测、账号或云同步。
+- 本地缓存位于 `~/Library/Application Support/app.perch.desktop/cache.db`，可随时删除重建，
+  不影响源 agent 数据。标题由 agent 生成，可能包含 prompt 片段；Perch 只在本机保存。
+- 详情面板的“打开”按钮不会执行前端传入的任意命令；会话 ID 会做字符集校验。
+
+更多边界与威胁模型见 [SECURITY.md](SECURITY.md)。
+
+## 当前不包含
+
+- 全局置顶、标签、备注、隐藏、重命名等覆盖层操作（`overlay.db` 尚未实现）。
+- 全文搜索、跨来源自动合并、token/credits 统计、导出、伴生 CLI。
+- Windows / Linux 支持。
+
+这些能力在 [ROADMAP.md](ROADMAP.md) 中按里程碑排列。
+
+## 文档
+
+| 文档 | 内容 |
+| --- | --- |
+| [docs/DESIGN.md](docs/DESIGN.md) | 产品与数据设计、逐源采集规格、方案取舍 |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | 代码结构、数据流、只读不变量、扩展点 |
+| [docs/SOURCES.md](docs/SOURCES.md) | 每个来源的路径、schema、状态规则和怪癖 |
+| [docs/FAQ.md](docs/FAQ.md) | 常见问题（深链限制、数据位置、卸载等） |
+| [DEVELOPMENT.md](DEVELOPMENT.md) | 开发环境、命令、环境变量、演示模式 |
+| [ROADMAP.md](ROADMAP.md) | 里程碑与当前进度 |
+| [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | 贡献流程与只读约束 |
+| [SECURITY.md](SECURITY.md) | 安全边界与漏洞报告方式 |
+
+## 许可
+
+[MIT](LICENSE)

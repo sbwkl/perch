@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 常见问题
+    url: https://github.com/sbwkl/perch/blob/main/docs/FAQ.md
+    about: 数据位置、Qoder 深链限制、状态含义、卸载方式等
+  - name: 安全漏洞
+    url: https://github.com/sbwkl/perch/security/advisories/new
+    about: 请通过私密渠道报告安全问题，不要公开提交

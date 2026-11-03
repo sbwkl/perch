@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 文档状态 | **产品决策已确认**（2026-11-02），待开工 |
+| 文档状态 | **产品决策已确认**（2026-11-02）；v0.1.0 已实现只读聚合与实时刷新，覆盖层待实现 |
 | 形态 | **macOS 原生 `.app`**，Tauri v2 + Rust 后端 + 系统 WebView 前端 |
 | 名称 | **Perch**（2026-11-02 已确认；命名参考见 [NAMING.md](NAMING.md)） |
 | 目标 | 多 agent 任务总览 + 跨 agent 全局置顶；覆盖层独立存储，默认不修改源 agent 数据 |
@@ -14,6 +14,9 @@
 > 说明：你提到的 “turai-app” 应为 **Tauri**（[tauri-apps/tauri](https://github.com/tauri-apps/tauri)，
 > 官网 [v2.tauri.app](https://v2.tauri.app/)）。Tauri 用 Rust 写应用逻辑、系统 WebView 渲染界面，
 > 产物是原生 `.app`/`.dmg`，不是 Electron 那种自带 Chromium 的运行时。本文按 Tauri v2 设计。
+
+> 实现状态：M1（只读聚合）与 M3 的列表/实时刷新已落地；`overlay.db`、置顶及部分命令仍在设计中。
+> 当前代码结构见 [ARCHITECTURE.md](../ARCHITECTURE.md)，进度见 [ROADMAP.md](../ROADMAP.md)。
 
 ---
 
