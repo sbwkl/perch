@@ -979,16 +979,22 @@ perch-cli export --output snapshot.html
 
 ---
 
-## 12. 与 usage-ledger 的可选集成（P2）
+## 12. 与 usage-ledger 的可选集成（已实现）
 
-- 只读打开 `~/.local/share/usage-ledger/usage.db`（`USAGE_LEDGER_DB` 可覆盖），不写。
-- 匹配：`usage_turn.source = task.source AND usage_turn.session_id = task.source_id`。
+- 只读打开 `~/.local/share/usage-ledger/usage.db`（`PERCH_USAGE_DB` / `USAGE_LEDGER_DB` /
+  `USAGE_LEDGER_HOME` 可覆盖），不写、不迁移、不触发 sync。
+- 匹配：`usage_turn.source = task.source AND usage_turn.session_id = task.source_id`；
+  Qoder credits / est 也按 `session_id` 挂到 qoder 任务。
+- 数据来源：`usage_turn`（未归档）与 `usage_daily`（已 prune 的历史）合并；
+  `usage_credit`、`usage_est` 分表读取。旧版 `usage_est` 无 `source` 列时按 `qoder.est` 处理。
 - 展示：
   - token 真值（Claude/Codex/OpenCode/Kilo/Qoder 历史）→ “本任务 token”
-  - Qoder `usage_credit`（billable credits）→ “本任务 credits”，单独标注
+  - Qoder `usage_credit`（billable / free credits、请求数）→ “本任务 credits”，单独标注
   - Qoder `usage_est` → “est”，单独标注，永不与真值/credits 相加
-- usage-ledger DB 不存在或版本不兼容 → 自动隐藏这些区块，不影响任务总览。
-- 该集成只在 Inspector 中展示，不改变任务快照表结构；按需查询/聚合，结果不落库（或写独立 `task_usage_cache`，P2 再定）。
+  - 顶部近 7 天 token / credits / est 汇总；不展示无法挂到任务的 activity
+- usage-ledger DB 不存在、表缺失或 schema 不兼容 → 自动隐藏这些区块，不影响任务总览。
+- 该集成只在 Inspector 与顶部摘要中展示，不改变任务快照表结构；按需查询/聚合，结果不落库。
+- usage-ledger 主库或 `-wal` mtime 变化时，Tauri 的 3 秒 probe 会刷新前端；Perch 本身不写该库。
 
 ---
 

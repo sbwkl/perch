@@ -45,6 +45,7 @@ crates/perch-core/       采集、缓存、查询、继续工作决策
   src/store.rs           cache.db schema 与 upsert
   src/sync.rs            ScanEngine 扫描事务
   src/query.rs           任务视图与 BootstrapPayload
+  src/usage.rs           只读 usage-ledger，按会话聚合 token / credits / est
   src/probe.rs           SQLite data_version / JSONL 签名探测
   src/continue_work.rs   打开 App / 终端恢复的决策
 demo/                    开发专用演示模式与截图夹具
@@ -61,6 +62,7 @@ docs/                    设计、逐源规格、FAQ、截图
 | Codex 源 | `~/.codex/` |
 | OpenCode 源 | `~/.local/share/opencode/opencode.db`（回退 `opencode-stable.db`） |
 | Kilo 源 | `~/.local/share/kilo/kilo.db` |
+| usage-ledger（可选） | `~/.local/share/usage-ledger/usage.db` |
 
 `cache.db` 是完全可重建的派生数据：退出 Perch 后删除 `cache.db`、`cache.db-wal`、`cache.db-shm`，
 下次启动会重新扫描。不要删除或修改任何源文件。
@@ -79,6 +81,9 @@ docs/                    设计、逐源规格、FAQ、截图
 | `PERCH_OPENCODE_STABLE_DB` | OpenCode 回退数据库 |
 | `PERCH_KILO_DB` | Kilo 数据库 |
 | `PERCH_CACHE_DB` | Perch 自己的 `cache.db` 路径 |
+| `PERCH_USAGE_DB` | usage-ledger 的 `usage.db` 路径（优先于下面两个） |
+| `USAGE_LEDGER_DB` | 与 usage-ledger 自身一致的数据库覆盖变量 |
+| `USAGE_LEDGER_HOME` | usage-ledger 数据目录；默认 `~/.local/share/usage-ledger` |
 
 集成测试使用临时目录 + 这些变量构造最小 fixture，不会读取真实用户数据。
 

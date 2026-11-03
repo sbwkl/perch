@@ -154,6 +154,11 @@
     return null;
   });
 
+  const selectedUsage = $derived(selected?.usage ?? null);
+  const selectedToken = $derived(selectedUsage?.token ?? null);
+  const selectedCredits = $derived(selectedUsage?.credits ?? null);
+  const selectedEst = $derived(selectedUsage?.est ?? null);
+
   const heading = $derived.by(() => {
     if (workspaceFilter) {
       return workspaceItems.find((item) => item.key === workspaceFilter)?.name ?? "Workspace";
@@ -293,6 +298,27 @@
       hour: "2-digit",
       minute: "2-digit",
     });
+  }
+
+  function formatTokens(value: number): string {
+    if (!Number.isFinite(value) || value <= 0) return "0";
+    if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`;
+    if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
+    if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+    return String(Math.round(value));
+  }
+
+  function formatCredits(value: number): string {
+    return value.toLocaleString("zh-CN", { maximumFractionDigits: 2 });
+  }
+
+  function usageSnapshotLabel(seconds: number | null): string {
+    if (!seconds) return "用量快照时间未知";
+    return `用量快照 ${relativeTime(seconds)}`;
+  }
+
+  function joinModels(models: string[]): string {
+    return models.length > 0 ? models.join(" · ") : "模型未知";
   }
 
   function handleKeydown(event: KeyboardEvent) {
@@ -472,6 +498,30 @@
         <span>{refreshing ? "扫描中" : "刷新"}</span>
         <kbd>⌘R</kbd>
       </button>
+
+      {#if payload?.usage}
+        <div class="usage-strip">
+          <span class="usage-pill" title="usage-ledger token 真值（近 7 天）">
+            <strong>{formatTokens(payload.usage.token_7d)}</strong><span>tokens · 7d</span>
+          </span>
+          {#if payload.usage.credits_billable_7d > 0}
+            <span class="usage-pill credits" title="Qoder 服务端计费，非 token">
+              <strong>{formatCredits(payload.usage.credits_billable_7d)}</strong><span>credits · 7d</span>
+            </span>
+          {/if}
+          {#if payload.usage.est_total > 0}
+            <span class="usage-pill est" title="估算 token（全量），不可与真值相加">
+              <strong>{formatTokens(payload.usage.est_total)}</strong><span>est · 全量</span>
+            </span>
+          {/if}
+          <span class="usage-pill muted" class:stale={payload.usage.stale}>
+            {payload.usage.stale ? "用量可能已过期" : usageSnapshotLabel(payload.usage.as_of)}
+          </span>
+          {#if payload.usage.matched_tasks > 0}
+            <span class="usage-pill muted">匹配 {payload.usage.matched_tasks} 个会话</span>
+          {/if}
+        </div>
+      {/if}
     </header>
 
     {#if errorMessage}
@@ -551,6 +601,73 @@
             {#if selected.status_raw}<dt>源状态</dt><dd class="mono">{selected.status_raw}</dd>{/if}
           </dl>
         </section>
+
+        {#if payload?.usage}
+          <section class="detail-block usage-block">
+            <h3>用量 <span class="subtle">usage-ledger · 只读</span></h3>
+            {#if selectedUsage}
+              {#if selectedToken}
+                <div class="usage-track">
+                  <div class="usage-track-head">
+                    <span class="usage-track-label">token 真值</span>
+                    <span class="usage-track-total">{formatTokens(selectedToken.total)}</span>
+                  </div>
+                  <div class="usage-grid">
+                    <span>输入</span><strong>{formatTokens(selectedToken.input)}</strong>
+                    <span>输出</span><strong>{formatTokens(selectedToken.output)}</strong>
+                    {#if selectedToken.cache_read > 0}
+                      <span>缓存读</span><strong>{formatTokens(selectedToken.cache_read)}</strong>
+                    {/if}
+                    {#if selectedToken.cache_write > 0}
+                      <span>缓存写</span><strong>{formatTokens(selectedToken.cache_write)}</strong>
+                    {/if}
+                    {#if selectedToken.reasoning > 0}
+                      <span>推理</span><strong>{formatTokens(selectedToken.reasoning)}</strong>
+                    {/if}
+                  </div>
+                  <p class="usage-meta">
+                    {joinModels(selectedToken.models)} · {selectedToken.turns} 轮
+                    · 最近 {selectedToken.last_day ?? "—"}
+                  </p>
+                </div>
+              {/if}
+              {#if selectedCredits}
+                <div class="usage-track">
+                  <div class="usage-track-head">
+                    <span class="usage-track-label credits">credits · 服务端计费</span>
+                    <span class="usage-track-total">{formatCredits(selectedCredits.billable)}</span>
+                  </div>
+                  <p class="usage-meta">
+                    {selectedCredits.billable_requests} 个计费请求
+                    {#if selectedCredits.free > 0}
+                      · 免费 {formatCredits(selectedCredits.free)} credits / {selectedCredits.free_requests} 请求
+                    {/if}
+                    · 最近 {selectedCredits.last_day ?? "—"}
+                  </p>
+                </div>
+              {/if}
+              {#if selectedEst}
+                <div class="usage-track">
+                  <div class="usage-track-head">
+                    <span class="usage-track-label est">est 估算</span>
+                    <span class="usage-track-total">{formatTokens(selectedEst.total)}</span>
+                  </div>
+                  <div class="usage-grid">
+                    <span>输入</span><strong>{formatTokens(selectedEst.input)}</strong>
+                    <span>输出</span><strong>{formatTokens(selectedEst.output)}</strong>
+                  </div>
+                  <p class="usage-meta">
+                    {selectedEst.source} · {selectedEst.requests} 请求
+                    · 最近 {selectedEst.last_day ?? "—"}
+                  </p>
+                </div>
+              {/if}
+            {:else}
+              <p class="usage-empty">usage-ledger 中没有该会话的用量记录。</p>
+            {/if}
+            <p class="usage-note">四轨口径不同：token / credits / est 永不相加。</p>
+          </section>
+        {/if}
 
         {#if selected.todos.length > 0}
           <section class="detail-block">

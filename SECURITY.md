@@ -24,7 +24,8 @@ Perch 是本机单用户的只读查看器：
 - 不启用 Tauri 的 `fs` / `shell` / `http` 等插件；前端只能调用三个窄命令：
   `bootstrap`、`refresh_sources`、`continue_task`。
 - 所有源读取在 Rust core 中完成；源 SQLite 使用只读连接和 `PRAGMA query_only=ON`，
-  JSONL 只读打开。
+  JSONL 只读打开。usage-ledger 的 `usage.db` 同样只读打开，Perch 不写入、不迁移、
+  不触发它的 sync。
 - `continue_task` 只接受任务 key，由 Rust 侧按来源固定模板决定 `open`、URL scheme 或终端命令；
   session id 先经过字符集校验，前端不能传入任意命令。
 - 页面不加载远程页面、字体、图片或脚本；`{@html}` 只用于内联的固定来源图标常量，
@@ -33,7 +34,9 @@ Perch 是本机单用户的只读查看器：
 ## 数据处理
 
 **读取并保存在本机 SQLite 的元数据**：会话标题、项目路径、时间、模型、分支、消息计数、
-todo 的 subject、状态、置顶/未读标志、恢复命令。
+todo 的 subject、状态、置顶/未读标志、恢复命令。用量块额外读取 usage-ledger 的来源、
+会话 ID、模型、日期、token / credits / est 计数；这些值不写入 `cache.db`，只随
+`bootstrap` 返回给前端。
 
 **不读取**：消息正文、prompt、assistant 输出、tool 输入/输出、附件、思考过程、账号凭据或密钥。
 

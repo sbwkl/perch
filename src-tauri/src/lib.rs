@@ -4,13 +4,14 @@ use std::time::Duration;
 
 use perch_core::continue_work::{plan_continue, ContinueAction, ContinuePlan, SystemProbe};
 use perch_core::models::{BootstrapPayload, SyncReport};
-use perch_core::query::build_bootstrap;
-use perch_core::{paths, CacheStore, ScanEngine, SourcePaths, SourceProbe};
+use perch_core::query::build_bootstrap_with_usage;
+use perch_core::{paths, CacheStore, ScanEngine, SourcePaths, SourceProbe, UsageSnapshot};
 use tauri::{Emitter, Manager, State};
 
 #[derive(Clone)]
 struct AppState {
     engine: Arc<Mutex<ScanEngine>>,
+    usage_db: PathBuf,
 }
 
 fn cache_db_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -33,12 +34,21 @@ fn open_engine(app: &tauri::AppHandle, paths: &SourcePaths) -> Result<ScanEngine
 
 #[tauri::command]
 fn bootstrap(state: State<'_, AppState>) -> Result<BootstrapPayload, String> {
+    let now = perch_core::collectors::common::now_seconds();
     let engine = state.engine.lock().map_err(|error| error.to_string())?;
-    build_bootstrap(
-        engine.store(),
-        perch_core::collectors::common::now_seconds(),
-    )
-    .map_err(|error| error.to_string())
+    let usage = UsageSnapshot::load(&state.usage_db, now);
+    build_bootstrap_with_usage(engine.store(), now, usage.as_ref())
+        .map_err(|error| error.to_string())
+}
+
+/// Watches the usage archive without reading it. A missing database yields
+/// `None`, so the UI only refreshes once usage-ledger creates or updates it.
+fn usage_mtime(path: &std::path::Path) -> Option<std::time::SystemTime> {
+    let wal = PathBuf::from(format!("{}-wal", path.display()));
+    [path.to_path_buf(), wal]
+        .iter()
+        .filter_map(|candidate| std::fs::metadata(candidate).ok()?.modified().ok())
+        .max()
 }
 
 #[tauri::command]
@@ -150,15 +160,18 @@ pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             let paths = SourcePaths::detect();
+            let usage_db = paths::usage_db_path();
             let engine = open_engine(app.handle(), &paths)
                 .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
             app.manage(AppState {
                 engine: Arc::new(Mutex::new(engine)),
+                usage_db: usage_db.clone(),
             });
 
             let handle = app.handle().clone();
             std::thread::spawn(move || {
                 let mut probe = SourceProbe::new(&paths);
+                let mut usage_stamp = usage_mtime(&usage_db);
                 loop {
                     std::thread::sleep(Duration::from_secs(3));
                     if let Some(window) = handle.get_webview_window("main") {
@@ -169,17 +182,21 @@ pub fn run() {
                         }
                     }
                     let changed = probe.poll();
-                    if changed.is_empty() {
+                    let next_usage_stamp = usage_mtime(&usage_db);
+                    let usage_changed = next_usage_stamp != usage_stamp;
+                    if changed.is_empty() && !usage_changed {
                         continue;
                     }
-                    let state = handle.state::<AppState>();
-                    let Ok(engine) = state.engine.lock() else {
-                        continue;
-                    };
-                    for source in changed {
-                        engine.scan(Some(source), "live");
+                    if !changed.is_empty() {
+                        let state = handle.state::<AppState>();
+                        let Ok(engine) = state.engine.lock() else {
+                            continue;
+                        };
+                        for source in changed {
+                            engine.scan(Some(source), "live");
+                        }
                     }
-                    drop(engine);
+                    usage_stamp = next_usage_stamp;
                     let _ = handle.emit("sources-updated", ());
                 }
             });

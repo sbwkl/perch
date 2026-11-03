@@ -3,6 +3,8 @@ use std::hash::{Hash, Hasher};
 
 use serde::{Deserialize, Serialize};
 
+use crate::usage::{TaskUsage, UsageSummary};
+
 pub const SOURCE_QODER: &str = "qoder";
 pub const SOURCE_CLAUDE: &str = "claude";
 pub const SOURCE_CODEX: &str = "codex";
@@ -283,6 +285,10 @@ pub struct TaskView {
     pub resume_cmd: Option<String>,
     pub is_recent: bool,
     pub todos: Vec<TodoView>,
+    /// Optional usage-ledger projection; absent when the archive is missing or
+    /// this session has no recorded usage.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage: Option<TaskUsage>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -321,6 +327,9 @@ pub struct BootstrapPayload {
     pub sources: Vec<SourceView>,
     pub workspaces: Vec<WorkspaceGroup>,
     pub counts: Counts,
+    /// Present only when usage-ledger's database was readable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage: Option<UsageSummary>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

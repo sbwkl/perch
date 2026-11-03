@@ -60,6 +60,18 @@ pub fn cache_db_override() -> Option<PathBuf> {
     env_path("PERCH_CACHE_DB")
 }
 
+/// usage-ledger's archive is an optional read-only input, not an agent source.
+/// Precedence mirrors usage-ledger itself so both tools agree on the location.
+pub fn usage_db_path() -> PathBuf {
+    if let Some(path) = env_path("PERCH_USAGE_DB").or_else(|| env_path("USAGE_LEDGER_DB")) {
+        return path;
+    }
+    if let Some(home) = env_path("USAGE_LEDGER_HOME") {
+        return home.join("usage.db");
+    }
+    home_dir().join(".local/share/usage-ledger/usage.db")
+}
+
 pub fn ensure_parent(path: &Path) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;

@@ -7,6 +7,52 @@ export interface TodoView {
   position: number;
 }
 
+export interface TokenUsage {
+  input: number;
+  output: number;
+  cache_read: number;
+  cache_write: number;
+  reasoning: number;
+  total: number;
+  turns: number;
+  models: string[];
+  last_day: string | null;
+}
+
+export interface CreditUsage {
+  billable: number;
+  free: number;
+  billable_requests: number;
+  free_requests: number;
+  last_day: string | null;
+}
+
+export interface EstUsage {
+  source: string;
+  input: number;
+  output: number;
+  total: number;
+  requests: number;
+  last_day: string | null;
+}
+
+export interface TaskUsage {
+  token?: TokenUsage;
+  credits?: CreditUsage;
+  est?: EstUsage;
+}
+
+export interface UsageSummary {
+  token_total: number;
+  token_7d: number;
+  credits_billable_7d: number;
+  est_total: number;
+  last_day: string | null;
+  as_of: number | null;
+  stale: boolean;
+  matched_tasks: number;
+}
+
 export interface TaskView {
   key: string;
   source: string;
@@ -39,6 +85,7 @@ export interface TaskView {
   resume_cmd: string | null;
   is_recent: boolean;
   todos: TodoView[];
+  usage?: TaskUsage;
 }
 
 export interface WorkspaceGroup {
@@ -73,6 +120,7 @@ export interface BootstrapPayload {
   sources: SourceView[];
   workspaces: WorkspaceGroup[];
   counts: Counts;
+  usage?: UsageSummary;
 }
 
 export interface SyncReport {

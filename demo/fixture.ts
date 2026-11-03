@@ -1,6 +1,7 @@
 import type {
   BootstrapPayload,
   SourceView,
+  TaskUsage,
   TaskView,
   TodoView,
   WorkspaceGroup,
@@ -43,6 +44,7 @@ interface TaskSeed {
   messages?: number;
   title_source?: string;
   resume_cmd?: string;
+  usage?: TaskUsage;
 }
 
 let sequence = 0;
@@ -89,8 +91,57 @@ function makeTask(seed: TaskSeed): TaskView {
     resume_cmd: seed.resume_cmd ?? null,
     is_recent: updated >= NOW - 7 * DAY,
     todos,
+    usage: seed.usage,
   };
 }
+
+const DEMO_DAY = new Date(NOW * 1000).toISOString().slice(0, 10);
+
+const TOKEN_USAGE: TaskUsage = {
+  token: {
+    input: 1_284_000,
+    output: 218_400,
+    cache_read: 3_920_000,
+    cache_write: 640_000,
+    reasoning: 96_000,
+    total: 6_158_400,
+    turns: 84,
+    models: ["claude-sonnet-4-5"],
+    last_day: DEMO_DAY,
+  },
+};
+
+const CODEX_USAGE: TaskUsage = {
+  token: {
+    input: 860_000,
+    output: 142_000,
+    cache_read: 2_110_000,
+    cache_write: 0,
+    reasoning: 128_000,
+    total: 3_240_000,
+    turns: 41,
+    models: ["gpt-5-codex"],
+    last_day: DEMO_DAY,
+  },
+};
+
+const QODER_USAGE: TaskUsage = {
+  credits: {
+    billable: 18.42,
+    free: 0.8,
+    billable_requests: 27,
+    free_requests: 3,
+    last_day: DEMO_DAY,
+  },
+  est: {
+    source: "qoder.est",
+    input: 1_120_000,
+    output: 96_000,
+    total: 1_216_000,
+    requests: 27,
+    last_day: DEMO_DAY,
+  },
+};
 
 const TASKS: TaskView[] = [
   makeTask({
@@ -104,6 +155,7 @@ const TASKS: TaskView[] = [
     model: "Qwen3.5-Plus",
     branch: "feature/checkout-pricing",
     messages: 48,
+    usage: QODER_USAGE,
   }),
   makeTask({
     source: "claude",
@@ -115,6 +167,7 @@ const TASKS: TaskView[] = [
     branch: "main",
     messages: 26,
     title_source: "ai",
+    usage: TOKEN_USAGE,
     todos: [
       ["补齐空订单导出用例", "completed"],
       ["覆盖 UTF-8 与 BOM 场景", "in_progress"],
@@ -130,6 +183,7 @@ const TASKS: TaskView[] = [
     model: "GPT-5 Codex",
     branch: "fix/mobile-nav",
     messages: 34,
+    usage: CODEX_USAGE,
     resume_cmd:
       "cd '/Users/demo/code/acme-storefront' && codex resume demo-codex-0003",
   }),
@@ -143,6 +197,7 @@ const TASKS: TaskView[] = [
     model: "Claude Sonnet 4.5",
     branch: "feature/oauth",
     messages: 57,
+    usage: TOKEN_USAGE,
     resume_cmd:
       "cd '/Users/demo/code/acme-storefront' && opencode --session ses_demo_oauth",
     todos: [
@@ -345,6 +400,16 @@ export function demoPayload(): BootstrapPayload {
           task.status === "blocked" ||
           task.status === "limited",
       ).length,
+    },
+    usage: {
+      token_total: 24_860_000,
+      token_7d: 6_158_400,
+      credits_billable_7d: 18.42,
+      est_total: 1_216_000,
+      last_day: DEMO_DAY,
+      as_of: NOW - 90,
+      stale: false,
+      matched_tasks: TASKS.filter((task) => task.usage).length,
     },
   };
 }

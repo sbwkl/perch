@@ -6,8 +6,17 @@ use crate::models::{
     TodoSnapshot, TodoView, WorkspaceGroup, ALL_SOURCES, RECENT_WINDOW_SECONDS,
 };
 use crate::store::CacheStore;
+use crate::usage::UsageSnapshot;
 
 pub fn build_bootstrap(store: &CacheStore, now: f64) -> Result<BootstrapPayload> {
+    build_bootstrap_with_usage(store, now, None)
+}
+
+pub fn build_bootstrap_with_usage(
+    store: &CacheStore,
+    now: f64,
+    usage: Option<&UsageSnapshot>,
+) -> Result<BootstrapPayload> {
     let tasks = store.load_tasks()?;
     let todos = store.load_todos()?;
     let states = store.load_sync_states()?;
@@ -71,13 +80,34 @@ pub fn build_bootstrap(store: &CacheStore, now: f64) -> Result<BootstrapPayload>
 
     let counts = count_tasks(&workspaces);
     let sources = build_sources(&tasks, &states);
+    let usage_summary = attach_usage(&mut workspaces, usage);
 
     Ok(BootstrapPayload {
         generated_at: now,
         sources,
         workspaces,
         counts,
+        usage: usage_summary,
     })
+}
+
+fn attach_usage(
+    workspaces: &mut [WorkspaceGroup],
+    usage: Option<&UsageSnapshot>,
+) -> Option<crate::usage::UsageSummary> {
+    let snapshot = usage?;
+    let mut matched = 0i64;
+    for group in workspaces.iter_mut() {
+        for task in &mut group.tasks {
+            if let Some(found) = snapshot.task_usage(&task.source, &task.source_id) {
+                matched += 1;
+                task.usage = Some(found);
+            }
+        }
+    }
+    let mut summary = snapshot.summary.clone();
+    summary.matched_tasks = matched;
+    Some(summary)
 }
 
 fn task_view(
@@ -130,6 +160,7 @@ fn task_view(
         resume_cmd: task.resume_cmd.clone(),
         is_recent: activity >= now - RECENT_WINDOW_SECONDS,
         todos: todo_items,
+        usage: None,
     }
 }
 
