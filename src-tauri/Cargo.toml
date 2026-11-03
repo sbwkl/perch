@@ -1,0 +1,22 @@
+[package]
+name = "perch"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "Perch"
+path = "src/main.rs"
+
+[lib]
+name = "perch_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+perch-core = { path = "../crates/perch-core" }
+tauri = { version = "2", features = [] }
+serde.workspace = true
+serde_json.workspace = true

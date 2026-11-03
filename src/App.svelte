@@ -1,0 +1,721 @@
+<script lang="ts">
+  import { invoke } from "@tauri-apps/api/core";
+  import { listen } from "@tauri-apps/api/event";
+  import { onMount } from "svelte";
+  import type {
+    BootstrapPayload,
+    ContinueOutcome,
+    SyncReport,
+    TaskView,
+    WorkspaceGroup,
+  } from "./lib/types";
+
+  type ViewMode = "all" | "recent" | "archived";
+
+  interface FilteredGroup {
+    group: WorkspaceGroup;
+    primary: TaskView[];
+    older: TaskView[];
+  }
+
+  interface ScanNotice {
+    label: string;
+    message: string;
+  }
+
+  const ICONS = {
+    list: "M4 6h16M4 12h16M4 18h16",
+    clock: "M12 7v5l3 2M21 12a9 9 0 1 1-9-9 9 9 0 0 1 9 9z",
+    archive: "M4 7h16M6 7v12h12V7M9 11h6",
+    refresh: "M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6",
+    chevron: "M9 6l6 6-6 6",
+    folder: "M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z",
+    bird: "M7 20c0-5.5 4.5-10 10-10h4l-3-4-5 2-4 4-3 6 1 2zM9 20h10",
+  } as const;
+
+  const SOURCE_COLORS: Record<string, string> = {
+    qoder: "#2adb5c",
+    claude: "#d97757",
+    codex: "#ffffff",
+    opencode: "#201d1d",
+    kilo: "#ffdc04",
+  };
+
+  const SOURCE_LABELS: Record<string, string> = {
+    qoder: "Qoder",
+    claude: "Claude Code",
+    codex: "Codex",
+    opencode: "OpenCode",
+    kilo: "Kilo",
+  };
+
+  const STATUS_LABELS: Record<string, string> = {
+    running: "运行中",
+    active: "活跃",
+    paused: "已暂停",
+    blocked: "受阻",
+    limited: "受限",
+    complete: "已完成",
+    archived: "已归档",
+    idle: "空闲",
+  };
+
+  let payload = $state<BootstrapPayload | null>(null);
+  let busy = $state(true);
+  let refreshing = $state(false);
+  let errorMessage = $state("");
+  let scanNotices = $state<ScanNotice[]>([]);
+  let lastScanSummary = $state("");
+  let view = $state<ViewMode>("all");
+  let workspaceFilter = $state<string | null>(null);
+  let sourceFilter = $state<string | null>(null);
+  let selectedKey = $state<string | null>(null);
+  let collapsedGroups = $state<Set<string>>(new Set());
+  let expandedOlder = $state<Set<string>>(new Set());
+  let continuing = $state(false);
+  let continueNotice = $state("");
+  let showAllWorkspaces = $state(false);
+
+  const WORKSPACE_VISIBLE_LIMIT = 8;
+
+  const smartLists = $derived([
+    { id: "recent" as ViewMode, label: "最近", count: payload?.counts.recent ?? 0, icon: ICONS.clock },
+    { id: "all" as ViewMode, label: "全部任务", count: payload?.counts.total ?? 0, icon: ICONS.list },
+    { id: "archived" as ViewMode, label: "已归档", count: payload?.counts.archived ?? 0, icon: ICONS.archive },
+  ]);
+
+  const workspaceItems = $derived.by(() =>
+    (payload?.workspaces ?? [])
+      .map((group) => ({
+        key: group.key,
+        name: group.name,
+        path: group.project_path,
+        count: group.tasks.filter(
+          (task) => !task.is_child && !task.is_automation && !task.source_archived,
+        ).length,
+      }))
+      .filter((item) => item.count > 0),
+  );
+
+  const visibleWorkspaces = $derived.by(() => {
+    if (showAllWorkspaces || workspaceItems.length <= WORKSPACE_VISIBLE_LIMIT) {
+      return workspaceItems;
+    }
+    const visible = workspaceItems.slice(0, WORKSPACE_VISIBLE_LIMIT);
+    if (workspaceFilter && !visible.some((item) => item.key === workspaceFilter)) {
+      const active = workspaceItems.find((item) => item.key === workspaceFilter);
+      if (active) visible.push(active);
+    }
+    return visible;
+  });
+
+  const hiddenWorkspaceCount = $derived(
+    Math.max(0, workspaceItems.length - visibleWorkspaces.length),
+  );
+
+  const canToggleWorkspaces = $derived(workspaceItems.length > WORKSPACE_VISIBLE_LIMIT);
+
+  const filteredGroups = $derived.by<FilteredGroup[]>(() => {
+    if (!payload) return [];
+    const filtered = Boolean(workspaceFilter || sourceFilter);
+    const groups: FilteredGroup[] = [];
+    for (const group of payload.workspaces) {
+      if (workspaceFilter && group.key !== workspaceFilter) continue;
+      let tasks = group.tasks.filter((task) => !task.is_child && !task.is_automation);
+      if (sourceFilter) tasks = tasks.filter((task) => task.source === sourceFilter);
+      if (view === "archived") {
+        tasks = tasks.filter((task) => task.source_archived);
+      } else {
+        tasks = tasks.filter((task) => !task.source_archived);
+      }
+      if (tasks.length === 0) continue;
+      const primary =
+        view === "all" && !filtered ? tasks.filter((task) => task.is_recent) : tasks;
+      const older =
+        view === "all" && !filtered ? tasks.filter((task) => !task.is_recent) : [];
+      groups.push({ group, primary, older });
+    }
+    return groups;
+  });
+
+  const recentTasks = $derived.by(() => {
+    if (!payload) return [] as TaskView[];
+    const tasks: TaskView[] = [];
+    for (const group of payload.workspaces) {
+      for (const task of group.tasks) {
+        if (task.is_child || task.is_automation || task.source_archived || !task.is_recent) continue;
+        tasks.push(task);
+      }
+    }
+    return tasks.sort((left, right) => (right.updated_at ?? 0) - (left.updated_at ?? 0));
+  });
+
+  const flatRecent = $derived(view === "recent");
+
+  const flatAllTasks = $derived.by(() => {
+    if (!payload) return [] as TaskView[];
+    const tasks: TaskView[] = [];
+    for (const group of payload.workspaces) {
+      if (workspaceFilter && group.key !== workspaceFilter) continue;
+      for (const task of group.tasks) {
+        if (task.is_child || task.is_automation || task.source_archived) continue;
+        if (sourceFilter && task.source !== sourceFilter) continue;
+        tasks.push(task);
+      }
+    }
+    return tasks.sort((left, right) => (right.updated_at ?? 0) - (left.updated_at ?? 0));
+  });
+
+  const flatTasks = $derived(
+    view === "recent" ? recentTasks : view === "all" ? flatAllTasks : ([] as TaskView[]),
+  );
+
+  const flatMode = $derived(view !== "archived");
+
+  const totalVisible = $derived(
+    flatMode
+      ? flatTasks.length
+      : filteredGroups.reduce((sum, item) => sum + item.primary.length + item.older.length, 0),
+  );
+
+  const hasVisibleTasks = $derived(
+    flatMode ? flatTasks.length > 0 : filteredGroups.length > 0,
+  );
+
+  const selected = $derived.by<TaskView | null>(() => {
+    if (!payload || !selectedKey) return null;
+    for (const group of payload.workspaces) {
+      const found = group.tasks.find((task) => task.key === selectedKey);
+      if (found) return found;
+    }
+    return null;
+  });
+
+  const heading = $derived.by(() => {
+    if (workspaceFilter) {
+      return workspaceItems.find((item) => item.key === workspaceFilter)?.name ?? "Workspace";
+    }
+    if (sourceFilter) return SOURCE_LABELS[sourceFilter] ?? sourceFilter;
+    return smartLists.find((item) => item.id === view)?.label ?? "任务";
+  });
+
+  const subheading = $derived.by(() => {
+    const generated = payload ? fullTime(payload.generated_at) : "—";
+    const summary = lastScanSummary ? ` · ${lastScanSummary}` : "";
+    return `${totalVisible} 个任务 · 快照 ${generated}${summary}`;
+  });
+
+  async function loadBootstrap() {
+    payload = await invoke<BootstrapPayload>("bootstrap");
+  }
+
+  async function refresh() {
+    if (refreshing) return;
+    refreshing = true;
+    errorMessage = "";
+    try {
+      const report = await invoke<SyncReport>("refresh_sources", { source: null });
+      scanNotices = report.reports
+        .filter((item) => item.error)
+        .map((item) => ({
+          label: SOURCE_LABELS[item.source] ?? item.source,
+          message: item.error as string,
+        }));
+      lastScanSummary = `扫描 ${report.reports.length} 个来源 · ${Math.max(
+        0,
+        Math.round((report.finished_at - report.started_at) * 1000),
+      )} ms`;
+      await loadBootstrap();
+      if (selectedKey && !payloadContains(selectedKey)) selectedKey = null;
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : String(error);
+    } finally {
+      refreshing = false;
+      busy = false;
+    }
+  }
+
+  function payloadContains(key: string): boolean {
+    return Boolean(
+      payload?.workspaces.some((group) => group.tasks.some((task) => task.key === key)),
+    );
+  }
+
+  function selectTask(key: string) {
+    selectedKey = key;
+    continueNotice = "";
+  }
+
+  async function continueTask() {
+    if (!selected || continuing) return;
+    const taskKey = selected.key;
+    continuing = true;
+    continueNotice = "";
+    try {
+      const outcome = await invoke<ContinueOutcome>("continue_task", { taskKey });
+      continueNotice = outcome.message;
+    } catch (error) {
+      continueNotice = error instanceof Error ? error.message : String(error);
+    } finally {
+      continuing = false;
+    }
+  }
+
+  function selectView(next: ViewMode) {
+    view = next;
+    workspaceFilter = null;
+    sourceFilter = null;
+  }
+
+  function selectWorkspace(key: string) {
+    workspaceFilter = workspaceFilter === key ? null : key;
+    sourceFilter = null;
+    view = "all";
+  }
+
+  function selectSource(source: string) {
+    sourceFilter = sourceFilter === source ? null : source;
+    workspaceFilter = null;
+    view = "all";
+  }
+
+  function toggleGroup(key: string) {
+    const next = new Set(collapsedGroups);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    collapsedGroups = next;
+  }
+
+  function toggleOlder(key: string) {
+    const next = new Set(expandedOlder);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    expandedOlder = next;
+  }
+
+  function sourceColor(source: string): string {
+    return SOURCE_COLORS[source] ?? "#8e8e93";
+  }
+
+  function statusLabel(task: TaskView): string {
+    if (task.status === "idle" && task.source === "claude") return "无显式状态";
+    return STATUS_LABELS[task.status] ?? task.status;
+  }
+
+  function statusClass(task: TaskView): string {
+    if (task.status === "running" || task.status === "active") return "live";
+    if (task.status === "blocked") return "danger";
+    if (task.status === "limited" || task.status === "paused") return "warn";
+    if (task.status === "complete") return "done";
+    if (task.status === "archived") return "muted";
+    return "idle";
+  }
+
+  function titleSourceLabel(source: string): string {
+    const labels: Record<string, string> = {
+      custom: "人工标题",
+      ai: "AI 标题",
+      provisional: "临时标题",
+      fallback: "回退标题",
+      source: "源标题",
+    };
+    return labels[source] ?? source;
+  }
+
+  function todoLabel(status: string): string {
+    const labels: Record<string, string> = {
+      pending: "待处理",
+      in_progress: "进行中",
+      completed: "已完成",
+      cancelled: "已取消",
+      unknown: "未知",
+    };
+    return labels[status] ?? status;
+  }
+
+  function relativeTime(seconds: number | null | undefined): string {
+    if (!seconds) return "时间未知";
+    const diff = Date.now() / 1000 - seconds;
+    if (diff < 60) return "刚刚";
+    if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`;
+    if (diff < 86400 * 7) return `${Math.floor(diff / 86400)} 天前`;
+    return new Date(seconds * 1000).toLocaleDateString("zh-CN", {
+      month: "short",
+      day: "numeric",
+    });
+  }
+
+  function fullTime(seconds: number | null | undefined): string {
+    if (!seconds) return "—";
+    return new Date(seconds * 1000).toLocaleString("zh-CN", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  function handleKeydown(event: KeyboardEvent) {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "r") {
+      event.preventDefault();
+      void refresh();
+    }
+    if (event.key === "Escape") selectedKey = null;
+  }
+
+  onMount(() => {
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+
+    void (async () => {
+      try {
+        await loadBootstrap();
+      } catch (error) {
+        errorMessage = error instanceof Error ? error.message : String(error);
+      }
+      await refresh();
+    })();
+
+    void listen("sources-updated", () => {
+      if (!disposed) void loadBootstrap();
+    }).then((stop) => {
+      if (disposed) stop();
+      else unlisten = stop;
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  });
+</script>
+
+<svelte:window onkeydown={handleKeydown} />
+
+{#snippet taskRow(task: TaskView, showWorkspace: boolean)}
+  <button
+    class="task"
+    class:selected={selectedKey === task.key}
+    onclick={() => selectTask(task.key)}
+  >
+    <span class="task-main">
+      <span class="task-title">
+        {#if task.source_unread}<span class="unread-dot"></span>{/if}
+        {task.title}
+        {#if task.title_source === "provisional" || task.title_source === "fallback"}
+          <span class="title-flag">{titleSourceLabel(task.title_source)}</span>
+        {/if}
+      </span>
+      <span class="task-meta">
+        {#if showWorkspace}
+          <span class="task-workspace" title={task.project_path ?? task.workspace_name}>
+            {task.workspace_name}
+          </span>
+          <span class="dot-sep">·</span>
+        {/if}
+        <span>{task.source_label}</span>
+        <span class="dot-sep">·</span>
+        <span>{relativeTime(task.updated_at)}</span>
+        {#if task.todo_total > 0}
+          <span class="todo-chip">{task.todo_done}/{task.todo_total}</span>
+        {/if}
+        {#if task.source_pinned}<span class="mini-badge">源置顶</span>{/if}
+        {#if task.source_missing}<span class="mini-badge danger">源已删除</span>{/if}
+      </span>
+    </span>
+    <span class="status {statusClass(task)}">{statusLabel(task)}</span>
+  </button>
+{/snippet}
+
+<div class="app">
+  <aside class="sidebar">
+    <header class="brand">
+      <span class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <path d={ICONS.bird} />
+        </svg>
+      </span>
+      <span class="brand-text">
+        <strong>Perch</strong>
+        <small>多 agent 任务总览</small>
+      </span>
+    </header>
+
+    <nav class="nav-section">
+      <p class="section-title">任务</p>
+      {#each smartLists as item (item.id)}
+        <button
+          class="nav-item"
+          class:active={view === item.id && !workspaceFilter && !sourceFilter}
+          onclick={() => selectView(item.id)}
+        >
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path d={item.icon} />
+          </svg>
+          <span class="nav-label">{item.label}</span>
+          <span class="nav-count">{item.count}</span>
+        </button>
+      {/each}
+    </nav>
+
+    <nav class="nav-section scroll-section">
+      <p class="section-title">Workspaces</p>
+      {#each visibleWorkspaces as workspace (workspace.key)}
+        <button
+          class="nav-item"
+          class:active={workspaceFilter === workspace.key}
+          title={workspace.path ?? workspace.name}
+          onclick={() => selectWorkspace(workspace.key)}
+        >
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path d={ICONS.folder} />
+          </svg>
+          <span class="nav-label">{workspace.name}</span>
+          <span class="nav-count">{workspace.count}</span>
+        </button>
+      {/each}
+      {#if canToggleWorkspaces}
+        <button class="nav-more" onclick={() => (showAllWorkspaces = !showAllWorkspaces)}>
+          {showAllWorkspaces ? "收起" : `显示更多（${hiddenWorkspaceCount}）`}
+        </button>
+      {/if}
+      {#if workspaceItems.length === 0}
+        <p class="nav-empty">暂无 workspace</p>
+      {/if}
+    </nav>
+
+    <nav class="nav-section sources">
+      <p class="section-title">来源</p>
+      {#each payload?.sources ?? [] as source (source.source)}
+        <button
+          class="nav-item source-item"
+          class:active={sourceFilter === source.source}
+          title={source.error ?? source.label}
+          onclick={() => selectSource(source.source)}
+        >
+          <span class="nav-label">{source.label}</span>
+          <span class="nav-count">{source.task_count}</span>
+          {#if source.error && source.status !== "unavailable"}
+            <span class="source-warning">!</span>
+          {/if}
+        </button>
+      {/each}
+      <p class="nav-note">Trae CN、ChatGPT 桌面暂无本地任务数据。</p>
+    </nav>
+
+    <footer class="sidebar-foot">只读采集 · 不改动源数据</footer>
+  </aside>
+
+  <main class="list-pane">
+    <header class="list-head">
+      <div class="head-text">
+        <h2>{heading}</h2>
+        <p>{subheading}</p>
+      </div>
+      <button class="refresh-button" onclick={() => refresh()} disabled={refreshing}>
+        <svg
+          class="refresh-icon"
+          class:spinning={refreshing}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d={ICONS.refresh} />
+        </svg>
+        <span>{refreshing ? "扫描中" : "刷新"}</span>
+        <kbd>⌘R</kbd>
+      </button>
+    </header>
+
+    {#if errorMessage}
+      <div class="banner error">{errorMessage}</div>
+    {/if}
+
+    {#if scanNotices.length > 0}
+      <details class="banner notice">
+        <summary>{scanNotices.length} 条数据源提示</summary>
+        <ul>
+          {#each scanNotices as notice}
+            <li><strong>{notice.label}</strong><span>{notice.message}</span></li>
+          {/each}
+        </ul>
+      </details>
+    {/if}
+
+    {#if busy && !payload}
+      <div class="empty-state">正在读取本地任务…</div>
+    {:else if !hasVisibleTasks}
+      <div class="empty-state">
+        <p>当前筛选下没有任务。</p>
+        <p class="subtle">试试“全部任务”，或点击右上角刷新。</p>
+      </div>
+    {:else if flatMode}
+      <div class="groups">
+        <div class="flat-list">
+          {#each flatTasks as task (task.key)}
+            {@render taskRow(task, !workspaceFilter)}
+          {/each}
+        </div>
+      </div>
+    {:else}
+      <div class="groups">
+        {#each filteredGroups as entry (entry.group.key)}
+          <section class="group">
+            <button class="group-head" onclick={() => toggleGroup(entry.group.key)}>
+              <svg
+                class="chevron"
+                class:collapsed={collapsedGroups.has(entry.group.key)}
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d={ICONS.chevron} />
+              </svg>
+              <span class="group-name">{entry.group.name}</span>
+              {#if entry.group.project_path}
+                <span class="group-path">{entry.group.project_path}</span>
+              {/if}
+              <span class="group-count">{entry.primary.length + entry.older.length}</span>
+            </button>
+
+            {#if !collapsedGroups.has(entry.group.key)}
+              <div class="task-rows">
+                {#each entry.primary as task (task.key)}
+                  {@render taskRow(task, false)}
+                {/each}
+
+                {#if entry.older.length > 0}
+                  <button class="older-toggle" onclick={() => toggleOlder(entry.group.key)}>
+                    <svg
+                      class="chevron small"
+                      class:collapsed={!expandedOlder.has(entry.group.key)}
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d={ICONS.chevron} />
+                    </svg>
+                    更早 {entry.older.length} 项
+                  </button>
+                  {#if expandedOlder.has(entry.group.key)}
+                    {#each entry.older as task (task.key)}
+                      <button
+                        class="task older"
+                        class:selected={selectedKey === task.key}
+                        onclick={() => selectTask(task.key)}
+                      >
+                        <span class="task-main">
+                          <span class="task-title">{task.title}</span>
+                          <span class="task-meta">
+                            <span>{task.source_label}</span>
+                            <span class="dot-sep">·</span>
+                            <span>{relativeTime(task.updated_at)}</span>
+                          </span>
+                        </span>
+                        <span class="status {statusClass(task)}">{statusLabel(task)}</span>
+                      </button>
+                    {/each}
+                  {/if}
+                {/if}
+              </div>
+            {/if}
+          </section>
+        {/each}
+      </div>
+    {/if}
+  </main>
+
+  <aside class="inspector">
+    {#if selected}
+      <div class="inspector-content">
+        <header class="inspector-head">
+          <div class="source-line">
+            <span class="source-dot" style={`--source:${sourceColor(selected.source)}`}></span>
+            <span>{selected.source_label}</span>
+            <span class="status {statusClass(selected)}">{statusLabel(selected)}</span>
+          </div>
+          <h2>{selected.title}</h2>
+          <div class="tag-line">
+            {#if selected.source_archived}<span class="badge">源归档</span>{/if}
+            {#if selected.source_pinned}<span class="badge">源置顶</span>{/if}
+            {#if selected.source_unread}<span class="badge">未读</span>{/if}
+            {#if selected.parent_key}<span class="badge">子会话</span>{/if}
+            {#if selected.is_automation}<span class="badge">自动化</span>{/if}
+            {#if selected.source_missing}<span class="badge danger">源已删除</span>{/if}
+          </div>
+        </header>
+
+        <div class="continue-row">
+          <button
+            class="continue-button"
+            onclick={() => void continueTask()}
+            disabled={continuing}
+          >
+            {continuing ? "打开中…" : `打开 ${selected.source_label}`}
+          </button>
+          {#if continueNotice}<span class="continue-note">{continueNotice}</span>{/if}
+        </div>
+
+        <section class="detail-block">
+          <h3>任务信息</h3>
+          <dl class="meta-grid">
+            <dt>Workspace</dt><dd>{selected.workspace_name}</dd>
+            <dt>项目路径</dt><dd class="mono">{selected.project_path ?? "—"}</dd>
+            <dt>会话 ID</dt><dd class="mono">{selected.source_id}</dd>
+            <dt>最近活动</dt><dd>{fullTime(selected.updated_at)}</dd>
+            <dt>创建时间</dt><dd>{fullTime(selected.created_at)}</dd>
+            {#if selected.model}<dt>模型</dt><dd>{selected.model}</dd>{/if}
+            {#if selected.git_branch}<dt>分支</dt><dd class="mono">{selected.git_branch}</dd>{/if}
+            {#if selected.message_count !== null}<dt>消息数</dt><dd>{selected.message_count}</dd>{/if}
+            <dt>标题来源</dt><dd>{titleSourceLabel(selected.title_source)}</dd>
+            {#if selected.status_raw}<dt>源状态</dt><dd class="mono">{selected.status_raw}</dd>{/if}
+          </dl>
+        </section>
+
+        <section class="detail-block">
+          <h3>待办 <span class="subtle">{selected.todo_done}/{selected.todo_total}</span></h3>
+          {#if selected.todos.length === 0}
+            <p class="subtle">暂无待办</p>
+          {:else}
+            <ul class="todo-list">
+              {#each selected.todos as todo (todo.item_id)}
+                <li class="todo {todo.status}" title={todoLabel(todo.status)}>
+                  <span class="todo-mark"></span>
+                  <span>{todo.subject}</span>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </section>
+
+        {#if selected.resume_cmd}
+          <section class="detail-block">
+            <h3>恢复命令 <span class="subtle">只读展示</span></h3>
+            <code class="command">{selected.resume_cmd}</code>
+          </section>
+        {/if}
+
+        <footer class="inspector-foot">Perch 只读取源元数据，不会修改任何 agent 数据。</footer>
+      </div>
+    {:else}
+      <div class="inspector-empty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+          <path d={ICONS.bird} />
+        </svg>
+        <p>选择一个任务查看详情</p>
+        <p class="subtle">详情只读；置顶将在下一阶段加入。</p>
+      </div>
+    {/if}
+  </aside>
+</div>
