@@ -7,16 +7,10 @@
     ContinueOutcome,
     SyncReport,
     TaskView,
-    WorkspaceGroup,
   } from "./lib/types";
+  import { sourceIconMarkup } from "./lib/source-icons";
 
   type ViewMode = "all" | "recent" | "archived";
-
-  interface FilteredGroup {
-    group: WorkspaceGroup;
-    primary: TaskView[];
-    older: TaskView[];
-  }
 
   interface ScanNotice {
     label: string;
@@ -28,7 +22,6 @@
     clock: "M12 7v5l3 2M21 12a9 9 0 1 1-9-9 9 9 0 0 1 9 9z",
     archive: "M4 7h16M6 7v12h12V7M9 11h6",
     refresh: "M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6",
-    chevron: "M9 6l6 6-6 6",
     folder: "M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z",
     bird: "M7 20c0-5.5 4.5-10 10-10h4l-3-4-5 2-4 4-3 6 1 2zM9 20h10",
   } as const;
@@ -70,8 +63,6 @@
   let workspaceFilter = $state<string | null>(null);
   let sourceFilter = $state<string | null>(null);
   let selectedKey = $state<string | null>(null);
-  let collapsedGroups = $state<Set<string>>(new Set());
-  let expandedOlder = $state<Set<string>>(new Set());
   let continuing = $state(false);
   let continueNotice = $state("");
   let showAllWorkspaces = $state(false);
@@ -115,29 +106,6 @@
 
   const canToggleWorkspaces = $derived(workspaceItems.length > WORKSPACE_VISIBLE_LIMIT);
 
-  const filteredGroups = $derived.by<FilteredGroup[]>(() => {
-    if (!payload) return [];
-    const filtered = Boolean(workspaceFilter || sourceFilter);
-    const groups: FilteredGroup[] = [];
-    for (const group of payload.workspaces) {
-      if (workspaceFilter && group.key !== workspaceFilter) continue;
-      let tasks = group.tasks.filter((task) => !task.is_child && !task.is_automation);
-      if (sourceFilter) tasks = tasks.filter((task) => task.source === sourceFilter);
-      if (view === "archived") {
-        tasks = tasks.filter((task) => task.source_archived);
-      } else {
-        tasks = tasks.filter((task) => !task.source_archived);
-      }
-      if (tasks.length === 0) continue;
-      const primary =
-        view === "all" && !filtered ? tasks.filter((task) => task.is_recent) : tasks;
-      const older =
-        view === "all" && !filtered ? tasks.filter((task) => !task.is_recent) : [];
-      groups.push({ group, primary, older });
-    }
-    return groups;
-  });
-
   const recentTasks = $derived.by(() => {
     if (!payload) return [] as TaskView[];
     const tasks: TaskView[] = [];
@@ -150,15 +118,16 @@
     return tasks.sort((left, right) => (right.updated_at ?? 0) - (left.updated_at ?? 0));
   });
 
-  const flatRecent = $derived(view === "recent");
-
-  const flatAllTasks = $derived.by(() => {
+  const flatTasks = $derived.by(() => {
+    if (view === "recent") return recentTasks;
     if (!payload) return [] as TaskView[];
+    const archived = view === "archived";
     const tasks: TaskView[] = [];
     for (const group of payload.workspaces) {
       if (workspaceFilter && group.key !== workspaceFilter) continue;
       for (const task of group.tasks) {
-        if (task.is_child || task.is_automation || task.source_archived) continue;
+        if (task.is_child || task.is_automation) continue;
+        if (task.source_archived !== archived) continue;
         if (sourceFilter && task.source !== sourceFilter) continue;
         tasks.push(task);
       }
@@ -166,21 +135,9 @@
     return tasks.sort((left, right) => (right.updated_at ?? 0) - (left.updated_at ?? 0));
   });
 
-  const flatTasks = $derived(
-    view === "recent" ? recentTasks : view === "all" ? flatAllTasks : ([] as TaskView[]),
-  );
+  const totalVisible = $derived(flatTasks.length);
 
-  const flatMode = $derived(view !== "archived");
-
-  const totalVisible = $derived(
-    flatMode
-      ? flatTasks.length
-      : filteredGroups.reduce((sum, item) => sum + item.primary.length + item.older.length, 0),
-  );
-
-  const hasVisibleTasks = $derived(
-    flatMode ? flatTasks.length > 0 : filteredGroups.length > 0,
-  );
+  const hasVisibleTasks = $derived(flatTasks.length > 0);
 
   const selected = $derived.by<TaskView | null>(() => {
     if (!payload || !selectedKey) return null;
@@ -277,20 +234,6 @@
     sourceFilter = sourceFilter === source ? null : source;
     workspaceFilter = null;
     view = "all";
-  }
-
-  function toggleGroup(key: string) {
-    const next = new Set(collapsedGroups);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    collapsedGroups = next;
-  }
-
-  function toggleOlder(key: string) {
-    const next = new Set(expandedOlder);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    expandedOlder = next;
   }
 
   function sourceColor(source: string): string {
@@ -495,6 +438,7 @@
           title={source.error ?? source.label}
           onclick={() => selectSource(source.source)}
         >
+          <span class="source-icon">{@html sourceIconMarkup(source.source)}</span>
           <span class="nav-label">{source.label}</span>
           <span class="nav-count">{source.task_count}</span>
           {#if source.error && source.status !== "unavailable"}
@@ -554,84 +498,13 @@
         <p>当前筛选下没有任务。</p>
         <p class="subtle">试试“全部任务”，或点击右上角刷新。</p>
       </div>
-    {:else if flatMode}
+    {:else}
       <div class="groups">
         <div class="flat-list">
           {#each flatTasks as task (task.key)}
             {@render taskRow(task, !workspaceFilter)}
           {/each}
         </div>
-      </div>
-    {:else}
-      <div class="groups">
-        {#each filteredGroups as entry (entry.group.key)}
-          <section class="group">
-            <button class="group-head" onclick={() => toggleGroup(entry.group.key)}>
-              <svg
-                class="chevron"
-                class:collapsed={collapsedGroups.has(entry.group.key)}
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path d={ICONS.chevron} />
-              </svg>
-              <span class="group-name">{entry.group.name}</span>
-              {#if entry.group.project_path}
-                <span class="group-path">{entry.group.project_path}</span>
-              {/if}
-              <span class="group-count">{entry.primary.length + entry.older.length}</span>
-            </button>
-
-            {#if !collapsedGroups.has(entry.group.key)}
-              <div class="task-rows">
-                {#each entry.primary as task (task.key)}
-                  {@render taskRow(task, false)}
-                {/each}
-
-                {#if entry.older.length > 0}
-                  <button class="older-toggle" onclick={() => toggleOlder(entry.group.key)}>
-                    <svg
-                      class="chevron small"
-                      class:collapsed={!expandedOlder.has(entry.group.key)}
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
-                      <path d={ICONS.chevron} />
-                    </svg>
-                    更早 {entry.older.length} 项
-                  </button>
-                  {#if expandedOlder.has(entry.group.key)}
-                    {#each entry.older as task (task.key)}
-                      <button
-                        class="task older"
-                        class:selected={selectedKey === task.key}
-                        onclick={() => selectTask(task.key)}
-                      >
-                        <span class="task-main">
-                          <span class="task-title">{task.title}</span>
-                          <span class="task-meta">
-                            <span>{task.source_label}</span>
-                            <span class="dot-sep">·</span>
-                            <span>{relativeTime(task.updated_at)}</span>
-                          </span>
-                        </span>
-                        <span class="status {statusClass(task)}">{statusLabel(task)}</span>
-                      </button>
-                    {/each}
-                  {/if}
-                {/if}
-              </div>
-            {/if}
-          </section>
-        {/each}
       </div>
     {/if}
   </main>

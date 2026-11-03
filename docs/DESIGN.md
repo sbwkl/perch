@@ -32,8 +32,8 @@
 - **形态**：Tauri v2 macOS app。MVP 只提供置顶操作，通过 Tauri command 只写 `overlay.db`；
   无本地 HTTP 服务、无云、无网络请求、无常驻 daemon。
 - **默认视图**：智能列表第一个是 **最近**（近 7 天，按最后更新时间倒序的平铺列表，workspace 作为
-  每行属性展示）；**全部任务** 按 **workspace/文件夹**分组，每个 workspace 内最近 7 天展开、
-  7 天以前折叠；源归档、子会话、自动化默认折叠。
+  每行属性展示）；**全部任务** 为全部非归档任务的平铺列表，**已归档** 同为平铺列表，均按最后更新
+  时间倒序；源归档任务只出现在已归档视图，子会话、自动化默认隐藏。
 - **明确的数据缺口**：Trae CN 当前无本地任务列表（仅可选 hook 事件），ChatGPT 桌面端无本地数据；
   MVP 不解密、不爬私有 API、不编造“已完成”状态；后续如要覆盖，按 §11.2 的 opt-in 规则单独评估。
 - **可选的伴生 CLI**：复用同一 Rust core，P2 提供 `perch-cli list/pin/doctor/export`，主形态仍是 app。
@@ -844,32 +844,30 @@ perch-cli export --output snapshot.html
 │  最近          │ ┌────────────────────────────┐ │ workspace             │
 │  全部任务      │ │ ★ Qoder 任务…  2h          │ │ 源状态 / todos        │
 │  已归档        │ └────────────────────────────┘ │ 最近活动 / session id │
-│               │ workspace › playground          │ resume 命令（只读）   │
-│               │  ☆ Qoder   任务…  2h           │ 项目路径              │
-│ Workspaces    │  ☆ Claude  任务…  昨天         │                      │
-│  playground   │  ▸ 更早 (5)                    │                      │
-│  article-…    │ workspace › article-…          │                      │
-│               │  ☆ Codex   任务…  3d           │                      │
-│ 来源           │  ▸ 更早 (2)                    │                      │
-│  Qoder        │                                │                      │
-│  Claude       │                                │                      │
-│  Codex        │                                │                      │
-│  OpenCode     │                                │                      │
-│  Kilo         │                                │                      │
+│               │ playground · Qoder · 2h    ☆   │ resume 命令（只读）   │
+│ Workspaces    │ article-… · Claude · 昨天  ☆   │ 项目路径              │
+│  playground   │ playground · Codex · 3d    ☆   │                      │
+│  article-…    │ playground · Kilo · 5d     ☆   │                      │
+│               │                                │                      │
+│ 来源           │                                │                      │
+│  q Qoder      │                                │                      │
+│  ✳ Claude     │                                │                      │
+│  ◎ Codex      │                                │                      │
+│  ■ OpenCode   │                                │                      │
+│  K Kilo       │                                │                      │
 └───────────────┴────────────────────────────────┴──────────────────────┘
 ```
 
 - **最近视图**：智能列表第一项；不按 workspace 分组，按 `updated_at` 倒序平铺，每行 meta 展示
   `workspace · source · 最近活动`，workspace 仅作为任务属性。
-- **默认分组**：全部任务按 workspace/文件夹分组，而不是按 agent 分组；同一 workspace 下混合显示各
-  agent 的任务，任务行只用 source 文本标签标识来源，不使用来源色点。点侧边栏某个来源时，
-  该来源的任务仍按 workspace 分组。
-- **时间窗口**：每个 workspace 内默认展开最近 7 天；7 天以前的折叠为“更早 (N)”；
-  只有更早任务的 workspace 默认整体折叠。时间以 `updated_at` 为准，缺失时用 `seen_at`。
-- **Global pinned**：任务列表顶部独立区域，始终展开，不受 workspace 分组、7 天窗口和筛选影响。
+- **平铺列表**：全部任务与已归档均按 `updated_at` 倒序平铺，不再按 workspace 分组，也不折叠
+  “更早”任务；每行 meta 为 `workspace · source · 最近活动`，按 workspace 过滤时省略重复的 workspace 名。
+- **时间窗口**：最近视图只显示最近 7 天；全部任务与已归档显示全部匹配任务。时间以 `updated_at`
+  为准，缺失时用 `seen_at`。
+- **Global pinned**：任务列表顶部独立区域，始终展开，不受视图、筛选影响。
 - **侧边栏**：智能列表（最近 / 全部任务 / 已归档）、Workspaces、来源。
   Workspaces 按组内最近活动倒序（同时间按名称）；来源固定按 Qoder、Claude Code、Codex、OpenCode、Kilo 排列。
-  来源项只显示名称与任务数，不显示状态色点；扫描出错时名称后显示红色 `!`，完整状态/错误通过悬停提示查看。
+  来源项显示各工具的品牌图标、名称与任务数；扫描出错时名称后显示红色 `!`，完整状态/错误通过悬停提示查看。
   标签和人工分组是后续能力，MVP 不显示空入口。
 - **Inspector**：只读展示标题、source、workspace、源状态、todos、最近活动、session id、
   resume 命令和项目路径；顶部保留一个来源色点作为界面中唯一的颜色来源标识。
@@ -884,11 +882,11 @@ perch-cli export --output snapshot.html
 
 - 单击行选中并在 Inspector 显示；双击只打开 Inspector，MVP 不执行主操作。
 - 置顶：点击星标立即写入 overlay；乐观更新，失败回滚并 toast。这是 MVP 唯一的任务写操作。
-- 分组与窗口：最近视图为平铺列表；全部任务按 workspace 分组，每个 workspace 内最近 7 天展开，
-  “更早 (N)”点击展开。
+- 视图与窗口：最近、全部任务、已归档均为按最近活动倒序的平铺列表，行内展示 workspace；
+  最近视图只取近 7 天，其余视图展示全部匹配任务。
 - 搜索：title / project / key 子串；中文直接匹配；输入即筛。MVP 不搜索 tag/note。
 - 筛选：来源多选、workspace、源状态、归档/子会话/自动化。
-- 排序：Global pinned 固定在最上方，其余按 workspace 分组后按最近活动排序；可切换创建时间/标题。
+- 排序：Global pinned 固定在最上方，其余按最近活动排序；可切换创建时间/标题。
 - 后续交互：状态、备注、标签、隐藏、重命名、复制 resume、打开项目、拖拽排序和分组。
 - 键盘：↑/↓ 选择，Enter 打开 Inspector，空格预览（后续）。
 
@@ -1116,7 +1114,7 @@ probe → models
 |---|---|---|
 | M1 | Rust core：五个 P0 采集器 + `cache.db` 快照 + `cargo test`；Tauri shell 显示只读任务列表 | 本机 300+ 任务可列出；源只读校验通过；`cargo tauri dev` 可开窗 |
 | M2 | `overlay.db`（仅 pin 字段）+ Tauri commands + Inspector Pin/Unpin | app 内完成 pin；重启后保留；源置顶不变；没有其他任务写操作 |
-| M3 | macOS 原生打磨：三栏/侧边栏/菜单/快捷键/workspace 分组 + 7 天窗口/签名跳过/全量对账/G 全源 probe（SQLite `data_version` + JSONL cursor）/打包 `.app`/`.dmg` | 双击 `.app` 可用；默认按 workspace 分组，近 7 天展开、更早折叠；扫描不阻塞 UI；任意源新任务/新信息数秒内出现；无外部请求 |
+| M3 | macOS 原生打磨：三栏/侧边栏/菜单/快捷键/平铺任务列表 + 7 天窗口/签名跳过/全量对账/G 全源 probe（SQLite `data_version` + JSONL cursor）/打包 `.app`/`.dmg` | 双击 `.app` 可用；默认平铺列表、行内展示 workspace，最近视图只取近 7 天；扫描不阻塞 UI；任意源新任务/新信息数秒内出现；无外部请求 |
 | M4 | 覆盖层扩展（人工状态、标签、备注、隐藏、重命名、复制 resume、打开项目）+ 置顶排序 + 跨 agent 分组 + 静态导出 | 后续操作可用；分组可筛选；导出可离线打开 |
 | M5 | usage-ledger 关联（P2）+ Trae hooks（P2）+ 伴生 CLI（可选） | Inspector 显示 token/credits，分轨标注 |
 
@@ -1143,7 +1141,7 @@ M1–M3 是核心价值；M4/M5 可按反馈调整顺序。
 | macOS 签名/公证 | 他人机器首次打开被拦 | 个人使用右键 Open；分发前 codesign/notarize |
 | Rust + 前端双栈成本 | 迭代慢于纯 Python | core 与 UI 解耦；先完成 M1/M2 再打磨 |
 | 快照库删除导致 overlay 丢失 | pin（以及后续备注）丢失 | 已拆 `cache.db` / `overlay.db`；MVP 可通过 Reveal Data Folder 手动备份 `overlay.db`，导出功能后续加入 |
-| 任务量大后 UI 卡顿 | 首屏慢 | 默认 workspace 分组 + 7 天窗口 + 更早折叠 + 前端本地筛选；P1 分页/虚拟滚动 |
+| 任务量大后 UI 卡顿 | 首屏慢 | 平铺列表 + 最近视图 7 天窗口 + 前端本地筛选；P1 分页/虚拟滚动 |
 
 ---
 
@@ -1158,8 +1156,8 @@ M1–M3 是核心价值；M4/M5 可按反馈调整顺序。
 5. **前端栈**：Svelte 5 + TypeScript + Vite。
 6. **MVP 操作范围**：**只做全局置顶/取消置顶**。人工状态、标签、备注、隐藏、重命名、复制 resume、
    打开项目目录、置顶排序、跨 agent 分组、静态导出全部后置，不在 M1–M3 实现。
-7. **默认视图**：按 workspace/文件夹分组；每个 workspace 内近 7 天展开，7 天以前折叠；
-   所有全局 pin 始终显示；源归档/子会话/自动化默认折叠；来源视图也按 workspace 分组。
+7. **默认视图**：任务列表平铺，行内展示 workspace；最近视图取近 7 天，全部任务/已归档展示全部；
+   所有全局 pin 始终显示；子会话/自动化默认隐藏，源归档任务只在已归档视图出现。
 8. **标题与正文**：MVP 只存标题等元数据；正文/摘要默认不落盘，后续按源 opt-in；
    标题默认显示源标题；如后续有隐私需求，可加 `title_mode=fallback` 开关（默认关闭）。
 9. **跨 agent 分组**：不进 M1–M3，后续版本做人工分组。

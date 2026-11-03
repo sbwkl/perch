@@ -194,6 +194,21 @@ button:focus-visible {
   opacity: 0.72;
 }
 
+.source-icon {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.source-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
 .nav-label {
   flex: 1;
   min-width: 0;
@@ -235,9 +250,6 @@ button:focus-visible {
   color: var(--text-secondary);
 }
 
-.source-item {
-  padding-left: 30px;
-}
 
 .source-warning {
   color: var(--danger);
@@ -387,80 +399,6 @@ kbd {
   padding: 4px 14px 30px;
 }
 
-.group {
-  margin-top: 6px;
-}
-
-.group-head {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 7px 8px;
-  border: none;
-  border-radius: 6px;
-  background: var(--pane);
-  color: var(--text-secondary);
-  cursor: pointer;
-  text-align: left;
-}
-
-.group-head:hover {
-  background: var(--hover);
-}
-
-.chevron {
-  width: 13px;
-  height: 13px;
-  flex: none;
-  color: var(--text-tertiary);
-  transform: rotate(90deg);
-  transition: transform 0.14s ease;
-}
-
-.chevron.collapsed {
-  transform: rotate(0deg);
-}
-
-.chevron.small {
-  width: 11px;
-  height: 11px;
-}
-
-.group-name {
-  font-size: 12.5px;
-  font-weight: 650;
-  color: var(--text);
-}
-
-.group-path {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 10px;
-  color: var(--text-tertiary);
-}
-
-.group-count {
-  margin-left: auto;
-  font-size: 10.5px;
-  color: var(--text-tertiary);
-  font-variant-numeric: tabular-nums;
-}
-
-.task-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: 1px 0 4px 12px;
-}
-
 .flat-list {
   display: flex;
   flex-direction: column;
@@ -489,9 +427,6 @@ kbd {
   background: var(--accent-soft);
 }
 
-.task.older {
-  opacity: 0.84;
-}
 
 .source-dot {
   width: 8px;
@@ -625,26 +560,6 @@ kbd {
 .status.idle {
   color: var(--text-tertiary);
   background: var(--hover);
-}
-
-.older-toggle {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  align-self: flex-start;
-  margin: 2px 0 2px 20px;
-  padding: 3px 8px;
-  border: none;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--text-tertiary);
-  font-size: 10.5px;
-  cursor: pointer;
-}
-
-.older-toggle:hover {
-  background: var(--hover);
-  color: var(--text-secondary);
 }
 
 .empty-state {
