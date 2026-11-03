@@ -203,10 +203,7 @@ impl ClaudeCollector {
         } else if let Some(title) = ai_title {
             (title, "ai")
         } else {
-            (
-                fallback_title(project_name.as_deref(), created_at),
-                "fallback",
-            )
+            (fallback_title(), "fallback")
         };
 
         let mut task = TaskSnapshot::new(SOURCE_CLAUDE, &session_id);

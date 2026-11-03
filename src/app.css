@@ -467,18 +467,6 @@ kbd {
   vertical-align: 1px;
 }
 
-.title-flag {
-  display: inline-block;
-  margin-left: 4px;
-  padding: 0 4px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  font-size: 9px;
-  font-weight: 400;
-  color: var(--text-tertiary);
-  vertical-align: 1px;
-}
-
 .task-meta {
   display: flex;
   align-items: center;
@@ -518,6 +506,19 @@ kbd {
 .mini-badge.danger {
   color: var(--danger);
   border-color: rgba(192, 57, 43, 0.35);
+}
+
+.pin-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+}
+
+.pin-badge svg {
+  width: 11px;
+  height: 11px;
+  display: block;
 }
 
 .status {

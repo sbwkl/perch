@@ -45,13 +45,10 @@ Claude Code 的本地数据没有会话完成/归档状态。Perch 不臆造状�
 子会话（Claude `subagents/`、OpenCode/Kilo `parent_id`、Qoder `side_chat`）和 Codex 自动化线程
 默认不进入主列表，避免任务碎片化。它们仍保存在快照里，详情面板可显示“子会话”“自动化”徽标。
 
-## 标题里的“临时标题”是什么意思？
+## 会话没有标题时显示什么？
 
-表示标题来自兜底值：
-
-- `临时标题`（provisional）：agent 自己给出的临时标题（如 Qoder 的 `provisionalTitle`）。
-- `回退标题`（fallback）：源没有标题时用 `未命名 · <project> · <date>` 生成。
-- `人工标题` / `AI 标题` / `源标题`：来源不同，均照抄源字段。
+显示 `新会话`。Perch 不会调用模型自行命名：OpenCode 的 `session_v2.title` 在部分会话里为空
+（标题生成没有发生或失败），Qoder 新会话也可能暂时没有正式标题，此时统一使用该占位标题。
 
 ## “源已删除”是什么意思？
 

@@ -53,7 +53,7 @@
 
 1. `title` 非空；若 `extra_json.titleSource` 存在则照抄（如 `custom` / `ai`）。
 2. `extra_json.provisionalTitle`，标记 `provisional`。
-3. `未命名 · <project> · <date>`，标记 `fallback`。
+3. `新会话`，标记 `fallback`。
 
 **状态推断**
 
@@ -100,7 +100,7 @@ Qoder App 已注册 `qoder://`，但不支持会话级 URL（`main.log` 报 `DEE
   的文件跳过。
 - 从 JSONL 中读取：`cwd`、`gitBranch`、`timestamp`、`type`、`message.model`、`isSidechain`。
 - `message_count` = 非 sidechain 的 user + assistant 记录数。
-- 标题：最后一条 `custom-title.customTitle` → 最后一条 `ai-title.aiTitle` → `未命名 · <project> · <date>`。
+- 标题：最后一条 `custom-title.customTitle` → 最后一条 `ai-title.aiTitle` → `新会话`。
 - 时间：首/末记录 timestamp，缺失用文件 mtime。
 
 **状态**
@@ -140,17 +140,22 @@ Claude Code 不提供会话完成/归档状态，统一为 `idle`，界面显示
 
 **读取内容**
 
-- 每个 rollout 只读**第一行** `session_meta`：`id`、`timestamp`、`cwd`、`originator`、`thread_source`、`model`。
-  不扫完整 rollout。
+- 每个 rollout 读第一行 `session_meta`：`id`、`timestamp`、`cwd`、`originator`、`thread_source`、`model`；
+  尾部 256 KB 用于最新事件时间与运行状态。不扫完整 rollout。
 - `session_index.jsonl` 提供 `id → thread_name` 与 `updated_at`。
 - `goals_1.sqlite` 提供 `thread_goals` 的 `objective`、`status`。
 - `.jsonl.zst` 不解析。
+
+**更新时间**
+
+`updated_at` 取 `session_index.updated_at`、rollout 尾部最后一条事件时间、`session_meta.timestamp`
+三者的最大值。`session_index.jsonl` 可能长期不更新，不能单独作为续用旧会话的时间依据。
 
 **标题优先级**
 
 1. `session_index.thread_name`。
 2. `thread_goals.objective`（截断 240 字符）。
-3. `未命名 · <project> · <date>`。
+3. `新会话`。
 
 **状态推断**
 

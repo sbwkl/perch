@@ -71,7 +71,7 @@ FROM chat_session_messages GROUP BY session_id;
 
 - 可作为 P0 任务源：会话、标题、项目、时间、归档/未读、模型、分支齐全。
 - 状态较薄：`chat_session_turn_states` 当前为空；默认显示 `idle`，不臆造完成状态。
-- 标题优先级：`title` → `extra_json.provisionalTitle` → fallback；`titleSource` 可用于标注标题来源。
+- 标题优先级：`title` → `extra_json.provisionalTitle` → `新会话`；`titleSource` 仅内部保留，不展示。
 - `scheduled_tasks` 是 Qoder 的定时任务，不是用户会话任务，**不纳入**本项目。
 
 ### 1.6 hooks（P2 相关，既有探测 2026-10-30）

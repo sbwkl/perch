@@ -3,7 +3,7 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use chrono::{DateTime, Local};
+use chrono::DateTime;
 use rusqlite::{Connection, OpenFlags};
 use serde_json::Value;
 
@@ -106,15 +106,8 @@ pub fn normalize_project_path(path: &str) -> String {
     expanded.trim_end_matches('/').to_owned()
 }
 
-pub fn fallback_title(project_name: Option<&str>, created_at: Option<f64>) -> String {
-    let project = project_name
-        .filter(|name| !name.is_empty())
-        .unwrap_or("未知项目");
-    let date = created_at
-        .and_then(|seconds| DateTime::from_timestamp(seconds as i64, 0))
-        .map(|dt| dt.with_timezone(&Local).format("%Y-%m-%d").to_string())
-        .unwrap_or_else(|| "未知日期".to_owned());
-    format!("未命名 · {project} · {date}")
+pub fn fallback_title() -> String {
+    "新会话".to_owned()
 }
 
 pub fn shell_cd_command(directory: Option<&str>, command: &str) -> Option<String> {

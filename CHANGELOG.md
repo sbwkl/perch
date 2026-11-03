@@ -5,6 +5,27 @@
 
 ## [Unreleased]
 
+### Added
+
+- Qoder 模型键映射为可读名称（如 `dfmodel` → `DeepSeek-Flash`），覆盖 19 个内置模型
+
+### Changed
+
+- 无标题会话统一显示「新会话」，不再拼接项目与日期
+- 源置顶任务在工作区内优先排序，列表改用图钉图标
+- 未关联项目的 workspace 固定排在最后
+- Kilo 来源图标改为官方像素风格
+- 应用图标按 macOS 图标网格重新导出，Dock 尺寸与系统图标一致
+
+### Removed
+
+- 不再展示标题来源（列表徽标与详情字段）
+- 详情面板在无待办时不再显示待办区块
+
+### Fixed
+
+- Codex 会话时间改为取 `session_index.jsonl`、rollout 最新活动时间与创建时间的最大值，续用旧会话后不再显示为创建日期
+
 ### Planned
 
 - `overlay.db` 与全局置顶（M2）

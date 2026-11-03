@@ -24,6 +24,7 @@
     refresh: "M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6",
     folder: "M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z",
     bird: "M7 20c0-5.5 4.5-10 10-10h4l-3-4-5 2-4 4-3 6 1 2zM9 20h10",
+    pin: "M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z",
   } as const;
 
   const SOURCE_COLORS: Record<string, string> = {
@@ -31,7 +32,7 @@
     claude: "#d97757",
     codex: "#ffffff",
     opencode: "#201d1d",
-    kilo: "#ffdc04",
+    kilo: "#ffdd00",
   };
 
   const SOURCE_LABELS: Record<string, string> = {
@@ -106,6 +107,11 @@
 
   const canToggleWorkspaces = $derived(workspaceItems.length > WORKSPACE_VISIBLE_LIMIT);
 
+  function compareTaskOrder(left: TaskView, right: TaskView): number {
+    if (left.source_pinned !== right.source_pinned) return left.source_pinned ? -1 : 1;
+    return (right.updated_at ?? 0) - (left.updated_at ?? 0);
+  }
+
   const recentTasks = $derived.by(() => {
     if (!payload) return [] as TaskView[];
     const tasks: TaskView[] = [];
@@ -115,7 +121,7 @@
         tasks.push(task);
       }
     }
-    return tasks.sort((left, right) => (right.updated_at ?? 0) - (left.updated_at ?? 0));
+    return tasks.sort(compareTaskOrder);
   });
 
   const flatTasks = $derived.by(() => {
@@ -132,7 +138,7 @@
         tasks.push(task);
       }
     }
-    return tasks.sort((left, right) => (right.updated_at ?? 0) - (left.updated_at ?? 0));
+    return tasks.sort(compareTaskOrder);
   });
 
   const totalVisible = $derived(flatTasks.length);
@@ -254,17 +260,6 @@
     return "idle";
   }
 
-  function titleSourceLabel(source: string): string {
-    const labels: Record<string, string> = {
-      custom: "人工标题",
-      ai: "AI 标题",
-      provisional: "临时标题",
-      fallback: "回退标题",
-      source: "源标题",
-    };
-    return labels[source] ?? source;
-  }
-
   function todoLabel(status: string): string {
     const labels: Record<string, string> = {
       pending: "待处理",
@@ -337,6 +332,12 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
+{#snippet pinIcon()}
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d={ICONS.pin} />
+  </svg>
+{/snippet}
+
 {#snippet taskRow(task: TaskView, showWorkspace: boolean)}
   <button
     class="task"
@@ -347,9 +348,6 @@
       <span class="task-title">
         {#if task.source_unread}<span class="unread-dot"></span>{/if}
         {task.title}
-        {#if task.title_source === "provisional" || task.title_source === "fallback"}
-          <span class="title-flag">{titleSourceLabel(task.title_source)}</span>
-        {/if}
       </span>
       <span class="task-meta">
         {#if showWorkspace}
@@ -364,7 +362,7 @@
         {#if task.todo_total > 0}
           <span class="todo-chip">{task.todo_done}/{task.todo_total}</span>
         {/if}
-        {#if task.source_pinned}<span class="mini-badge">源置顶</span>{/if}
+        {#if task.source_pinned}<span class="pin-badge" title="源置顶" aria-label="源置顶">{@render pinIcon()}</span>{/if}
         {#if task.source_missing}<span class="mini-badge danger">源已删除</span>{/if}
       </span>
     </span>
@@ -521,7 +519,6 @@
           <h2>{selected.title}</h2>
           <div class="tag-line">
             {#if selected.source_archived}<span class="badge">源归档</span>{/if}
-            {#if selected.source_pinned}<span class="badge">源置顶</span>{/if}
             {#if selected.source_unread}<span class="badge">未读</span>{/if}
             {#if selected.parent_key}<span class="badge">子会话</span>{/if}
             {#if selected.is_automation}<span class="badge">自动化</span>{/if}
@@ -551,16 +548,13 @@
             {#if selected.model}<dt>模型</dt><dd>{selected.model}</dd>{/if}
             {#if selected.git_branch}<dt>分支</dt><dd class="mono">{selected.git_branch}</dd>{/if}
             {#if selected.message_count !== null}<dt>消息数</dt><dd>{selected.message_count}</dd>{/if}
-            <dt>标题来源</dt><dd>{titleSourceLabel(selected.title_source)}</dd>
             {#if selected.status_raw}<dt>源状态</dt><dd class="mono">{selected.status_raw}</dd>{/if}
           </dl>
         </section>
 
-        <section class="detail-block">
-          <h3>待办 <span class="subtle">{selected.todo_done}/{selected.todo_total}</span></h3>
-          {#if selected.todos.length === 0}
-            <p class="subtle">暂无待办</p>
-          {:else}
+        {#if selected.todos.length > 0}
+          <section class="detail-block">
+            <h3>待办 <span class="subtle">{selected.todo_done}/{selected.todo_total}</span></h3>
             <ul class="todo-list">
               {#each selected.todos as todo (todo.item_id)}
                 <li class="todo {todo.status}" title={todoLabel(todo.status)}>
@@ -569,8 +563,8 @@
                 </li>
               {/each}
             </ul>
-          {/if}
-        </section>
+          </section>
+        {/if}
 
         {#if selected.resume_cmd}
           <section class="detail-block">

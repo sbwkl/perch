@@ -407,7 +407,7 @@ CREATE TABLE task_group_member (
 
 - 路径：`~/Library/Application Support/com.qoder.app.stable/main.sqlite`（`PERCH_QODER_DB` 可覆盖）。
 - 任务：`chat_sessions`，过滤 `deleted_at IS NULL`；`session_kind='side_chat'` 归为子任务（`parent_key` = `owner_session_id`）。
-- 标题优先级：`title`（非空）→ `extra_json.provisionalTitle` → `未命名 · <project> · <date>`。
+- 标题优先级：`title`（非空）→ `extra_json.provisionalTitle` → `新会话`。
 - `title_source`：`extra_json.titleSource`（custom/ai/fallback）存在时照抄；使用 provisional 时标 `provisional`。
 - 项目：`cwd`；`created_at/updated_at` 是 epoch ms，转为秒。
 - 状态：`archived` → `archived`；`unread` → `source_unread=1`；`chat_session_turn_states.status` 最新值

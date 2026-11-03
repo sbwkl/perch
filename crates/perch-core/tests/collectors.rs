@@ -363,6 +363,77 @@ fn codex_collector_dedupes_rollouts_and_applies_goal_status() {
     assert_eq!(before, after);
 }
 
+#[test]
+fn codex_updated_at_uses_latest_rollout_activity() {
+    fn epoch(value: &str) -> f64 {
+        chrono::DateTime::parse_from_rfc3339(value)
+            .unwrap()
+            .timestamp() as f64
+    }
+
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+
+    let resumed = root.join("sessions/2026/10/rollout-resumed.jsonl");
+    fs::create_dir_all(resumed.parent().unwrap()).unwrap();
+    fs::write(
+        &resumed,
+        concat!(
+            "{\"timestamp\":\"2026-10-01T08:00:00Z\",\"type\":\"session_meta\",\"payload\":{\
+             \"id\":\"resumed\",\"timestamp\":\"2026-10-01T08:00:00Z\",\"cwd\":\"/Users/x/work/beta\",\
+             \"originator\":\"Codex Desktop\",\"thread_source\":\"user\"}}\n",
+            "{\"timestamp\":\"2026-11-03T12:48:22Z\",\"type\":\"event_msg\",\
+             \"payload\":{\"type\":\"task_complete\"}}\n"
+        ),
+    )
+    .unwrap();
+
+    let unindexed = root.join("sessions/2026/10/rollout-unindexed.jsonl");
+    fs::write(
+        &unindexed,
+        concat!(
+            "{\"timestamp\":\"2026-10-08T08:00:00Z\",\"type\":\"session_meta\",\"payload\":{\
+             \"id\":\"unindexed\",\"timestamp\":\"2026-10-08T08:00:00Z\",\"cwd\":\"/Users/x/work/beta\",\
+             \"originator\":\"codex-tui\",\"thread_source\":\"user\"}}\n",
+            "{\"timestamp\":\"2026-10-09T09:30:00Z\",\"type\":\"event_msg\",\
+             \"payload\":{\"type\":\"task_complete\"}}\n"
+        ),
+    )
+    .unwrap();
+
+    fs::write(
+        root.join("session_index.jsonl"),
+        "{\"id\":\"resumed\",\"thread_name\":\"恢复的会话\",\"updated_at\":\"2026-10-02T00:00:00Z\"}\n",
+    )
+    .unwrap();
+
+    let result = CodexCollector::new(root.to_path_buf()).scan();
+    assert_eq!(result.status, SourceScanStatus::Ok, "{:?}", result.error);
+
+    let resumed = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "resumed")
+        .unwrap();
+    assert_eq!(resumed.created_at, Some(epoch("2026-10-01T08:00:00Z")));
+    assert_eq!(
+        resumed.updated_at,
+        Some(epoch("2026-11-03T12:48:22Z")),
+        "过期的 session_index 不能覆盖更新的 rollout 活动时间"
+    );
+
+    let unindexed = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "unindexed")
+        .unwrap();
+    assert_eq!(
+        unindexed.updated_at,
+        Some(epoch("2026-10-09T09:30:00Z")),
+        "没有索引条目时应使用最后一条事件时间，而不是会话创建时间"
+    );
+}
+
 fn source_home() -> String {
     std::env::var("PERCH_SOURCE_HOME")
         .or_else(|_| std::env::var("HOME"))

@@ -46,17 +46,26 @@ pub fn build_bootstrap(store: &CacheStore, now: f64) -> Result<BootstrapPayload>
     for group in &mut workspaces {
         group.tasks.sort_by(|left, right| {
             right
-                .updated_at
-                .unwrap_or(0.0)
-                .total_cmp(&left.updated_at.unwrap_or(0.0))
+                .source_pinned
+                .cmp(&left.source_pinned)
+                .then_with(|| {
+                    right
+                        .updated_at
+                        .unwrap_or(0.0)
+                        .total_cmp(&left.updated_at.unwrap_or(0.0))
+                })
                 .then_with(|| left.title.cmp(&right.title))
         });
     }
     workspaces.sort_by(|left, right| {
-        right
-            .last_activity_at
-            .unwrap_or(0.0)
-            .total_cmp(&left.last_activity_at.unwrap_or(0.0))
+        (left.key == NO_PROJECT_KEY)
+            .cmp(&(right.key == NO_PROJECT_KEY))
+            .then_with(|| {
+                right
+                    .last_activity_at
+                    .unwrap_or(0.0)
+                    .total_cmp(&left.last_activity_at.unwrap_or(0.0))
+            })
             .then_with(|| left.name.cmp(&right.name))
     });
 
