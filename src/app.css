@@ -264,6 +264,36 @@ button:focus-visible {
   color: var(--text-tertiary);
 }
 
+.sidebar-report {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 6px;
+  padding: 7px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.sidebar-report:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.sidebar-report:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.sidebar-report .report-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
 .sidebar-foot {
   margin-top: auto;
   padding: 8px 8px 2px;
@@ -292,7 +322,7 @@ button:focus-visible {
 }
 
 .head-text {
-  flex: 1 1 220px;
+  flex: 1 1 0;
   min-width: 0;
 }
 
@@ -307,13 +337,6 @@ button:focus-visible {
   margin: 4px 0 0;
   font-size: 11px;
   color: var(--text-tertiary);
-}
-
-.head-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
 }
 
 .refresh-button {

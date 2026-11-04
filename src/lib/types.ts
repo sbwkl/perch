@@ -130,7 +130,6 @@ export interface BootstrapPayload {
 
 export interface UsageReportOutcome {
   path: string;
-  source: string | null;
 }
 
 export interface SyncReport {

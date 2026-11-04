@@ -251,13 +251,8 @@
     reportNotice = "";
     reportFailed = false;
     try {
-      const outcome = await invoke<UsageReportOutcome>("open_usage_report", {
-        source: sourceFilter,
-      });
-      const label = outcome.source ? SOURCE_LABELS[outcome.source] ?? outcome.source : "";
-      reportNotice = label
-        ? `已生成 ${label} 用量报告并在浏览器打开`
-        : "已生成用量报告并在浏览器打开";
+      await invoke<UsageReportOutcome>("open_usage_report");
+      reportNotice = "已生成用量报告并在浏览器打开";
     } catch (error) {
       reportFailed = true;
       reportNotice = error instanceof Error ? error.message : String(error);
@@ -519,47 +514,22 @@
         <h2>{heading}</h2>
         <p>{subheading}</p>
       </div>
-      <div class="head-actions">
-        {#if payload?.usage}
-          <button
-            class="refresh-button"
-            onclick={() => void openUsageReport()}
-            disabled={reportOpen}
-            title={sourceFilter
-              ? `生成 ${SOURCE_LABELS[sourceFilter] ?? sourceFilter} 的 usage-ledger HTML 报告`
-              : "生成 usage-ledger HTML 报告并在浏览器打开"}
-          >
-            <svg
-              class="refresh-icon"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.8"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
-            </svg>
-            <span>{reportOpen ? "生成中" : "用量报告"}</span>
-          </button>
-        {/if}
-        <button class="refresh-button" onclick={() => refresh()} disabled={refreshing}>
-          <svg
-            class="refresh-icon"
-            class:spinning={refreshing}
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.8"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d={ICONS.refresh} />
-          </svg>
-          <span>{refreshing ? "扫描中" : "刷新"}</span>
-          <kbd>⌘R</kbd>
-        </button>
-      </div>
+      <button class="refresh-button" onclick={() => refresh()} disabled={refreshing}>
+        <svg
+          class="refresh-icon"
+          class:spinning={refreshing}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d={ICONS.refresh} />
+        </svg>
+        <span>{refreshing ? "扫描中" : "刷新"}</span>
+        <kbd>⌘R</kbd>
+      </button>
 
       {#if sourceUsage}
         <div class="usage-strip">
