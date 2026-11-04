@@ -26,6 +26,7 @@
     folder: "M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z",
     bird: "M7 20c0-5.5 4.5-10 10-10h4l-3-4-5 2-4 4-3 6 1 2zM9 20h10",
     pin: "M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z",
+    report: "M18 20V10M12 20V4M6 20v-6",
   } as const;
 
   const SOURCE_COLORS: Record<string, string> = {
@@ -525,11 +526,7 @@
             stroke-linecap="round"
             stroke-linejoin="round"
           >
-            <path
-              d={reportOpen
-                ? ICONS.refresh
-                : "M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"}
-            />
+            <path d={reportOpen ? ICONS.refresh : ICONS.report} />
           </svg>
         </button>
       {/if}
