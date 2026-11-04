@@ -267,14 +267,15 @@ button:focus-visible {
 .sidebar-report {
   display: flex;
   align-items: center;
-  gap: 7px;
-  margin: 0 6px;
-  padding: 7px 8px;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  padding: 0;
   border: none;
-  border-radius: 6px;
+  border-radius: 5px;
   background: transparent;
-  color: var(--text-secondary);
-  font-size: 11.5px;
+  color: var(--text-tertiary);
   cursor: pointer;
 }
 
@@ -284,7 +285,6 @@ button:focus-visible {
 }
 
 .sidebar-report:disabled {
-  opacity: 0.65;
   cursor: default;
 }
 
@@ -294,7 +294,15 @@ button:focus-visible {
   flex-shrink: 0;
 }
 
+.sidebar-report .report-icon.spinning {
+  animation: spin 0.9s linear infinite;
+}
+
 .sidebar-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   margin-top: auto;
   padding: 8px 8px 2px;
   border-top: 1px solid var(--border);

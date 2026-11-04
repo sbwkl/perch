@@ -505,7 +505,35 @@
       <p class="nav-note">Trae CN、ChatGPT 桌面暂无本地任务数据。</p>
     </nav>
 
-    <footer class="sidebar-foot">只读采集 · 不改动源数据</footer>
+    <footer class="sidebar-foot">
+      <span>只读采集 · 不改动源数据</span>
+      {#if payload?.usage}
+        <button
+          class="sidebar-report"
+          onclick={() => void openUsageReport()}
+          disabled={reportOpen}
+          title={reportOpen ? "正在生成用量报告" : "打开 usage-ledger 用量报告"}
+          aria-label={reportOpen ? "正在生成用量报告" : "打开 usage-ledger 用量报告"}
+        >
+          <svg
+            class="report-icon"
+            class:spinning={reportOpen}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path
+              d={reportOpen
+                ? ICONS.refresh
+                : "M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"}
+            />
+          </svg>
+        </button>
+      {/if}
+    </footer>
   </aside>
 
   <main class="list-pane">
