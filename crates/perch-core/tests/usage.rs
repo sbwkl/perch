@@ -321,4 +321,15 @@ fn missing_or_incompatible_database_is_ignored() {
     let broken = temp.path().join("broken.db");
     fs::write(&broken, "not a sqlite database").unwrap();
     assert!(UsageSnapshot::load(&broken, now).is_none());
+
+    // Without usage-ledger the integration disappears completely: no overview,
+    // no Inspector section, and no `usage` key in the serialized payload, so
+    // the UI never has to render an empty state for a tool that is not there.
+    let store = CacheStore::open_in_memory().unwrap();
+    seed_tasks(&store);
+    let snapshot = UsageSnapshot::load(&missing, now);
+    let payload = build_bootstrap_with_usage(&store, now, snapshot.as_ref()).unwrap();
+    assert!(payload.usage.is_none());
+    let json = serde_json::to_value(&payload).unwrap();
+    assert!(json.get("usage").is_none());
 }
