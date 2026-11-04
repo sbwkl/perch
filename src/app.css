@@ -292,7 +292,7 @@ button:focus-visible {
 }
 
 .head-text {
-  flex: 1 1 0;
+  flex: 1 1 220px;
   min-width: 0;
 }
 
@@ -307,6 +307,13 @@ button:focus-visible {
   margin: 4px 0 0;
   font-size: 11px;
   color: var(--text-tertiary);
+}
+
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .refresh-button {

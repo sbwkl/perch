@@ -993,6 +993,9 @@ perch-cli export --output snapshot.html
   - Qoder `usage_est` → “est”，单独标注，永不与真值/credits 相加
   - 选中单一来源时，顶部显示该来源的 7 天 token / credits / est 摘要；不同来源单位不同
     （Qoder 是 credits、CLI agent 是 token），不做跨来源汇总；不展示无法挂到任务的 activity
+  - 顶部“用量报告”按钮：调用 usage-ledger 的 `usage html`，报告写入 Perch 缓存目录后
+    用默认浏览器打开（等价 `usage html --open`）；选中来源时附带 `--source`，报告只含该来源。
+    与直接运行该命令一样，usage-ledger 可能会先自动同步自己的库；Perch 不参与写入
 - usage-ledger DB 不存在、表缺失或 schema 不兼容 → 自动隐藏这些区块，不影响任务总览。
 - 该集成只在 Inspector 与顶部摘要中展示，不改变任务快照表结构；按需查询/聚合，结果不落库。
 - usage-ledger 主库或 `-wal` mtime 变化时，Tauri 的 3 秒 probe 会刷新前端；Perch 本身不写该库。

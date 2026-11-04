@@ -91,6 +91,9 @@ Perch 是一个 macOS 桌面应用：Tauri 2 壳 + 纯 Rust core + Svelte 5 前�
    `source + day + project` 粒度，不挂到单个任务。
 5. Tauri 的 3 秒探测同时比较 `usage.db` 主文件与 `-wal` 的 mtime；usage-ledger
    单独同步后也会触发前端重新 `bootstrap`，但 Perch 不会主动写该库。
+6. “用量报告”走 usage-ledger 自己的 CLI：`usage html --output <Perch 缓存目录>`
+   （选中来源时加 `--source`），完成后用系统 `open` 打开生成的文件。Perch 只读该库，
+   HTML 与缓存目录属于 Perch 自身。
 
 ### 继续工作
 

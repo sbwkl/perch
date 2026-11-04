@@ -11,6 +11,8 @@
   与 est 估算，四轨分开展示、永不相加；选中单一来源时，顶部显示该来源的 7 天摘要
   （不同来源单位不同，不跨来源汇总）
 - usage-ledger 主库或 `-wal` 变化时自动刷新界面，不触发其 sync
+- 顶部“用量报告”按钮：调用 usage-ledger 的 `usage html` 生成 HTML 报告并在浏览器打开，
+  选中来源时按该来源过滤
 - Qoder 模型键映射为可读名称（如 `dfmodel` → `DeepSeek-Flash`），覆盖 19 个内置模型
 
 ### Changed

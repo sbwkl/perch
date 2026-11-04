@@ -128,6 +128,11 @@ export interface BootstrapPayload {
   usage?: UsageOverview;
 }
 
+export interface UsageReportOutcome {
+  path: string;
+  source: string | null;
+}
+
 export interface SyncReport {
   started_at: number;
   finished_at: number;

@@ -10,6 +10,11 @@ export async function invoke<T>(
   switch (command) {
     case "bootstrap":
       return demoPayload() as T;
+    case "open_usage_report":
+      return {
+        path: "/tmp/demo-usage-report.html",
+        source: (args?.source as string | null | undefined) ?? null,
+      } as T;
     case "refresh_sources": {
       const started = Date.now() / 1000;
       const payload = demoPayload();
