@@ -4,7 +4,7 @@ use std::path::Path;
 use perch_core::models::{SourceResult, TaskSnapshot};
 use perch_core::query::{build_bootstrap, build_bootstrap_with_usage};
 use perch_core::store::CacheStore;
-use perch_core::usage::UsageSnapshot;
+use perch_core::usage::{SourceUsageSummary, UsageOverview, UsageSnapshot};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
@@ -12,6 +12,14 @@ fn ts(value: &str) -> f64 {
     chrono::DateTime::parse_from_rfc3339(value)
         .unwrap()
         .timestamp() as f64
+}
+
+fn source<'a>(overview: &'a UsageOverview, id: &str) -> &'a SourceUsageSummary {
+    overview
+        .sources
+        .iter()
+        .find(|item| item.source == id)
+        .unwrap_or_else(|| panic!("missing usage summary for {id}"))
 }
 
 fn make_usage_db(path: &Path) {
@@ -148,11 +156,34 @@ fn usage_maps_sessions_and_keeps_tracks_separate() {
     let now = ts("2026-01-08T12:00:00Z");
     let snapshot = UsageSnapshot::try_load(&db, now).unwrap().unwrap();
 
-    assert_eq!(snapshot.summary.token_total, 1_207);
-    assert_eq!(snapshot.summary.token_7d, 200);
-    assert_eq!(snapshot.summary.credits_billable_7d, 2.5);
-    assert_eq!(snapshot.summary.est_total, 1_500);
-    assert_eq!(snapshot.summary.last_day.as_deref(), Some("2026-01-07"));
+    let claude_summary = source(&snapshot.overview, "claude");
+    assert_eq!(claude_summary.token_total, 1_197);
+    assert_eq!(claude_summary.token_7d, 190);
+    assert_eq!(claude_summary.credits_billable_7d, 0.0);
+    assert_eq!(claude_summary.est_total, 0);
+    assert_eq!(claude_summary.last_day.as_deref(), Some("2026-01-06"));
+
+    let codex_summary = source(&snapshot.overview, "codex");
+    assert_eq!(codex_summary.token_total, 10);
+    assert_eq!(codex_summary.token_7d, 10);
+    assert_eq!(codex_summary.last_day.as_deref(), Some("2026-01-06"));
+
+    // Credits and estimates belong to their own source and never appear as
+    // token truth.
+    let qoder_summary = source(&snapshot.overview, "qoder");
+    assert_eq!(qoder_summary.token_total, 0);
+    assert_eq!(qoder_summary.token_7d, 0);
+    assert_eq!(qoder_summary.credits_billable_7d, 2.5);
+    assert_eq!(qoder_summary.est_total, 1_200);
+    assert_eq!(qoder_summary.last_day.as_deref(), Some("2026-01-06"));
+
+    // `trae-cn.est` has no Perch tasks, so it never becomes a source summary.
+    assert!(snapshot
+        .overview
+        .sources
+        .iter()
+        .all(|item| item.source != "trae-cn"));
+    assert_eq!(snapshot.overview.sources.len(), 3);
 
     let claude = snapshot.task_usage("claude", "s1").unwrap();
     let token = claude.token.unwrap();
@@ -209,9 +240,14 @@ fn bootstrap_attaches_usage_and_reports_matches() {
         .all(|task| task.usage.is_none()));
 
     let payload = build_bootstrap_with_usage(&store, now, Some(&snapshot)).unwrap();
-    let summary = payload.usage.unwrap();
-    assert_eq!(summary.matched_tasks, 3);
-    assert_eq!(summary.token_7d, 200);
+    let overview = payload.usage.unwrap();
+    assert_eq!(overview.sources.len(), 3);
+    assert_eq!(source(&overview, "claude").matched_tasks, 1);
+    assert_eq!(source(&overview, "claude").token_7d, 190);
+    assert_eq!(source(&overview, "codex").matched_tasks, 1);
+    assert_eq!(source(&overview, "qoder").matched_tasks, 1);
+    assert_eq!(source(&overview, "qoder").credits_billable_7d, 2.5);
+    assert_eq!(source(&overview, "qoder").token_7d, 0);
 
     let mut found = 0;
     for group in &payload.workspaces {
@@ -264,7 +300,7 @@ fn legacy_est_schema_without_source_is_supported() {
     let est = snapshot.task_usage("qoder", "s1").unwrap().est.unwrap();
     assert_eq!(est.source, "qoder.est");
     assert_eq!(est.total, 340);
-    assert_eq!(snapshot.summary.est_total, 340);
+    assert_eq!(source(&snapshot.overview, "qoder").est_total, 340);
 }
 
 #[test]

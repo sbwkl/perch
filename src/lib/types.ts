@@ -42,15 +42,20 @@ export interface TaskUsage {
   est?: EstUsage;
 }
 
-export interface UsageSummary {
+export interface SourceUsageSummary {
+  source: string;
   token_total: number;
   token_7d: number;
   credits_billable_7d: number;
   est_total: number;
   last_day: string | null;
+  matched_tasks: number;
+}
+
+export interface UsageOverview {
   as_of: number | null;
   stale: boolean;
-  matched_tasks: number;
+  sources: SourceUsageSummary[];
 }
 
 export interface TaskView {
@@ -120,7 +125,7 @@ export interface BootstrapPayload {
   sources: SourceView[];
   workspaces: WorkspaceGroup[];
   counts: Counts;
-  usage?: UsageSummary;
+  usage?: UsageOverview;
 }
 
 export interface SyncReport {

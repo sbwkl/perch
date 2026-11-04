@@ -85,7 +85,8 @@ Perch 是一个 macOS 桌面应用：Tauri 2 壳 + 纯 Rust core + Svelte 5 前�
 2. `UsageSnapshot::try_load` 以只读连接读取 `usage_turn` / `usage_daily` /
    `usage_credit` / `usage_est`；库不存在、表缺失或 schema 不兼容时返回 `None`。
 3. `query::build_bootstrap_with_usage` 按 `(source, session_id)` 把用量挂到
-   `TaskView.usage`，并在 `BootstrapPayload.usage` 写入汇总。
+   `TaskView.usage`，并在 `BootstrapPayload.usage` 写入**按来源分组**的汇总：来源之间单位
+   不同（token / credits），因此只做来源内的 7 天聚合，不做跨来源合计。
 4. 三块用量分开展示：token 真值、credits（服务端计费）、est（估算）。activity 只有
    `source + day + project` 粒度，不挂到单个任务。
 5. Tauri 的 3 秒探测同时比较 `usage.db` 主文件与 `-wal` 的 mtime；usage-ledger

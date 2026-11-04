@@ -402,14 +402,43 @@ export function demoPayload(): BootstrapPayload {
       ).length,
     },
     usage: {
-      token_total: 24_860_000,
-      token_7d: 6_158_400,
-      credits_billable_7d: 18.42,
-      est_total: 1_216_000,
-      last_day: DEMO_DAY,
       as_of: NOW - 90,
       stale: false,
-      matched_tasks: TASKS.filter((task) => task.usage).length,
+      sources: [
+        {
+          source: "qoder",
+          token_total: 0,
+          token_7d: 0,
+          credits_billable_7d: 18.42,
+          est_total: 1_216_000,
+          last_day: DEMO_DAY,
+          matched_tasks: TASKS.filter(
+            (task) => task.source === "qoder" && task.usage,
+          ).length,
+        },
+        {
+          source: "claude",
+          token_total: 18_702_000,
+          token_7d: 6_158_400,
+          credits_billable_7d: 0,
+          est_total: 0,
+          last_day: DEMO_DAY,
+          matched_tasks: TASKS.filter(
+            (task) => task.source === "claude" && task.usage,
+          ).length,
+        },
+        {
+          source: "codex",
+          token_total: 6_158_400,
+          token_7d: 3_240_000,
+          credits_billable_7d: 0,
+          est_total: 0,
+          last_day: DEMO_DAY,
+          matched_tasks: TASKS.filter(
+            (task) => task.source === "codex" && task.usage,
+          ).length,
+        },
+      ],
     },
   };
 }

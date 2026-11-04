@@ -3,7 +3,7 @@ use std::hash::{Hash, Hasher};
 
 use serde::{Deserialize, Serialize};
 
-use crate::usage::{TaskUsage, UsageSummary};
+use crate::usage::{TaskUsage, UsageOverview};
 
 pub const SOURCE_QODER: &str = "qoder";
 pub const SOURCE_CLAUDE: &str = "claude";
@@ -329,7 +329,7 @@ pub struct BootstrapPayload {
     pub counts: Counts,
     /// Present only when usage-ledger's database was readable.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub usage: Option<UsageSummary>,
+    pub usage: Option<UsageOverview>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

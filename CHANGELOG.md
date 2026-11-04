@@ -8,7 +8,8 @@
 ### Added
 
 - 可选只读 usage-ledger 的 `usage.db`：按会话在 Inspector 展示 token 真值、Qoder credits
-  与 est 估算，顶部显示近 7 天汇总；四轨分开展示、永不相加
+  与 est 估算，四轨分开展示、永不相加；选中单一来源时，顶部显示该来源的 7 天摘要
+  （不同来源单位不同，不跨来源汇总）
 - usage-ledger 主库或 `-wal` 变化时自动刷新界面，不触发其 sync
 - Qoder 模型键映射为可读名称（如 `dfmodel` → `DeepSeek-Flash`），覆盖 19 个内置模型
 

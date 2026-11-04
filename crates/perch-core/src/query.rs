@@ -6,7 +6,7 @@ use crate::models::{
     TodoSnapshot, TodoView, WorkspaceGroup, ALL_SOURCES, RECENT_WINDOW_SECONDS,
 };
 use crate::store::CacheStore;
-use crate::usage::UsageSnapshot;
+use crate::usage::{UsageOverview, UsageSnapshot};
 
 pub fn build_bootstrap(store: &CacheStore, now: f64) -> Result<BootstrapPayload> {
     build_bootstrap_with_usage(store, now, None)
@@ -94,20 +94,24 @@ pub fn build_bootstrap_with_usage(
 fn attach_usage(
     workspaces: &mut [WorkspaceGroup],
     usage: Option<&UsageSnapshot>,
-) -> Option<crate::usage::UsageSummary> {
+) -> Option<UsageOverview> {
     let snapshot = usage?;
-    let mut matched = 0i64;
+    let mut matched: HashMap<String, i64> = HashMap::new();
     for group in workspaces.iter_mut() {
         for task in &mut group.tasks {
             if let Some(found) = snapshot.task_usage(&task.source, &task.source_id) {
-                matched += 1;
+                *matched.entry(task.source.clone()).or_default() += 1;
                 task.usage = Some(found);
             }
         }
     }
-    let mut summary = snapshot.summary.clone();
-    summary.matched_tasks = matched;
-    Some(summary)
+    let mut overview = snapshot.overview.clone();
+    for entry in &mut overview.sources {
+        entry.matched_tasks = matched.get(&entry.source).copied().unwrap_or(0);
+    }
+    // A source whose sessions no longer exist in Perch would only add noise.
+    overview.sources.retain(|entry| entry.matched_tasks > 0);
+    Some(overview)
 }
 
 fn task_view(

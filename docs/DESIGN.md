@@ -991,7 +991,8 @@ perch-cli export --output snapshot.html
   - token 真值（Claude/Codex/OpenCode/Kilo/Qoder 历史）→ “本任务 token”
   - Qoder `usage_credit`（billable / free credits、请求数）→ “本任务 credits”，单独标注
   - Qoder `usage_est` → “est”，单独标注，永不与真值/credits 相加
-  - 顶部近 7 天 token / credits / est 汇总；不展示无法挂到任务的 activity
+  - 选中单一来源时，顶部显示该来源的 7 天 token / credits / est 摘要；不同来源单位不同
+    （Qoder 是 credits、CLI agent 是 token），不做跨来源汇总；不展示无法挂到任务的 activity
 - usage-ledger DB 不存在、表缺失或 schema 不兼容 → 自动隐藏这些区块，不影响任务总览。
 - 该集成只在 Inspector 与顶部摘要中展示，不改变任务快照表结构；按需查询/聚合，结果不落库。
 - usage-ledger 主库或 `-wal` mtime 变化时，Tauri 的 3 秒 probe 会刷新前端；Perch 本身不写该库。

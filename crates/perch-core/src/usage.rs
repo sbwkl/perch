@@ -67,22 +67,33 @@ pub struct TaskUsage {
     pub est: Option<EstUsage>,
 }
 
+/// Totals for a single source. Units differ per source: token truth and
+/// estimates are token counts, credits are server-side billing. They are never
+/// combined, and sources are never summed because their units disagree.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct UsageSummary {
+pub struct SourceUsageSummary {
+    pub source: String,
     pub token_total: i64,
     pub token_7d: i64,
     pub credits_billable_7d: f64,
     pub est_total: i64,
     pub last_day: Option<String>,
+    /// Filled in by `query` once tasks are matched.
+    pub matched_tasks: i64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct UsageOverview {
     /// Database file mtime (seconds); WAL writes are included.
     pub as_of: Option<f64>,
     pub stale: bool,
-    pub matched_tasks: i64,
+    /// Only sources that matched at least one task, sorted by source id.
+    pub sources: Vec<SourceUsageSummary>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct UsageSnapshot {
-    pub summary: UsageSummary,
+    pub overview: UsageOverview,
     by_session: HashMap<(String, String), TaskUsage>,
 }
 
@@ -122,8 +133,7 @@ impl UsageSnapshot {
         }
 
         let cutoff = cutoff_day(now);
-        let mut summary = UsageSummary::default();
-        let mut last_day: Option<String> = None;
+        let mut by_source: HashMap<String, SourceUsageSummary> = HashMap::new();
         let mut tokens: HashMap<(String, String), TokenAccum> = HashMap::new();
 
         let archived_clause = if has_column(&conn, "usage_turn", "archived")? {
@@ -132,7 +142,7 @@ impl UsageSnapshot {
             ""
         };
         for row in load_turn_rows(&conn, "usage_turn", "1", archived_clause)? {
-            add_token_row(&mut tokens, &mut summary, &mut last_day, &cutoff, row);
+            add_token_row(&mut tokens, &mut by_source, &cutoff, row);
         }
         if table_exists(&conn, "usage_daily")?
             && has_columns(
@@ -153,7 +163,7 @@ impl UsageSnapshot {
             )?
         {
             for row in load_turn_rows(&conn, "usage_daily", "turn_count", "")? {
-                add_token_row(&mut tokens, &mut summary, &mut last_day, &cutoff, row);
+                add_token_row(&mut tokens, &mut by_source, &cutoff, row);
             }
         }
 
@@ -162,16 +172,20 @@ impl UsageSnapshot {
             by_session.entry(key).or_default().token = Some(accum.into_usage());
         }
 
-        load_credits(&conn, &mut by_session, &mut summary, &mut last_day, &cutoff)?;
-        load_estimates(&conn, &mut by_session, &mut summary, &mut last_day)?;
+        load_credits(&conn, &mut by_session, &mut by_source, &cutoff)?;
+        load_estimates(&conn, &mut by_session, &mut by_source)?;
 
         let as_of = newest_mtime(path);
-        summary.last_day = last_day;
-        summary.as_of = as_of;
-        summary.stale = as_of.is_none_or(|stamp| now - stamp > STALE_AFTER_SECONDS);
+        let stale = as_of.is_none_or(|stamp| now - stamp > STALE_AFTER_SECONDS);
+        let mut sources: Vec<SourceUsageSummary> = by_source.into_values().collect();
+        sources.sort_by(|a, b| a.source.cmp(&b.source));
 
         Ok(Some(Self {
-            summary,
+            overview: UsageOverview {
+                as_of,
+                stale,
+                sources,
+            },
             by_session,
         }))
     }
@@ -271,10 +285,21 @@ fn load_turn_rows(
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
 }
 
+fn source_entry<'a>(
+    by_source: &'a mut HashMap<String, SourceUsageSummary>,
+    source: &str,
+) -> &'a mut SourceUsageSummary {
+    by_source
+        .entry(source.to_owned())
+        .or_insert_with(|| SourceUsageSummary {
+            source: source.to_owned(),
+            ..Default::default()
+        })
+}
+
 fn add_token_row(
     tokens: &mut HashMap<(String, String), TokenAccum>,
-    summary: &mut UsageSummary,
-    last_day: &mut Option<String>,
+    by_source: &mut HashMap<String, SourceUsageSummary>,
     cutoff: &str,
     row: TokenRow,
 ) {
@@ -282,11 +307,12 @@ fn add_token_row(
         return;
     }
     let total = row.input + row.output + row.cache_read + row.cache_write + row.reasoning;
-    summary.token_total += total;
+    let entry = source_entry(by_source, &row.source);
+    entry.token_total += total;
     if row.day.as_str() >= cutoff {
-        summary.token_7d += total;
+        entry.token_7d += total;
     }
-    update_day(last_day, &row.day);
+    update_day(&mut entry.last_day, &row.day);
     tokens
         .entry((row.source.clone(), row.session_id.clone()))
         .or_default()
@@ -296,8 +322,7 @@ fn add_token_row(
 fn load_credits(
     conn: &Connection,
     by_session: &mut HashMap<(String, String), TaskUsage>,
-    summary: &mut UsageSummary,
-    last_day: &mut Option<String>,
+    by_source: &mut HashMap<String, SourceUsageSummary>,
     cutoff: &str,
 ) -> Result<()> {
     if !table_exists(conn, "usage_credit")?
@@ -338,10 +363,11 @@ fn load_credits(
         if day.is_empty() {
             continue;
         }
-        update_day(last_day, &day);
+        let qoder = source_entry(by_source, "qoder");
         if day.as_str() >= cutoff {
-            summary.credits_billable_7d += billable;
+            qoder.credits_billable_7d += billable;
         }
+        update_day(&mut qoder.last_day, &day);
         let entry = by_session
             .entry(("qoder".to_owned(), session))
             .or_default()
@@ -359,8 +385,7 @@ fn load_credits(
 fn load_estimates(
     conn: &Connection,
     by_session: &mut HashMap<(String, String), TaskUsage>,
-    summary: &mut UsageSummary,
-    last_day: &mut Option<String>,
+    by_source: &mut HashMap<String, SourceUsageSummary>,
 ) -> Result<()> {
     if !table_exists(conn, "usage_est")?
         || !has_columns(
@@ -405,13 +430,14 @@ fn load_estimates(
         if day.is_empty() {
             continue;
         }
-        summary.est_total += input + output;
-        update_day(last_day, &day);
-
         let base_source = source.strip_suffix(".est").unwrap_or(&source);
         if !PERCH_SOURCES.contains(&base_source) {
             continue;
         }
+        let totals = source_entry(by_source, base_source);
+        totals.est_total += input + output;
+        update_day(&mut totals.last_day, &day);
+
         let entry = by_session
             .entry((base_source.to_owned(), session))
             .or_default();

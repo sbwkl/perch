@@ -159,6 +159,15 @@
   const selectedCredits = $derived(selectedUsage?.credits ?? null);
   const selectedEst = $derived(selectedUsage?.est ?? null);
 
+  // Sources do not share a unit: Qoder reports credits plus estimated tokens,
+  // while the CLI agents report token truth. A mixed summary would be
+  // meaningless, so only show totals once a single source is selected.
+  const sourceUsage = $derived(
+    sourceFilter
+      ? (payload?.usage?.sources.find((item) => item.source === sourceFilter) ?? null)
+      : null,
+  );
+
   const heading = $derived.by(() => {
     if (workspaceFilter) {
       return workspaceItems.find((item) => item.key === workspaceFilter)?.name ?? "Workspace";
@@ -499,26 +508,34 @@
         <kbd>⌘R</kbd>
       </button>
 
-      {#if payload?.usage}
+      {#if sourceUsage}
         <div class="usage-strip">
-          <span class="usage-pill" title="usage-ledger token 真值（近 7 天）">
-            <strong>{formatTokens(payload.usage.token_7d)}</strong><span>tokens · 7d</span>
-          </span>
-          {#if payload.usage.credits_billable_7d > 0}
+          {#if sourceUsage.token_7d > 0}
+            <span class="usage-pill" title="usage-ledger token 真值（近 7 天）">
+              <strong>{formatTokens(sourceUsage.token_7d)}</strong><span>tokens · 7d</span>
+            </span>
+          {:else if sourceUsage.token_total > 0}
+            <span class="usage-pill" title="usage-ledger token 真值（全量）">
+              <strong>{formatTokens(sourceUsage.token_total)}</strong><span>tokens · 全量</span>
+            </span>
+          {/if}
+          {#if sourceUsage.credits_billable_7d > 0}
             <span class="usage-pill credits" title="Qoder 服务端计费，非 token">
-              <strong>{formatCredits(payload.usage.credits_billable_7d)}</strong><span>credits · 7d</span>
+              <strong>{formatCredits(sourceUsage.credits_billable_7d)}</strong><span>credits · 7d</span>
             </span>
           {/if}
-          {#if payload.usage.est_total > 0}
+          {#if sourceUsage.est_total > 0}
             <span class="usage-pill est" title="估算 token（全量），不可与真值相加">
-              <strong>{formatTokens(payload.usage.est_total)}</strong><span>est · 全量</span>
+              <strong>{formatTokens(sourceUsage.est_total)}</strong><span>est · 全量</span>
             </span>
           {/if}
-          <span class="usage-pill muted" class:stale={payload.usage.stale}>
-            {payload.usage.stale ? "用量可能已过期" : usageSnapshotLabel(payload.usage.as_of)}
+          <span class="usage-pill muted" class:stale={payload?.usage?.stale}>
+            {payload?.usage?.stale
+              ? "用量可能已过期"
+              : usageSnapshotLabel(payload?.usage?.as_of ?? null)}
           </span>
-          {#if payload.usage.matched_tasks > 0}
-            <span class="usage-pill muted">匹配 {payload.usage.matched_tasks} 个会话</span>
+          {#if sourceUsage.matched_tasks > 0}
+            <span class="usage-pill muted">匹配 {sourceUsage.matched_tasks} 个会话</span>
           {/if}
         </div>
       {/if}
