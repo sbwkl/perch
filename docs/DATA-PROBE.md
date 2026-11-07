@@ -168,7 +168,8 @@ history_mode, context_window
   - `codex-tui` = 25
   - `codex_exec` = 2
 - `thread_source` 分布：`user=67`、`automation=2`
-- 只读第一行即可拿到 id/cwd/originator/thread_source/created_at，实测 69 个文件 **0.02s**。
+- 首行 `session_meta` 即可拿到 id/cwd/originator/thread_source/created_at；另读尾部 256KB 取最新活动时间，
+  实测 69 个文件约 **0.09s**。
 - `.jsonl.zst` 归档探测时 0 个；实现仍应跳过并计数，避免未来漏读。
 
 ### 3.3 标题与状态
@@ -297,7 +298,7 @@ agent, model, time_created, time_updated, time_archived
 
 | 源 | 探测 | 结论 |
 |---|---|---|
-| ChatGPT 桌面 | `~/Library/Application Support/com.openai.chat` 不存在 | 无本地任务数据，不支持 |
+| ChatGPT 桌面 | `~/Library/Application Support/com.openai.chat` 不存在；桌面端 bundle 为 `com.openai.codex`，Codex 会话写入 `~/.codex` | 普通聊天云端存储、无本地任务数据；Codex 会话经 Codex 采集 |
 | WorkBuddy | `~/.workbuddy` 不存在 | 本机未安装，后续 adapter |
 
 ---
@@ -308,7 +309,7 @@ agent, model, time_created, time_updated, time_archived
 |---|---|---:|---|
 | Qoder | 183 会话 + 4,111 消息 | 0.08s（group by） | main.sqlite 约 259MB |
 | Claude | 14 个顶层 JSONL，约 25MB | 秒级以内 | 只解析所需字段 |
-| Codex | 69 个 rollout，只读第一行；38 条 index | 0.02s（第一行） | 不扫完整 rollout |
+| Codex | 69 个 rollout，只读首行 + 尾部 256KB | 0.09s（首行 + 尾部） | 不扫完整 rollout |
 | OpenCode | 107 会话；72 todo | 亚秒级 | WAL 只读 |
 | Kilo | 9 会话；10 todo；6 board | 亚秒级 | WAL 只读 |
 | Trae | 无本地任务 | — | 可选 hooks |

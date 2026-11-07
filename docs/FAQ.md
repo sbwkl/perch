@@ -33,10 +33,10 @@ Qoder 官方支持 `qoder://`，但不支持会话级深链。`qoder://chat/<id>
 Claude Code 的本地数据没有会话完成/归档状态。Perch 不臆造状态，统一显示“无显式状态”（内部为
 `idle`）。待办进度来自 `~/.claude/tasks/<sessionId>/`。
 
-## 为什么 Trae CN、ChatGPT 桌面没有任务？
+## 为什么 Trae CN 没有任务？ChatGPT 桌面会话去哪了？
 
 - Trae CN：本机 `state.vscdb` 只有模型配置，任务索引为空；没有稳定可读的本地任务列表。
-- ChatGPT 桌面：没有本地任务数据。
+- ChatGPT 桌面：仅 Codex 会话写入 `~/.codex`，计入 Codex 来源；普通聊天存于云端，没有本地任务数据。
 
 没有数据就不会显示在侧边栏。若未来出现稳定的只读数据源，会作为独立采集器加入（见 ROADMAP）。
 

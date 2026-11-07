@@ -26,7 +26,7 @@
 | OpenCode | SQLite | `opencode.db` | 旧表有，v2 暂无 | 激活 App 或终端 |
 | Kilo | SQLite | `kilo.db` | 旧表有 | 激活 App 或终端 |
 | Trae CN | — | 无可用本地任务 | — | 未支持 |
-| ChatGPT 桌面 | — | 无本地任务数据 | — | 未支持 |
+| ChatGPT 桌面 | — | 普通聊天无本地数据；Codex 会话经 Codex 采集 | — | 未支持 |
 
 ---
 
@@ -264,10 +264,11 @@ Kilo 的 schema 与旧版 OpenCode `session` 表同构（没有 `session_v2`、`
 | 来源 | 原因 |
 | --- | --- |
 | Trae CN | 本机 `state.vscdb` 只有模型配置，`ChatSessionStore.index` 为空；没有稳定可读的任务列表 |
-| ChatGPT 桌面 | 没有本地任务数据 |
+| ChatGPT 桌面 | 普通聊天无本地任务数据；Codex 会话写入 `~/.codex`，经 Codex 采集 |
 | WorkBuddy | 未安装，schema 未知；不猜测 |
 
-这些来源不会出现在侧边栏；如果未来出现稳定的只读数据源，会以独立采集器加入。
+Trae CN、WorkBuddy 不会出现在侧边栏；ChatGPT 桌面的 Codex 会话计入 Codex，普通聊天暂无本地数据。
+如果未来出现稳定的只读数据源，会以独立采集器加入。
 
 ---
 

@@ -37,7 +37,7 @@
 - **默认视图**：智能列表第一个是 **最近**（近 7 天，按最后更新时间倒序的平铺列表，workspace 作为
   每行属性展示）；**全部任务** 为全部非归档任务的平铺列表，**已归档** 同为平铺列表，均按最后更新
   时间倒序；源归档任务只出现在已归档视图，子会话、自动化默认隐藏。
-- **明确的数据缺口**：Trae CN 当前无本地任务列表（仅可选 hook 事件），ChatGPT 桌面端无本地数据；
+- **明确的数据缺口**：Trae CN 当前无本地任务列表（仅可选 hook 事件），ChatGPT 桌面普通聊天无本地数据（Codex 会话经 Codex 采集）；
   MVP 不解密、不爬私有 API、不编造“已完成”状态；后续如要覆盖，按 §11.2 的 opt-in 规则单独评估。
 - **可选的伴生 CLI**：复用同一 Rust core，P2 提供 `perch-cli list/pin/doctor/export`，主形态仍是 app。
 
@@ -81,10 +81,10 @@
 | OpenCode | ✅ `session_v2` 表 117 条（旧 `session` 107 条已冻结） | `title` | `directory` | `time_archived` / `time_busy` 运行中 | `todo` 表（v2 时代停更） | P0 |
 | Kilo | ✅ `session` 表 9 条（6 个顶层） | `title` | `directory` | `time_archived` | `todo` 表 | P0 |
 | Trae CN | ❌ 本地只有模型配置；`ChatSessionStore.index` 为空 | 无 | hook 事件可给 project | 无 | 无 | P2 可选（仅 hook 安装后） |
-| ChatGPT 桌面 | ❌ 无本地数据 | — | — | — | — | 明确不支持 |
+| ChatGPT 桌面 | ❌ 普通聊天无本地数据；Codex 会话经 Codex 采集 | — | — | — | — | 不单独支持 |
 | WorkBuddy | 本机未安装 | — | — | — | — | 后续 adapter |
 
-**关键结论**：P0 五个源已经能覆盖用户当前的主要任务；Trae/ChatGPT 的缺口必须在 Diagnostics 与 UI 中显式说明，
+**关键结论**：P0 五个源已经能覆盖用户当前的主要任务；Trae 与 ChatGPT 普通聊天的缺口必须在 Diagnostics 与 UI 中显式说明，
 不能让“没采到”看起来像“没有任务”。
 
 ---
@@ -443,7 +443,7 @@ CREATE TABLE task_group_member (
   - `~/.codex/session_index.jsonl`（id → thread_name、updated_at）
   - `~/.codex/goals_1.sqlite`（`thread_goals`：objective、status、tokens_used）
 - 任务：每个 rollout 的**第一行** `session_meta` 提供 `id`、`timestamp`、`cwd`、`originator`、`thread_source`；
-  只读第一行，不扫完整 rollout（本机 69 文件 0.02s）。`.jsonl.zst` 跳过并在 Diagnostics 计数。
+  另读尾部 256KB 取最新活动时间，不扫完整 rollout（本机 69 文件约 0.09s）。`.jsonl.zst` 跳过并在 Diagnostics 计数。
 - 标题：`session_index.thread_name` → `thread_goals.objective`（截断 240）→ fallback。
   本机 session_index 38 条、rollout 69 个，缺失标题属正常，Diagnostics 显示覆盖率。
 - 状态：归档目录 → `archived`；否则读 rollout 尾部 256KB，最后一条 `event_msg` 为 `task_started`
@@ -493,7 +493,7 @@ CREATE TABLE task_group_member (
 
 ### 6.7 ChatGPT 桌面 / WorkBuddy
 
-- ChatGPT 桌面端无本地任务数据：source 固定 `unavailable`，Diagnostics 与 UI 页脚说明。
+- ChatGPT 桌面普通聊天无本地任务数据；其 Codex 会话写入 `~/.codex`，由 Codex 采集器覆盖。
 - WorkBuddy 本机未安装：保留 adapter 位置，P2 实现；不在本设计中猜测其 schema。
 
 ### 6.8 子会话与自动化
@@ -644,7 +644,7 @@ FSEvents、hooks 留 P1/P2，不阻塞 M1–M3。
 | OpenCode | SQLite 只读长连接 | `data_version`；回退 `-wal` mtime/size | 新 `session_v2.id` | 标题/项目/模型/归档/busy 状态/活动 |
 | Kilo | SQLite 只读长连接 | 同 OpenCode | 新 `session.id` | 标题/项目/模型/归档/todo/活动 |
 | Trae CN | hooks 事件文件 | 事件文件 offset | 仅安装 hook 后的会话 | 事件聚合；无 hook 时 `unavailable` |
-| ChatGPT 桌面 / WorkBuddy | 无 | — | — | 明确不支持/未安装 |
+| ChatGPT 桌面 / WorkBuddy | 无（ChatGPT 普通聊天）；Codex 会话见 Codex | — | — | 普通聊天不单独支持 / WorkBuddy 未安装 |
 
 路径以 [DATA-PROBE.md](DATA-PROBE.md) 为准：Qoder `main.sqlite`；Claude `~/.claude/projects` +
 `~/.claude/tasks`；Codex `~/.codex/sessions` / `archived_sessions` / `session_index.jsonl` /
@@ -886,10 +886,10 @@ perch-cli export --output snapshot.html
 - 单击行选中并在 Inspector 显示；双击只打开 Inspector，MVP 不执行主操作。
 - 置顶：点击星标立即写入 overlay；乐观更新，失败回滚并 toast。这是 MVP 唯一的任务写操作。
 - 视图与窗口：最近、全部任务、已归档均为按最近活动倒序的平铺列表，行内展示 workspace；
-  最近视图只取近 7 天，其余视图展示全部匹配任务。
+  运行中任务固定最前，其后为源置顶任务；最近视图只取近 7 天，其余视图展示全部匹配任务。
 - 搜索：title / project / key 子串；中文直接匹配；输入即筛。MVP 不搜索 tag/note。
 - 筛选：来源多选、workspace、源状态、归档/子会话/自动化。
-- 排序：Global pinned 固定在最上方，其余按最近活动排序；可切换创建时间/标题。
+- 排序：运行中任务固定最前，其后为源置顶，再按最近活动排序；M2 的 Global pinned 固定在最上方；可切换创建时间/标题。
 - 后续交互：状态、备注、标签、隐藏、重命名、复制 resume、打开项目、拖拽排序和分组。
 - 键盘：↑/↓ 选择，Enter 打开 Inspector，空格预览（后续）。
 
@@ -1145,7 +1145,7 @@ M1–M3 是核心价值；M4/M5 可按反馈调整顺序。
 | Qoder schema 漂移 | 采集失败 | 只读 + 缺少表时 `schema drift` 错误，其他源继续 |
 | Qoder 无会话深链 | 不能精确跳回会话 | `qoder://chat/<id>` 被 Qoder 判为 `DEEP_LINK_ROUTE_UNSUPPORTED`（官方日志），只能激活 App。Codex `codex://threads/<id>` 是 Codex 自身生成的格式。OpenCode/Kilo App 同样不能定位会话，只能 CLI resume 或切 App 前台并提示限制 |
 | Kilo resume 未验证 | 不能一键恢复 | MVP 展示命令 + 项目路径；复制后续加入；不猜测参数 |
-| Trae/ChatGPT 无本地任务 | 总览不完整 | Diagnostics/UI 显式说明；Trae 可选 hook；MVP 不解密。后续按 §11.2 评估加密源/官方 API |
+| Trae/ChatGPT 普通聊天无本地任务 | 总览不完整 | Diagnostics/UI 显式说明；Trae 可选 hook；ChatGPT Codex 会话经 Codex 采集；MVP 不解密。后续按 §11.2 评估加密源/官方 API |
 | 标题含 prompt 片段 | 隐私顾虑 | MVP 只存标题元数据；正文能力默认关闭、opt-in；可切 fallback 模式 |
 | mtime 不可靠 | 增量漏数 | 签名只做跳过；启动/周期全量对账兜底；不把 mtime 当唯一真相 |
 | 源 ID 迁移 | overlay 孤立 | `source_missing=1` 保留 overlay；P1 提供人工 re-link，不自动合并 |

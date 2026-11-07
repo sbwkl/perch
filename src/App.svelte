@@ -503,7 +503,7 @@
           {/if}
         </button>
       {/each}
-      <p class="nav-note">Trae CN、ChatGPT 桌面暂无本地任务数据。</p>
+      <p class="nav-note">Trae CN 暂无本地任务数据；ChatGPT 桌面仅 Codex 会话可见。</p>
     </nav>
 
     <footer class="sidebar-foot">

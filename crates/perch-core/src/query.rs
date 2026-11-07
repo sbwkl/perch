@@ -54,9 +54,9 @@ pub fn build_bootstrap_with_usage(
     let mut workspaces: Vec<WorkspaceGroup> = groups.into_values().collect();
     for group in &mut workspaces {
         group.tasks.sort_by(|left, right| {
-            right
-                .source_pinned
-                .cmp(&left.source_pinned)
+            (right.status == "running")
+                .cmp(&(left.status == "running"))
+                .then_with(|| right.source_pinned.cmp(&left.source_pinned))
                 .then_with(|| {
                     right
                         .updated_at
