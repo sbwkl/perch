@@ -13,6 +13,8 @@
 - usage-ledger 主库或 `-wal` 变化时自动刷新界面，不触发其 sync
 - 侧边栏页脚的用量报告图标：调用 usage-ledger 的 `usage html` 生成 HTML 报告并在浏览器打开
 - Qoder 模型键映射为可读名称（如 `dfmodel` → `DeepSeek-Flash`），覆盖 19 个内置模型
+- 新增 Trae CN 来源：只读 usage-ledger 的 Trae hook 事件，按 session 聚合会话；
+  未安装 hook 时来源显示不可用，继续工作只激活 Trae CN App
 
 ### Changed
 

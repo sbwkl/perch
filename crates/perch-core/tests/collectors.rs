@@ -6,8 +6,9 @@ use perch_core::collectors::codex::CodexCollector;
 use perch_core::collectors::kilocode::KiloCollector;
 use perch_core::collectors::opencode::OpenCodeCollector;
 use perch_core::collectors::qoder::QoderCollector;
+use perch_core::collectors::trae_cn::TraeCnCollector;
 use perch_core::collectors::Collector;
-use perch_core::models::SourceScanStatus;
+use perch_core::models::{SourceScanStatus, SOURCE_TRAE_CN};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
@@ -774,4 +775,102 @@ fn opencode_and_kilo_collectors_share_session_schema() {
         kilo_top.resume_cmd.as_deref(),
         Some("cd '/Users/x/work/gamma' && kilo")
     );
+}
+
+#[test]
+fn trae_cn_collector_aggregates_hook_events() {
+    let temp = TempDir::new().unwrap();
+    let events = temp.path().join("trae-cn");
+    fs::create_dir_all(&events).unwrap();
+    let first = events.join("events-2026-11-06.jsonl");
+    fs::write(
+        &first,
+        concat!(
+            "{\"v\":1,\"uid\":\"u1\",\"ts\":1700000000.0,\"event\":\"Stop\",\"session\":\"sid_a\",\"project\":\"alpha\",\"tool\":\"Edit\"}\n",
+            "{\"v\":1,\"uid\":\"u2\",\"ts\":1700000100.0,\"event\":\"Stop\",\"session\":\"sid_a\",\"project\":\"alpha\",\"model\":\"glm-5\"}\n",
+            "{\"v\":1,\"uid\":\"u3\",\"ts\":1700000200.0,\"event\":\"Stop\",\"session\":\"sid_b\",\"project\":\"beta\"}\n",
+            "{\"v\":1,\"uid\":\"u4\",\"ts\":1700000300.0,\"event\":\"Stop\",\"session\":\"unknown\",\"project\":\"beta\"}\n",
+        ),
+    )
+    .unwrap();
+    let second = events.join("events-2026-11-07.jsonl");
+    fs::write(
+        &second,
+        "{\"v\":1,\"uid\":\"u5\",\"ts\":1700000400.0,\"event\":\"Stop\",\"session\":\"sid_a\",\"project\":\"gamma\",\"model\":\"doubao-seed\"}\n",
+    )
+    .unwrap();
+    let before = fs::read_to_string(&first).unwrap();
+
+    let result = TraeCnCollector::new(events.clone()).scan();
+
+    assert_eq!(result.status, SourceScanStatus::Ok);
+    assert_eq!(result.source, SOURCE_TRAE_CN);
+    assert_eq!(result.files_seen, 2);
+    assert_eq!(result.probe_kind, "file_tree");
+    assert!(result.error.is_none());
+    assert_eq!(result.tasks.len(), 2, "unknown session is skipped");
+
+    let alpha = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sid_a")
+        .unwrap();
+    assert_eq!(alpha.title, "新会话");
+    assert_eq!(alpha.title_source, "fallback");
+    assert_eq!(alpha.project_name.as_deref(), Some("gamma"));
+    assert_eq!(alpha.created_at, Some(1_700_000_000.0));
+    assert_eq!(alpha.updated_at, Some(1_700_000_400.0));
+    assert_eq!(alpha.model.as_deref(), Some("doubao-seed"));
+    assert_eq!(alpha.status_source.as_deref(), Some("idle"));
+    assert_eq!(alpha.agent_kind.as_deref(), Some("desktop"));
+    assert!(alpha.project_path.is_none());
+
+    let beta = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sid_b")
+        .unwrap();
+    assert_eq!(beta.project_name.as_deref(), Some("beta"));
+    assert_eq!(beta.created_at, Some(1_700_000_200.0));
+    assert_eq!(beta.updated_at, Some(1_700_000_200.0));
+    assert!(beta.model.is_none());
+
+    assert_eq!(result.tasks[0].source_id, "sid_a", "newest session first");
+    assert_eq!(fs::read_to_string(&first).unwrap(), before);
+}
+
+#[test]
+fn trae_cn_collector_reports_missing_hook_directory() {
+    let temp = TempDir::new().unwrap();
+    let result = TraeCnCollector::new(temp.path().join("missing")).scan();
+
+    assert_eq!(result.status, SourceScanStatus::Unavailable);
+    assert_eq!(result.probe_kind, "file_tree");
+    assert!(result.tasks.is_empty());
+    assert_eq!(result.files_seen, 0);
+    assert!(result
+        .error
+        .as_deref()
+        .is_some_and(|error| error.contains("usage hooks install trae-cn")));
+}
+
+#[test]
+fn trae_cn_collector_reports_partial_on_bad_lines() {
+    let temp = TempDir::new().unwrap();
+    let events = temp.path().join("trae-cn");
+    fs::create_dir_all(&events).unwrap();
+    fs::write(
+        events.join("events-2026-11-07.jsonl"),
+        concat!(
+            "{\"ts\":1700000000.0,\"session\":\"sid_a\",\"project\":\"alpha\"}\n",
+            "{\"ts\":1700000100.0,\"session\":\n",
+        ),
+    )
+    .unwrap();
+
+    let result = TraeCnCollector::new(events).scan();
+
+    assert_eq!(result.status, SourceScanStatus::Partial);
+    assert_eq!(result.tasks.len(), 1);
+    assert!(result.error.is_some());
 }

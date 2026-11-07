@@ -35,6 +35,7 @@
     codex: "#ffffff",
     opencode: "#201d1d",
     kilo: "#ffdd00",
+    "trae-cn": "#32f08c",
   };
 
   const SOURCE_LABELS: Record<string, string> = {
@@ -43,6 +44,7 @@
     codex: "Codex",
     opencode: "OpenCode",
     kilo: "Kilo",
+    "trae-cn": "Trae CN",
   };
 
   const STATUS_LABELS: Record<string, string> = {
@@ -503,7 +505,7 @@
           {/if}
         </button>
       {/each}
-      <p class="nav-note">Trae CN 暂无本地任务数据；ChatGPT 桌面仅 Codex 会话可见。</p>
+      <p class="nav-note">Trae CN 需安装 usage-ledger hook 后显示会话；ChatGPT 桌面仅 Codex 会话可见。</p>
     </nav>
 
     <footer class="sidebar-foot">

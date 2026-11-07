@@ -37,7 +37,7 @@
 - **默认视图**：智能列表第一个是 **最近**（近 7 天，按最后更新时间倒序的平铺列表，workspace 作为
   每行属性展示）；**全部任务** 为全部非归档任务的平铺列表，**已归档** 同为平铺列表，均按最后更新
   时间倒序；源归档任务只出现在已归档视图，子会话、自动化默认隐藏。
-- **明确的数据缺口**：Trae CN 当前无本地任务列表（仅可选 hook 事件），ChatGPT 桌面普通聊天无本地数据（Codex 会话经 Codex 采集）；
+- **明确的数据缺口**：Trae CN 的会话列表在服务端、本地 agent 库加密，只能通过 usage-ledger hook 事件补齐（需安装 hook）；ChatGPT 桌面普通聊天无本地数据（Codex 会话经 Codex 采集）；
   MVP 不解密、不爬私有 API、不编造“已完成”状态；后续如要覆盖，按 §11.2 的 opt-in 规则单独评估。
 - **可选的伴生 CLI**：复用同一 Rust core，P2 提供 `perch-cli list/pin/doctor/export`，主形态仍是 app。
 
@@ -80,11 +80,11 @@
 | Codex | ✅ 69 个 rollout + 38 条 `session_index` | `thread_name` / goal objective | session_meta `cwd` | `thread_goals.status`（当前 0 行；有 goal 时可用） | goal objective | P0 |
 | OpenCode | ✅ `session_v2` 表 117 条（旧 `session` 107 条已冻结） | `title` | `directory` | `time_archived` / `time_busy` 运行中 | `todo` 表（v2 时代停更） | P0 |
 | Kilo | ✅ `session` 表 9 条（6 个顶层） | `title` | `directory` | `time_archived` | `todo` 表 | P0 |
-| Trae CN | ❌ 本地只有模型配置；`ChatSessionStore.index` 为空 | 无 | hook 事件可给 project | 无 | 无 | P2 可选（仅 hook 安装后） |
+| Trae CN | ✅ usage-ledger hook 事件（需安装 hook） | 无（fallback 新会话） | hook 只给 basename | 无（idle） | 无 | P2（已实现） |
 | ChatGPT 桌面 | ❌ 普通聊天无本地数据；Codex 会话经 Codex 采集 | — | — | — | — | 不单独支持 |
 | WorkBuddy | 本机未安装 | — | — | — | — | 后续 adapter |
 
-**关键结论**：P0 五个源已经能覆盖用户当前的主要任务；Trae 与 ChatGPT 普通聊天的缺口必须在 Diagnostics 与 UI 中显式说明，
+**关键结论**：P0 五个源加上 Trae CN hook 源已经能覆盖用户当前的主要任务；ChatGPT 普通聊天的缺口必须在 Diagnostics 与 UI 中显式说明，
 不能让“没采到”看起来像“没有任务”。
 
 ---
@@ -480,15 +480,22 @@ CREATE TABLE task_group_member (
   **不猜测命令**。
 - 本机：9 个会话 / 6 个顶层 / 2 个归档。
 
-### 6.6 Trae CN（`trae-cn`，P2 可选）
+### 6.6 Trae CN（`trae-cn`，hook 源已实现）
 
-- 本机 `state.vscdb` 只有模型配置；`chat.ChatSessionStore.index` 为 `{"version":1,"entries":{}}`；
-  无 hooks 配置。**结论：当前没有可用的本地任务列表。**
-- 可选方案：复用 usage-ledger 已安装的 Trae hooks 事件
+- 本地 `state.vscdb` 只有模型配置；`chat.ChatSessionStore.index` 为 `{"version":1,"entries":{}}`；
+  agent 数据库 `ModularData/ai-agent/database.db` 是加密 SQLite，会话列表在服务端。
+  **结论：没有可直接读取的本地任务列表。**
+- 已实现：只读 usage-ledger 的 Trae hooks 事件
   （`~/.local/share/usage-ledger/trae-cn/events-*.jsonl`，字段 `session/project/ts/model`），
-  聚合成会话任务。只有安装 hook 之后的会话可见，且没有标题/归档/状态；标题用 `Trae CN 会话 · <project> · <date>`，
-  后续可用人工重命名能力覆盖。未安装时 source 状态为 `unavailable`，Diagnostics 说明。
-- MVP 不解密 Trae 的加密库、不调用私有 API；若后续要覆盖 Trae，先做只读可行性验证（加密方式、schema 稳定性、升级频率、失败隔离），再决定是否实现。
+  按 `session` 聚合成会话任务。`created_at` / `updated_at` 取最早 / 最晚 `ts`，
+  `project` / `model` 取时间最晚的非空值；`session = "unknown"` 的行跳过。
+- 只有安装 hook 之后的会话可见，且没有标题、归档、状态和待办：
+  标题统一 fallback `新会话`，状态统一 `idle`，`project` 只作为 workspace 名（不伪造路径），
+  `agent_kind = desktop`。继续工作只激活 `cn.trae.app`，不使用未确认的深链。
+- 未安装 hook 时 source 状态为 `unavailable`，Diagnostics 提示
+  `usage hooks install trae-cn --scope global`。
+- MVP 不解密 Trae 的加密库、不调用私有 API；若后续要覆盖历史会话，先做只读可行性验证
+  （加密方式、schema 稳定性、升级频率、失败隔离），再决定是否实现。
   该能力默认关闭，启用时在 Diagnostics 明确标注数据来源与风险（§11.2）。
 
 ### 6.7 ChatGPT 桌面 / WorkBuddy
@@ -643,13 +650,13 @@ FSEvents、hooks 留 P1/P2，不阻塞 M1–M3。
 | Codex | JSONL + SQLite | rollout/archive 清单、`session_index.jsonl` size/offset、`goals_1.sqlite` `data_version` | 新 rollout | index 新行（标题/更新时间）、goal 状态；归档移动=归档，不是删除 |
 | OpenCode | SQLite 只读长连接 | `data_version`；回退 `-wal` mtime/size | 新 `session_v2.id` | 标题/项目/模型/归档/busy 状态/活动 |
 | Kilo | SQLite 只读长连接 | 同 OpenCode | 新 `session.id` | 标题/项目/模型/归档/todo/活动 |
-| Trae CN | hooks 事件文件 | 事件文件 offset | 仅安装 hook 后的会话 | 事件聚合；无 hook 时 `unavailable` |
+| Trae CN | hooks 事件文件 | `events-*.jsonl` 文件数 + 最新 mtime | 仅安装 hook 后的会话 | 事件聚合；无 hook 时 `unavailable` |
 | ChatGPT 桌面 / WorkBuddy | 无（ChatGPT 普通聊天）；Codex 会话见 Codex | — | — | 普通聊天不单独支持 / WorkBuddy 未安装 |
 
 路径以 [DATA-PROBE.md](DATA-PROBE.md) 为准：Qoder `main.sqlite`；Claude `~/.claude/projects` +
 `~/.claude/tasks`；Codex `~/.codex/sessions` / `archived_sessions` / `session_index.jsonl` /
 `goals_1.sqlite`；OpenCode `~/.local/share/opencode/opencode.db`；Kilo `~/.local/share/kilo/kilo.db`；
-Trae hooks 事件目录。
+Trae `~/.local/share/usage-ledger/trae-cn/events-*.jsonl`。
 
 **增量读取**：
 

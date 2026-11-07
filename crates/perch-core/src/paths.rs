@@ -23,6 +23,7 @@ pub struct SourcePaths {
     pub opencode_db: PathBuf,
     pub opencode_stable_db: PathBuf,
     pub kilo_db: PathBuf,
+    pub trae_cn_events_dir: PathBuf,
 }
 
 impl SourcePaths {
@@ -40,6 +41,9 @@ impl SourcePaths {
             opencode_stable_db: env_path("PERCH_OPENCODE_STABLE_DB")
                 .unwrap_or_else(|| data_dir.join("opencode/opencode-stable.db")),
             kilo_db: env_path("PERCH_KILO_DB").unwrap_or_else(|| data_dir.join("kilo/kilo.db")),
+            trae_cn_events_dir: env_path("PERCH_TRAE_CN_EVENTS_DIR")
+                .or_else(|| env_path("USAGE_LEDGER_HOME").map(|home| home.join("trae-cn")))
+                .unwrap_or_else(|| data_dir.join("usage-ledger/trae-cn")),
             home,
         }
     }

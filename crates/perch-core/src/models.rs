@@ -10,13 +10,15 @@ pub const SOURCE_CLAUDE: &str = "claude";
 pub const SOURCE_CODEX: &str = "codex";
 pub const SOURCE_OPENCODE: &str = "opencode";
 pub const SOURCE_KILO: &str = "kilo";
+pub const SOURCE_TRAE_CN: &str = "trae-cn";
 
-pub const ALL_SOURCES: [&str; 5] = [
+pub const ALL_SOURCES: [&str; 6] = [
     SOURCE_QODER,
     SOURCE_CLAUDE,
     SOURCE_CODEX,
     SOURCE_OPENCODE,
     SOURCE_KILO,
+    SOURCE_TRAE_CN,
 ];
 
 pub fn source_label(source: &str) -> &'static str {
@@ -26,6 +28,7 @@ pub fn source_label(source: &str) -> &'static str {
         SOURCE_CODEX => "Codex",
         SOURCE_OPENCODE => "OpenCode",
         SOURCE_KILO => "Kilo",
+        SOURCE_TRAE_CN => "Trae CN",
         _ => "未知来源",
     }
 }

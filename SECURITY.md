@@ -38,6 +38,9 @@ todo 的 subject、状态、置顶/未读标志、恢复命令。用量块额外
 会话 ID、模型、日期、token / credits / est 计数；这些值不写入 `cache.db`，只随
 `bootstrap` 返回给前端。
 
+Trae CN 只读 usage-ledger hook 事件中的 `session`、`ts`、`project`（basename）与 `model`；
+`tool`、`tool_use_id`、`loop`、`chars_in`、`chars_out` 等字段不读取、不存储。
+
 **不读取**：消息正文、prompt、assistant 输出、tool 输入/输出、附件、思考过程、账号凭据或密钥。
 
 缓存位置：`~/Library/Application Support/app.perch.desktop/cache.db`。数据库不加密，

@@ -25,7 +25,7 @@
 | Codex | JSONL + SQLite | `sessions/`、`archived_sessions/`、`session_index.jsonl`、`goals_1.sqlite` | 无（goal 状态） | `codex://threads/<id>` 或终端 |
 | OpenCode | SQLite | `opencode.db` | 旧表有，v2 暂无 | 激活 App 或终端 |
 | Kilo | SQLite | `kilo.db` | 旧表有 | 激活 App 或终端 |
-| Trae CN | — | 无可用本地任务 | — | 未支持 |
+| Trae CN | usage-ledger hooks JSONL | `trae-cn/events-*.jsonl` | 无 | 激活 App |
 | ChatGPT 桌面 | — | 普通聊天无本地数据；Codex 会话经 Codex 采集 | — | 未支持 |
 
 ---
@@ -259,15 +259,65 @@ Kilo 的 schema 与旧版 OpenCode `session` 表同构（没有 `session_v2`、`
 
 ---
 
+## Trae CN
+
+**路径**
+
+```
+~/.local/share/usage-ledger/trae-cn/events-<date>.jsonl
+```
+
+覆盖变量：`PERCH_TRAE_CN_EVENTS_DIR`；设置 `USAGE_LEDGER_HOME` 时跟随其目录。
+
+**来源说明**
+
+Trae CN 没有可读的本地会话索引：`state.vscdb` 只有模型配置与当前窗口状态，
+agent 数据库 `ModularData/ai-agent/database.db` 是加密 SQLite，会话列表在服务端。
+Perch 不接触加密库，只读取 usage-ledger 的 Trae hook 事件——它由 Trae 的
+`UserPromptSubmit` / `Stop` hook 追加，写入纯文本元数据，不包含消息正文。
+
+安装 hook 后才会出现会话；未安装时该来源显示 `unavailable`，提示执行：
+
+```bash
+usage hooks install trae-cn --scope global
+```
+
+**读取内容**
+
+- 枚举 `events-*.jsonl`，逐行只读 `session`、`ts`、`project`、`model`。
+- `tool`、`tool_use_id`、`loop`、`chars_in`、`chars_out` 等字段不读取、不存储。
+- `session = "unknown"` 的行跳过；无法解析的行计入 warning，来源降级为 `partial`。
+- 按 `session` 聚合：`created_at` 取最早 `ts`，`updated_at` 取最晚 `ts`，
+  `project` / `model` 取时间最晚的非空值。
+
+**标题 / 状态**
+
+- hook 不记录标题，统一显示 `新会话`（`title_source = fallback`）。
+- hook 不提供状态语义，统一 `idle`，不臆造运行中或完成状态。
+- `project` 只是 hook 记录的 basename，因此写入 `project_name`，没有 `project_path`。
+
+**继续工作**
+
+Trae CN 没有确认的会话级深链，只能 `open -b cn.trae.app` 激活窗口。
+
+**已知限制**
+
+- 只能看到安装 hook 之后的会话，无法回溯历史会话。
+- 没有标题、待办、消息数和归档状态；`agent_kind` 固定为 `desktop`。
+- 事件文件缺失或未安装 hook 时来源不可用；单个坏行会导致 `partial`。
+
+**变化探测**：`trae-cn/` 下 JSONL 的文件数 + 最新 mtime 签名。
+
+---
+
 ## 未支持的来源
 
 | 来源 | 原因 |
 | --- | --- |
-| Trae CN | 本机 `state.vscdb` 只有模型配置，`ChatSessionStore.index` 为空；没有稳定可读的任务列表 |
 | ChatGPT 桌面 | 普通聊天无本地任务数据；Codex 会话写入 `~/.codex`，经 Codex 采集 |
 | WorkBuddy | 未安装，schema 未知；不猜测 |
 
-Trae CN、WorkBuddy 不会出现在侧边栏；ChatGPT 桌面的 Codex 会话计入 Codex，普通聊天暂无本地数据。
+WorkBuddy 不会出现在侧边栏；ChatGPT 桌面的 Codex 会话计入 Codex，普通聊天暂无本地数据。
 如果未来出现稳定的只读数据源，会以独立采集器加入。
 
 ---
@@ -301,4 +351,5 @@ cargo test -p perch-core
 | `PERCH_OPENCODE_DB` | OpenCode 主数据库 |
 | `PERCH_OPENCODE_STABLE_DB` | OpenCode 回退数据库 |
 | `PERCH_KILO_DB` | Kilo 数据库 |
+| `PERCH_TRAE_CN_EVENTS_DIR` | Trae CN hook 事件目录 |
 | `PERCH_CACHE_DB` | Perch 快照缓存 |

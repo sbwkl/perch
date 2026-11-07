@@ -281,16 +281,19 @@ agent, model, time_created, time_updated, time_archived
 | `~/Library/Application Support/Trae CN/User/globalStorage/state.vscdb` | 约 970 KB |
 | `ItemTable` 中的任务相关键 | `chat.ChatSessionStore.index` = `{"version":1,"entries":{}}`（空） |
 | 模型配置键 | `AI.agent.model.model_list_map` 等（非任务） |
+| `ModularData/ai-agent/database.db` | SQLCipher 加密 SQLite（页头不可读，未尝试解密） |
+| 其他明文痕迹 | `snapshot/<session>`、`memory/projects/**/session_memory_*.jsonl` 仅覆盖部分会话，没有标题与完整索引 |
 | `~/.trae-cn/hooks.json` | 不存在 |
 | `~/.local/share/usage-ledger/trae-cn` | 不存在（未安装 usage-ledger hooks） |
 | URL scheme | `trae-cn`（Info.plist 已确认） |
 
 ### 6.2 结论
 
-- **当前没有可用的本地任务列表**；本次探测未尝试解密加密库或调用私有 API。
-- 可选：安装 usage-ledger 的 Trae hooks 后，从事件 JSONL 聚合会话；只有安装后的会话可见，
-  无标题/归档/状态，标题用 fallback，允许人工重命名。
-- 未安装 hook 时 source 状态为 `unavailable`，doctor/UI 明确提示。
+- **没有可直接读取的本地任务列表**；session 列表在服务端，本地 agent 库加密。
+- **已实现**：安装 usage-ledger 的 Trae hooks 后，从 `~/.local/share/usage-ledger/trae-cn/events-*.jsonl`
+  聚合会话；只有安装后的会话可见，无标题/归档/状态，标题 fallback `新会话`。
+- `snapshot` 与 `memory` 目录不足以构成稳定完整的会话索引，不作为数据源。
+- 未安装 hook 时 source 状态为 `unavailable`，doctor/UI 明确提示安装命令。
 
 ---
 
@@ -312,7 +315,7 @@ agent, model, time_created, time_updated, time_archived
 | Codex | 69 个 rollout，只读首行 + 尾部 256KB | 0.09s（首行 + 尾部） | 不扫完整 rollout |
 | OpenCode | 107 会话；72 todo | 亚秒级 | WAL 只读 |
 | Kilo | 9 会话；10 todo；6 board | 亚秒级 | WAL 只读 |
-| Trae | 无本地任务 | — | 可选 hooks |
+| Trae CN | 事件 JSONL（安装 hook 后）；无本地会话索引 | 亚秒级（逐行只取 session / ts / project / model） | 仅 hook 后会话可见 |
 
 首版全量扫描目标 **<1.5s**；`serve` 请求按 5s 节流，CLI 用 mtime 签名判断是否刷新。
 

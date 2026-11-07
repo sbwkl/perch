@@ -1,6 +1,6 @@
 # Perch
 
-> 多 agent 任务总览：把 Qoder、Claude Code、Codex、OpenCode、Kilo 的本地会话汇总到一处。
+> 多 agent 任务总览：把 Qoder、Claude Code、Codex、OpenCode、Kilo、Trae CN 的本地会话汇总到一处。
 > 先找到任务，再决定回哪个 agent 继续。
 
 ![Perch 主界面](docs/images/overview.png)
@@ -17,7 +17,7 @@ Perch 只读取各 agent 已落盘的会话元数据，把散落在不同侧边�
 
 ## 它能做什么
 
-- **统一任务列表**：五个来源的任务按最近活动时间平铺展示，行内标注 workspace。
+- **统一任务列表**：六个来源的任务按最近活动时间平铺展示，行内标注 workspace。
 - **三种视图**：最近（近 7 天）、全部任务、已归档；可按 workspace 或来源筛选。
 - **实时感知**：窗口可见时每 3 秒探测源变化，变更后自动重扫并刷新界面；也可用 `⌘R` 手动刷新。
 - **详情面板**：展示模型、分支、消息数、待办进度和恢复命令。
@@ -43,11 +43,13 @@ Perch 只读取各 agent 已落盘的会话元数据，把散落在不同侧边�
 | Codex | `~/.codex/sessions`、`archived_sessions`、`session_index.jsonl` | App 会话用 `codex://threads/<id>`；CLI 会话用终端 `codex resume <id>` |
 | OpenCode | `~/.local/share/opencode/opencode.db` | App 运行中则激活 App；否则终端 `opencode --session <id>` |
 | Kilo | `~/.local/share/kilo/kilo.db` | App 运行中则激活 App；否则终端 `kilo` |
+| Trae CN | `~/.local/share/usage-ledger/trae-cn/events-*.jsonl` | 激活 Trae CN App（无会话级深链） |
 
 各来源的字段映射、状态推断规则与已知限制见 [docs/SOURCES.md](docs/SOURCES.md)。
 
-Trae CN 暂无本地任务数据；ChatGPT 桌面仅 Codex 会话写入本地并计入 Codex，普通聊天仍存于云端。
-如果未来出现稳定的只读数据源，会以独立采集器加入。
+Trae CN 的会话列表在服务端，本地 agent 库加密；Perch 只读 usage-ledger 的 Trae hook 事件。
+需要先安装 hook（`usage hooks install trae-cn --scope global`），未安装时该来源显示不可用。
+ChatGPT 桌面仅 Codex 会话写入本地并计入 Codex，普通聊天仍存于云端。
 
 ### 用量来源（可选）
 

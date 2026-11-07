@@ -41,7 +41,7 @@ src/                     Svelte 5 + TypeScript 前端
 src-tauri/               Tauri 2 壳
   src/lib.rs             bootstrap / refresh_sources / continue_task、3 秒 probe 循环
 crates/perch-core/       采集、缓存、查询、继续工作决策
-  src/collectors/        五个来源的只读采集器
+  src/collectors/        六个来源的只读采集器
   src/store.rs           cache.db schema 与 upsert
   src/sync.rs            ScanEngine 扫描事务
   src/query.rs           任务视图与 BootstrapPayload

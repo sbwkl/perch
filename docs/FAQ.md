@@ -23,6 +23,19 @@
 
 不需要。Perch 不发起网络请求，没有账号、遥测或云同步。界面不加载远程字体、图片或脚本。
 
+## Trae CN 的任务从哪里来？
+
+Trae CN 的会话列表在服务端，本地 agent 数据库是加密 SQLite，Perch 不读取也不解密。
+Perch 只读 usage-ledger 的 Trae hook 事件（`~/.local/share/usage-ledger/trae-cn/events-*.jsonl`）。
+需要先安装 hook：
+
+```bash
+usage hooks install trae-cn --scope global
+```
+
+未安装时该来源显示不可用。hook 只记录安装之后的会话，且没有标题与状态，
+Perch 统一显示“新会话”和 `idle`，只把 hook 记录的 project basename 作为 workspace 名。
+
 ## 为什么 Qoder 的“打开”只把 App 切到前台？
 
 Qoder 官方支持 `qoder://`，但不支持会话级深链。`qoder://chat/<id>` 在 Qoder 日志中会报

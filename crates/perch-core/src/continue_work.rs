@@ -3,12 +3,14 @@ use std::process::Command;
 
 use crate::models::{
     TaskSnapshot, SOURCE_CLAUDE, SOURCE_CODEX, SOURCE_KILO, SOURCE_OPENCODE, SOURCE_QODER,
+    SOURCE_TRAE_CN,
 };
 
 pub const QODER_BUNDLE_ID: &str = "com.qoder.app";
 pub const CODEX_BUNDLE_ID: &str = "com.openai.codex";
 pub const OPENCODE_BUNDLE_ID: &str = "ai.opencode.desktop";
 pub const KILO_BUNDLE_ID: &str = "ai.kilo.desktop";
+pub const TRAE_CN_BUNDLE_ID: &str = "cn.trae.app";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContinueChannel {
@@ -109,6 +111,12 @@ pub fn plan_continue(task: &TaskSnapshot, probe: &dyn ChannelProbe) -> crate::Re
             "kilo".to_owned(),
             "Kilo App",
         )),
+        // Trae CN 的 hook 只记录项目名，且没有确认的会话级深链，只能激活窗口。
+        SOURCE_TRAE_CN => Ok(ContinuePlan {
+            channel: ContinueChannel::App,
+            action: ContinueAction::ActivateApp(TRAE_CN_BUNDLE_ID.to_owned()),
+            target: "Trae CN App".to_owned(),
+        }),
         other => Err(crate::PerchError::message(format!(
             "未知来源，无法继续工作：{other}"
         ))),
@@ -421,6 +429,20 @@ mod tests {
         assert_eq!(
             app.action,
             ContinueAction::ActivateApp(KILO_BUNDLE_ID.to_owned())
+        );
+    }
+
+    #[test]
+    fn trae_cn_activates_app_without_session_target() {
+        let plan = plan_continue(
+            &task(SOURCE_TRAE_CN, Some("desktop")),
+            &probe(true, CliPresence::None),
+        )
+        .unwrap();
+        assert_eq!(plan.channel, ContinueChannel::App);
+        assert_eq!(
+            plan.action,
+            ContinueAction::ActivateApp(TRAE_CN_BUNDLE_ID.to_owned())
         );
     }
 

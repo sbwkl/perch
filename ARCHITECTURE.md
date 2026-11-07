@@ -57,7 +57,7 @@ Perch 是一个 macOS 桌面应用：Tauri 2 壳 + 纯 Rust core + Svelte 5 前�
 ### 启动与刷新
 
 1. 前端 `onMount` 调用 `bootstrap`，读取 `cache.db` 中的上次快照，立即渲染。
-2. 随后调用 `refresh_sources`：`ScanEngine::scan(None, "manual")` 依次执行五个采集器。
+2. 随后调用 `refresh_sources`：`ScanEngine::scan(None, "manual")` 依次执行六个采集器。
 3. 每个采集器独立返回 `ok / partial / unavailable / error`；单个来源失败不影响其他来源。
 4. `ok` 结果在事务中 upsert，并在扫描记录 `scan_run` 完成后把本次未出现的任务标记
    `source_missing`；`partial / error / unavailable` 保留旧快照。
@@ -72,7 +72,7 @@ Perch 是一个 macOS 桌面应用：Tauri 2 壳 + 纯 Rust core + Svelte 5 前�
 
 - 窗口最小化或不可见时跳过。
 - Qoder / OpenCode / Kilo：`PRAGMA data_version` 是否变化。
-- Claude / Codex：JSONL 文件数 + 最新 mtime 是否变化。
+- Claude / Codex / Trae CN：JSONL 文件数 + 最新 mtime 是否变化。
 - 有变化时只重扫对应来源（`trigger = "live"`），完成后再 emit `sources-updated`，
   前端收到事件后重新 `bootstrap`。
 
@@ -106,6 +106,7 @@ Perch 是一个 macOS 桌面应用：Tauri 2 壳 + 纯 Rust core + Svelte 5 前�
 | Codex | `desktop/automation` → `codex://threads/<id>`；`cli` → 终端 `codex resume <id>`；未知按 App 是否运行决定 |
 | OpenCode | App 运行 → 激活 `ai.opencode.desktop`；否则终端 `opencode --session <id>` |
 | Kilo | App 运行 → 激活 `ai.kilo.desktop`；否则终端 `kilo` |
+| Trae CN | 激活 `cn.trae.app`（hook 无项目路径，也没有确认的会话级深链） |
 
 session id 先经过字符集校验；终端命令由固定模板拼接，前端无法传入任意命令。
 终端通过 `osascript` 在 Terminal 中执行，并在命令前加一个空格，避免 shell 启动提示吞掉首字符。

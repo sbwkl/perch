@@ -61,6 +61,11 @@ impl SourceProbe {
                 ],
                 last_signature: (0, 0),
             },
+            JsonlProbe {
+                source: crate::models::SOURCE_TRAE_CN,
+                roots: vec![paths.trae_cn_events_dir.clone()],
+                last_signature: (0, 0),
+            },
         ];
         let mut probe = Self { sqlite, jsonl };
         probe.reset_jsonl_baseline();
