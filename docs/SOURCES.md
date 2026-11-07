@@ -293,7 +293,10 @@ usage hooks install trae-cn --scope global
 **标题 / 状态**
 
 - hook 不记录标题，统一显示 `新会话`（`title_source = fallback`）。
-- hook 不提供状态语义，统一 `idle`，不臆造运行中或完成状态。
+- 状态由会话中时间最晚的已知事件推导：`UserPromptSubmit` / `PreToolUse` / `PostToolUse`
+  视为 `running`，`SessionStart` / `Stop` 视为 `idle`；未知事件不改变状态。
+- 状态没有时间衰减：若 Trae CN 在回合中退出且未产生 `Stop`，会话会停留在 `running`，
+  直到下一次事件或手动刷新。
 - `project` 只是 hook 记录的 basename，因此写入 `project_name`，没有 `project_path`。
 
 **继续工作**
@@ -303,7 +306,7 @@ Trae CN 没有确认的会话级深链，只能 `open -b cn.trae.app` 激活窗�
 **已知限制**
 
 - 只能看到安装 hook 之后的会话，无法回溯历史会话。
-- 没有标题、待办、消息数和归档状态；`agent_kind` 固定为 `desktop`。
+- 没有待办、消息数和归档状态；标题固定为 fallback `新会话`，`agent_kind` 固定为 `desktop`。
 - 事件文件缺失或未安装 hook 时来源不可用；单个坏行会导致 `partial`。
 
 **变化探测**：`trae-cn/` 下 JSONL 的文件数 + 最新 mtime 签名。

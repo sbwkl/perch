@@ -80,7 +80,7 @@
 | Codex | ✅ 69 个 rollout + 38 条 `session_index` | `thread_name` / goal objective | session_meta `cwd` | `thread_goals.status`（当前 0 行；有 goal 时可用） | goal objective | P0 |
 | OpenCode | ✅ `session_v2` 表 117 条（旧 `session` 107 条已冻结） | `title` | `directory` | `time_archived` / `time_busy` 运行中 | `todo` 表（v2 时代停更） | P0 |
 | Kilo | ✅ `session` 表 9 条（6 个顶层） | `title` | `directory` | `time_archived` | `todo` 表 | P0 |
-| Trae CN | ✅ usage-ledger hook 事件（需安装 hook） | 无（fallback 新会话） | hook 只给 basename | 无（idle） | 无 | P2（已实现） |
+| Trae CN | ✅ usage-ledger hook 事件（需安装 hook） | 无（fallback 新会话） | hook 只给 basename | 事件推导 running / idle（无时间衰减） | 无 | P2（已实现） |
 | ChatGPT 桌面 | ❌ 普通聊天无本地数据；Codex 会话经 Codex 采集 | — | — | — | — | 不单独支持 |
 | WorkBuddy | 本机未安装 | — | — | — | — | 后续 adapter |
 
@@ -489,9 +489,13 @@ CREATE TABLE task_group_member (
   （`~/.local/share/usage-ledger/trae-cn/events-*.jsonl`，字段 `session/project/ts/model`），
   按 `session` 聚合成会话任务。`created_at` / `updated_at` 取最早 / 最晚 `ts`，
   `project` / `model` 取时间最晚的非空值；`session = "unknown"` 的行跳过。
-- 只有安装 hook 之后的会话可见，且没有标题、归档、状态和待办：
-  标题统一 fallback `新会话`，状态统一 `idle`，`project` 只作为 workspace 名（不伪造路径），
-  `agent_kind = desktop`。继续工作只激活 `cn.trae.app`，不使用未确认的深链。
+- 只有安装 hook 之后的会话可见，且没有标题、归档和待办：
+  标题统一 fallback `新会话`；状态取会话中时间最晚的已知事件——
+  `UserPromptSubmit` / `PreToolUse` / `PostToolUse` → `running`，
+  `SessionStart` / `Stop` → `idle`，未知事件不改变状态；
+  `project` 只作为 workspace 名（不伪造路径），`agent_kind = desktop`。
+  状态不做时间衰减，回合中退出且无 `Stop` 时会停留在 `running`。
+  继续工作只激活 `cn.trae.app`，不使用未确认的深链。
 - 未安装 hook 时 source 状态为 `unavailable`，Diagnostics 提示
   `usage hooks install trae-cn --scope global`。
 - MVP 不解密 Trae 的加密库、不调用私有 API；若后续要覆盖历史会话，先做只读可行性验证

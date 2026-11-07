@@ -13,6 +13,8 @@ use crate::models::{SourceResult, TaskSnapshot, SOURCE_TRAE_CN};
 
 const UNKNOWN: &str = "unknown";
 const INSTALL_HINT: &str = "usage hooks install trae-cn --scope global";
+const RUNNING_EVENTS: [&str; 3] = ["UserPromptSubmit", "PreToolUse", "PostToolUse"];
+const IDLE_EVENTS: [&str; 2] = ["SessionStart", "Stop"];
 
 /// Trae CN does not keep a readable local session index: the agent database is
 /// encrypted and the session list lives server-side. usage-ledger's Trae hooks
@@ -63,7 +65,7 @@ impl TraeCnCollector {
                     .and_then(|value| project_name(value).or_else(|| Some(value.to_owned())));
                 task.created_at = aggregate.first_ts;
                 task.updated_at = aggregate.last_ts;
-                task.status_source = Some("idle".to_owned());
+                task.status_source = Some(status_from_event(aggregate.last_event.as_deref()));
                 task.model = aggregate.model.map(|value| truncate_chars(&value, 80));
                 task.agent_kind = Some("desktop".to_owned());
                 task.refresh_fingerprint();
@@ -152,6 +154,15 @@ impl TraeCnCollector {
                     aggregate.model = Some(model);
                 }
             }
+            if let Some(event) = json_string(&value, "event") {
+                if (RUNNING_EVENTS.contains(&event.as_str())
+                    || IDLE_EVENTS.contains(&event.as_str()))
+                    && ts >= aggregate.last_event_ts
+                {
+                    aggregate.last_event_ts = ts;
+                    aggregate.last_event = Some(event);
+                }
+            }
         }
         Ok(())
     }
@@ -170,6 +181,13 @@ impl Collector for TraeCnCollector {
     }
 }
 
+fn status_from_event(event: Option<&str>) -> String {
+    match event {
+        Some(event) if RUNNING_EVENTS.contains(&event) => "running".to_owned(),
+        _ => "idle".to_owned(),
+    }
+}
+
 #[derive(Default)]
 struct SessionAggregate {
     first_ts: Option<f64>,
@@ -178,4 +196,6 @@ struct SessionAggregate {
     project_ts: f64,
     model: Option<String>,
     model_ts: f64,
+    last_event: Option<String>,
+    last_event_ts: f64,
 }

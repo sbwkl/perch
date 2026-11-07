@@ -840,6 +840,45 @@ fn trae_cn_collector_aggregates_hook_events() {
 }
 
 #[test]
+fn trae_cn_collector_derives_status_from_latest_event() {
+    let temp = TempDir::new().unwrap();
+    let events = temp.path().join("trae-cn");
+    fs::create_dir_all(&events).unwrap();
+    fs::write(
+        events.join("events-2026-11-07.jsonl"),
+        concat!(
+            "{\"v\":1,\"ts\":1700000100.0,\"event\":\"SessionStart\",\"session\":\"sid_run\"}\n",
+            "{\"v\":1,\"ts\":1700000200.0,\"event\":\"UserPromptSubmit\",\"session\":\"sid_run\"}\n",
+            "{\"v\":1,\"ts\":1700000300.0,\"event\":\"PreToolUse\",\"session\":\"sid_run\"}\n",
+            "{\"v\":1,\"ts\":1700000400.0,\"event\":\"UserPromptSubmit\",\"session\":\"sid_stop\"}\n",
+            "{\"v\":1,\"ts\":1700000500.0,\"event\":\"Stop\",\"session\":\"sid_stop\"}\n",
+            "{\"v\":1,\"ts\":1700000600.0,\"event\":\"SessionStart\",\"session\":\"sid_start\"}\n",
+            "{\"v\":1,\"ts\":1700000800.0,\"event\":\"UnknownEvent\",\"session\":\"sid_start\"}\n",
+        ),
+    )
+    .unwrap();
+
+    let result = TraeCnCollector::new(events).scan();
+
+    assert_eq!(result.status, SourceScanStatus::Ok);
+    let status = |id: &str| {
+        result
+            .tasks
+            .iter()
+            .find(|task| task.source_id == id)
+            .and_then(|task| task.status_source.clone())
+            .unwrap()
+    };
+    assert_eq!(status("sid_run"), "running", "tool activity keeps running");
+    assert_eq!(status("sid_stop"), "idle", "Stop closes the turn");
+    assert_eq!(
+        status("sid_start"),
+        "idle",
+        "unknown events do not change status"
+    );
+}
+
+#[test]
 fn trae_cn_collector_reports_missing_hook_directory() {
     let temp = TempDir::new().unwrap();
     let result = TraeCnCollector::new(temp.path().join("missing")).scan();

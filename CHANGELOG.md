@@ -18,6 +18,8 @@
 
 ### Changed
 
+- Trae CN 会话状态改为按时间最晚的 hook 事件推导：`UserPromptSubmit` / `PreToolUse` /
+  `PostToolUse` 显示运行中，`SessionStart` / `Stop` 回到空闲
 - 无标题会话统一显示「新会话」，不再拼接项目与日期
 - 源置顶任务在工作区内优先排序，列表改用图钉图标
 - 运行中的会话排在工作区最前，优先于源置顶任务
