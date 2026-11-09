@@ -25,8 +25,9 @@ const MEMORY_PREFIX: &str = "session_memory_";
 /// append plaintext metadata events (`events-*.jsonl`) for every turn, which is
 /// the only stable, message-free source Perch can aggregate. Hook installs are
 /// recent, so `memory/projects/**/session_memory_<id>.jsonl` file names are also
-/// enumerated to cover sessions that predate the hook. Only the path and mtime
-/// are read, never the memory content.
+/// enumerated to cover sessions that predate the hook. Memory files are opened
+/// only to read the first record's `intent` summary for a title; actions,
+/// outcomes and message bodies are never read.
 pub struct TraeCnCollector {
     events_dir: PathBuf,
     memory_dir: PathBuf,
@@ -70,8 +71,14 @@ impl TraeCnCollector {
         for (session_id, aggregate) in &sessions {
             let memory = memory_sessions.get(session_id);
             let mut task = TaskSnapshot::new(SOURCE_TRAE_CN, session_id);
-            task.title = fallback_title();
-            task.title_source = "fallback".to_owned();
+            task.title = memory
+                .and_then(|session| session.title.clone())
+                .unwrap_or_else(fallback_title);
+            task.title_source = if memory.and_then(|session| session.title.as_ref()).is_some() {
+                "ai".to_owned()
+            } else {
+                "fallback".to_owned()
+            };
             task.project_name = aggregate
                 .project
                 .as_deref()
@@ -94,8 +101,13 @@ impl TraeCnCollector {
                 continue;
             }
             let mut task = TaskSnapshot::new(SOURCE_TRAE_CN, session_id);
-            task.title = fallback_title();
-            task.title_source = "fallback".to_owned();
+            task.title = memory.title.clone().unwrap_or_else(fallback_title);
+            task.title_source = if memory.title.is_some() {
+                "ai"
+            } else {
+                "fallback"
+            }
+            .to_owned();
             task.project_name = Some(memory.project.clone());
             task.created_at = memory.created_at;
             task.updated_at = memory.updated_at.or(memory.created_at);
@@ -242,6 +254,7 @@ impl TraeCnCollector {
                 .file_name()
                 .and_then(|name| memory_date_ts(&name.to_string_lossy()))
                 .or(updated_at);
+            let intent = read_memory_intent(entry.path());
 
             let memory = sessions.entry(session_id.to_owned()).or_default();
             let is_newer = match (memory.updated_at, updated_at) {
@@ -250,6 +263,13 @@ impl TraeCnCollector {
             };
             if memory.project.is_empty() || is_newer {
                 memory.project = project;
+            }
+            if let Some(intent) = intent {
+                let title_date = created_at.or(updated_at).unwrap_or(f64::MAX);
+                if memory.title.is_none() || title_date < memory.title_date {
+                    memory.title = Some(intent);
+                    memory.title_date = title_date;
+                }
             }
             memory.created_at = match (memory.created_at, created_at) {
                 (Some(current), Some(next)) => Some(current.min(next)),
@@ -289,6 +309,34 @@ struct MemorySession {
     project: String,
     created_at: Option<f64>,
     updated_at: Option<f64>,
+    title: Option<String>,
+    title_date: f64,
+}
+
+fn read_memory_intent(path: &Path) -> Option<String> {
+    let file = File::open(path).ok()?;
+    for line in BufReader::new(file).lines() {
+        let Ok(line) = line else {
+            continue;
+        };
+        let Ok(value) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        if let Some(intent) = json_string(&value, "intent") {
+            let intent = intent.trim();
+            if !intent.is_empty() {
+                return Some(compact_title(intent, 60));
+            }
+        }
+    }
+    None
+}
+
+fn compact_title(value: &str, limit: usize) -> String {
+    if value.chars().count() <= limit {
+        return value.to_owned();
+    }
+    format!("{}…", truncate_chars(value, limit))
 }
 
 fn file_modified_ts(metadata: &fs::Metadata) -> Option<f64> {

@@ -80,7 +80,7 @@
 | Codex | ✅ 69 个 rollout + 38 条 `session_index` | `thread_name` / goal objective | session_meta `cwd` | `thread_goals.status`（当前 0 行；有 goal 时可用） | goal objective | P0 |
 | OpenCode | ✅ `session_v2` 表 117 条（旧 `session` 107 条已冻结） | `title` | `directory` | `time_archived` / `time_busy` 运行中 | `todo` 表（v2 时代停更） | P0 |
 | Kilo | ✅ `session` 表 9 条（6 个顶层） | `title` | `directory` | `time_archived` | `todo` 表 | P0 |
-| Trae CN | ✅ hook 事件 + memory 文件名（含历史会话） | 无（fallback 新会话） | hook basename / memory 启发式 | 事件推导 running / idle（无时间衰减） | 无 | P2（已实现） |
+| Trae CN | ✅ hook 事件 + memory 文件名（含历史会话） | memory 首条 `intent` 摘要（fallback 新会话） | hook basename / memory 启发式 | 事件推导 running / idle（无时间衰减） | 无 | P2（已实现） |
 | ChatGPT 桌面 | ❌ 普通聊天无本地数据；Codex 会话经 Codex 采集 | — | — | — | — | 不单独支持 |
 | WorkBuddy | 本机未安装 | — | — | — | — | 后续 adapter |
 
@@ -491,7 +491,8 @@ CREATE TABLE task_group_member (
   按 `session` 聚合成会话任务。`created_at` / `updated_at` 取最早 / 最晚 `ts`，
   `project` / `model` 取时间最晚的非空值；`session = "unknown"` 的行跳过。
 - 历史会话：hook 安装前没有事件，因此枚举 `~/.trae-cn/memory/projects/**/session_memory_<id>.jsonl`
-  的文件名作为会话 id，只读日期目录与文件 mtime（不打开内容）。`created_at` 取日期目录
+  的文件名作为会话 id，读取日期目录与文件 mtime；标题读取首条记录的 `intent`
+  摘要（截断到 60 字），不读 `actions/outcome` 与消息正文。`created_at` 取日期目录
   本地零点，`updated_at` 取 mtime；按 session id 与 hook 会话合并，hook 优先。
   项目名从编码目录名启发式还原，不伪造 `project_path`。
 - 没有标题、归档和待办：标题统一 fallback `新会话`；状态取会话中时间最晚的已知事件——
@@ -501,8 +502,8 @@ CREATE TABLE task_group_member (
   继续工作只激活 `cn.trae.app`，不使用未确认的深链。
 - 未安装 hook 时 source 状态为 `unavailable`，Diagnostics 提示
   `usage hooks install trae-cn --scope global`。
-- MVP 不解密 Trae 的加密库、不调用私有 API，也不读取 memory 文件内容；历史会话只覆盖
-  存在 memory 文件的会话，不是完整历史列表（§11.2）。
+- MVP 不解密 Trae 的加密库、不调用私有 API，也不读取 memory 的 `actions/outcome` 或消息正文；
+  仅为标题读取首条 `intent` 摘要。历史会话只覆盖存在 memory 文件的会话，不是完整历史列表（§11.2）。
 
 ### 6.7 ChatGPT 桌面 / WorkBuddy
 

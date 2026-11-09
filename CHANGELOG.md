@@ -16,8 +16,8 @@
 - 新增 Trae CN 来源：只读 usage-ledger 的 Trae hook 事件，按 session 聚合会话；
   未安装 hook 时来源显示不可用，继续工作只激活 Trae CN App
 - Trae CN 历史会话覆盖：枚举 `~/.trae-cn/memory/projects` 下的
-  `session_memory_*.jsonl` 文件名，只读目录与 mtime，不打开文件内容；
-  历史会话按 session id 与 hook 事件合并，项目名启发式还原
+  `session_memory_*.jsonl` 文件名，读取目录、mtime 与首条 `intent` 摘要作为标题，
+  不读消息正文；历史会话按 session id 与 hook 事件合并，项目名启发式还原
 
 ### Changed
 

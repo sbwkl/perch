@@ -49,7 +49,7 @@ Perch 只读取各 agent 已落盘的会话元数据，把散落在不同侧边�
 
 Trae CN 的会话列表在服务端，本地 agent 库加密；Perch 只读 usage-ledger 的 Trae hook 事件，
 并枚举 `memory/projects` 下的 `session_memory_*.jsonl` 文件名来覆盖安装 hook 前的历史会话
-（只读路径与 mtime，不打开内容）。
+（读取文件名、日期目录、mtime 与首条 `intent` 摘要作为标题，不读消息正文）。
 需要先安装 hook（`usage hooks install trae-cn --scope global`），未安装时该来源显示不可用。
 ChatGPT 桌面仅 Codex 会话写入本地并计入 Codex，普通聊天仍存于云端。
 

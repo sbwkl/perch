@@ -892,15 +892,27 @@ fn trae_cn_collector_includes_memory_history_sessions() {
     let playground =
         memory.join("-Users-wayne-workspace-playground--p2-da242afa7f737d3199f2/20261104");
     fs::create_dir_all(&playground).unwrap();
-    fs::write(playground.join("session_memory_sid_history.jsonl"), "").unwrap();
+    fs::write(
+        playground.join("session_memory_sid_history.jsonl"),
+        "{\"intent\":\"历史会话同步实现\",\"message_summary_time\":\"2026-11-04 10:00:00\"}\n",
+    )
+    .unwrap();
     let hook_day =
         memory.join("-Users-wayne-workspace-playground--p2-da242afa7f737d3199f2/20261107");
     fs::create_dir_all(&hook_day).unwrap();
-    fs::write(hook_day.join("session_memory_sid_hook.jsonl"), "").unwrap();
+    fs::write(
+        hook_day.join("session_memory_sid_hook.jsonl"),
+        "{\"intent\":\"Hook 会话标题\",\"message_summary_time\":\"2026-11-07 20:09:00\"}\n",
+    )
+    .unwrap();
     let temp_project = memory
         .join("-Users-wayne-Documents-Trae-CN-temp-20261102-04--p2-3a81734beb95e3c3c9d7/20261008");
     fs::create_dir_all(&temp_project).unwrap();
-    fs::write(temp_project.join("session_memory_sid_temp.jsonl"), "").unwrap();
+    fs::write(
+        temp_project.join("session_memory_sid_temp.jsonl"),
+        "{\"intent\":\"临时目录实验\",\"message_summary_time\":\"2026-10-08 09:00:00\"}\n",
+    )
+    .unwrap();
 
     let result = TraeCnCollector::new(events, memory).scan();
 
@@ -920,7 +932,8 @@ fn trae_cn_collector_includes_memory_history_sessions() {
         .iter()
         .find(|task| task.source_id == "sid_history")
         .unwrap();
-    assert_eq!(history.title, "新会话");
+    assert_eq!(history.title, "历史会话同步实现");
+    assert_eq!(history.title_source, "ai");
     assert_eq!(history.project_name.as_deref(), Some("playground"));
     assert_eq!(history.status_source.as_deref(), Some("idle"));
     assert_eq!(history.agent_kind.as_deref(), Some("desktop"));
@@ -937,6 +950,7 @@ fn trae_cn_collector_includes_memory_history_sessions() {
         temp_session.project_name.as_deref(),
         Some("temp-20261102-04")
     );
+    assert_eq!(temp_session.title, "临时目录实验");
 
     let hook = result
         .tasks
@@ -947,6 +961,10 @@ fn trae_cn_collector_includes_memory_history_sessions() {
         hook.project_name.as_deref(),
         Some("playground"),
         "hook sessions reuse the memory project name"
+    );
+    assert_eq!(
+        hook.title, "Hook 会话标题",
+        "hook sessions reuse the memory intent title"
     );
 }
 

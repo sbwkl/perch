@@ -282,8 +282,8 @@ agent 数据库 `ModularData/ai-agent/database.db` 是加密 SQLite，会话列�
 Perch 不接触加密库，只读取 usage-ledger 的 Trae hook 事件——它由 Trae 的
 `UserPromptSubmit` / `Stop` hook 追加，写入纯文本元数据，不包含消息正文。
 hook 安装晚于部分历史会话，因此再枚举 `memory/projects` 下的
-`session_memory_<session>.jsonl` 文件名来覆盖安装前的会话；只读取路径、日期目录与
-文件 mtime，不打开 memory 文件内容。
+`session_memory_<session>.jsonl` 文件名来覆盖安装前的会话；读取文件名、日期目录、
+文件 mtime，以及每个会话首条记录的 `intent` 摘要作为标题，不读消息正文。
 
 安装 hook 后才会出现会话；未安装时该来源显示 `unavailable`，提示执行：
 
@@ -295,7 +295,9 @@ usage hooks install trae-cn --scope global
 
 - 枚举 `events-*.jsonl`，逐行只读 `session`、`ts`、`project`、`model`。
 - 枚举 `memory/projects/**/session_memory_*.jsonl` 的文件名作为历史会话 id；
-  `created_at` 取日期目录的本地零点，`updated_at` 取文件 mtime，不读取文件内容。
+  `created_at` 取日期目录的本地零点，`updated_at` 取文件 mtime。
+- 标题读取每条会话首个记录的 `intent` 字段（AI 生成的短摘要，截断到 60 字）；
+  `actions`、`outcome`、`learned`、`message_id` 与消息正文一律不读。
 - 历史会话与 hook 会话按 session id 合并，hook 事件的时间与状态优先；
   历史会话状态固定 `idle`。
 - 项目名从编码目录名启发式还原（去掉 `--p2-<hash>` 与常见父目录），不伪造 `project_path`。
@@ -306,7 +308,8 @@ usage hooks install trae-cn --scope global
 
 **标题 / 状态**
 
-- hook 不记录标题，统一显示 `新会话`（`title_source = fallback`）。
+- 标题优先使用 memory 首条 `intent` 摘要（`title_source = ai`，超过 60 字截断）；
+  没有 memory 记录时显示 `新会话`（`title_source = fallback`）。
 - 状态由会话中时间最晚的已知事件推导：`UserPromptSubmit` / `PreToolUse` / `PostToolUse`
   视为 `running`，`SessionStart` / `Stop` 视为 `idle`；未知事件不改变状态。
 - 状态没有时间衰减：若 Trae CN 在回合中退出且未产生 `Stop`，会话会停留在 `running`，
