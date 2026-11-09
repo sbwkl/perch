@@ -41,10 +41,11 @@ Perch 统一显示“新会话”和 `idle`，只把 hook 记录的 project base
 Qoder 官方支持 `qoder://`，但不支持会话级深链。`qoder://chat/<id>` 在 Qoder 日志中会报
 `DEEP_LINK_ROUTE_UNSUPPORTED`，只能激活 App。Perch 会如实提示“无法定位到具体会话”。
 
-## 为什么 Claude Code 的任务都显示“无显式状态”？
+## Claude Code 的运行状态是怎么来的？
 
-Claude Code 的本地数据没有会话完成/归档状态。Perch 不臆造状态，统一显示“无显式状态”（内部为
-`idle`）。待办进度来自 `~/.claude/tasks/<sessionId>/`。
+Perch 只读 `~/.claude/sessions/<pid>.json`：Claude 进程忙碌时状态为 `busy`，显示“运行中”；
+等待时为 `waiting`，显示“等待中”；空闲或进程已退出显示“空闲”。Claude 不提供会话完成/归档状态，
+Perch 不臆造 `done`。待办进度来自 `~/.claude/tasks/<sessionId>/`。
 
 ## 为什么 Trae CN 没有任务？ChatGPT 桌面会话去哪了？
 

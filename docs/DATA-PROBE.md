@@ -134,7 +134,8 @@ file-history-snapshot, system, ai-title, custom-title
 ### 2.4 结论
 
 - 可作为 P0：标题覆盖率高，项目/时间/模型齐全。
-- **无会话完成/归档状态**；Claude Code 没有类似 Qoder 的 archived 字段。默认 `idle`，人工状态由 overlay 补。
+- **无会话完成/归档状态**；Claude Code 没有类似 Qoder 的 archived 字段。进程级实时状态见
+  `~/.claude/sessions/<pid>.json`（`busy` / `idle` / `waiting`），Perch 只读接入；人工状态由 overlay 补。
 - todo 可作为子项展示，进度可用于筛选“未完成 todo”。
 - resume 命令已确认：`claude --resume <session-id>`。
 
@@ -369,7 +370,8 @@ sqlite3 "file:$HOME/Library/Application Support/Trae CN/User/globalStorage/state
 2. Qoder `chat_session_turn_states.status` 的真实取值集合（当前无行）。
 3. Kilo 是否有可用的会话恢复参数（当前只确认 `kilo session list/delete`）。
 4. Codex `thread_goals` 在实际使用后的状态分布（当前 0 行）。
-5. Claude Code 是否有未落盘的“正在运行”状态（当前只能 `idle`）。
+5. ~~Claude Code 是否有未落盘的“正在运行”状态（当前只能 `idle`）~~：已确认
+   `~/.claude/sessions/<pid>.json` 提供 `busy` / `idle` / `waiting`，Perch 已只读接入。
 6. Trae hooks 安装后的实际事件字段与覆盖范围。
 7. OpenCode/Kilo 的 `session` 表在桌面版/CLI 双写时是否会出现副本（按 id 覆盖即可，但需 fixture 验证）。
 8. Qoder 新会话的落库时机：打开 tab 即写 `chat_sessions`，还是第一条消息后才写；`main.sqlite-wal`

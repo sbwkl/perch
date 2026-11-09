@@ -76,7 +76,7 @@
 | 源 | 本地任务列表 | 标题 | 项目 | 状态 | 子项 | 结论 |
 |---|---|---|---|---|---|---|
 | Qoder | ✅ `main.sqlite/chat_sessions` 183 条 | `title`，`extra_json.titleSource` 可区分 ai/custom/fallback | `cwd` | archived / unread / turn state | 无 todo，只有消息计数 | P0 |
-| Claude Code | ✅ 14 个顶层 session JSONL | `custom-title` / `ai-title`，14/14 有标题 | `cwd` | 无显式状态 | `~/.claude/tasks/<session>/*.json` | P0 |
+| Claude Code | ✅ 14 个顶层 session JSONL | `custom-title` / `ai-title`，14/14 有标题 | `cwd` | `sessions/<pid>.json` 实时 busy/idle/waiting | `~/.claude/tasks/<session>/*.json` | P0 |
 | Codex | ✅ 69 个 rollout + 38 条 `session_index` | `thread_name` / goal objective | session_meta `cwd` | `thread_goals.status`（当前 0 行；有 goal 时可用） | goal objective | P0 |
 | OpenCode | ✅ `session_v2` 表 117 条（旧 `session` 107 条已冻结） | `title` | `directory` | `time_archived` / `time_busy` 运行中 | `todo` 表（v2 时代停更） | P0 |
 | Kilo | ✅ `session` 表 9 条（6 个顶层） | `title` | `directory` | `time_archived` | `todo` 表 | P0 |
@@ -429,7 +429,8 @@ CREATE TABLE task_group_member (
 - 项目：记录里的 `cwd`；`project_name` 取 basename。
 - 时间：首/末记录 `timestamp`；文件 mtime 兜底。
 - 模型/分支：最后一条 assistant 的 `message.model`；`gitBranch` 若存在。
-- 状态：Claude Code 不提供会话完成/归档状态，统一 `idle`（UI 显示“无显式状态”），不臆造 `done`。
+- 状态：读取 `~/.claude/sessions/<pid>.json` 的实时状态（只读）：`busy` → 运行中，
+  `waiting` → 等待中，`idle` → 空闲；进程已退出或无状态文件时记为 `idle`。不臆造 `done`。
 - 子项：`~/.claude/tasks/<sessionId>/*.json`，只读 `subject` / `status` / `blocks` / `blockedBy`；
   **不读 `description`**。状态映射 pending/in_progress/completed。
 - resume：`cd <cwd> && claude --resume <sessionId>`。
@@ -554,7 +555,7 @@ MVP：有效状态 = status_source（源状态） > "idle"
 - `needs attention` 筛选：`source_unread=1` 或 `status_source in (blocked, limited)`；
   人工 `doing` 且长期未活动的提醒随后续状态能力加入。
 - `stale` 角标：`updated_at` 超过 14 天且未归档；只提示，不改状态。
-- 源状态未知时显示“无显式状态/空闲”，不显示“已完成”。
+- 源状态未知时显示“空闲”，不显示“已完成”。
 
 ### 7.3 全局置顶区
 
@@ -1152,7 +1153,7 @@ M1–M3 是核心价值；M4/M5 可按反馈调整顺序。
 | 风险 | 影响 | 处置 |
 |---|---|---|
 | “Task”定义分歧 | 做成 todo 列表则碎片化 | 本方案明确会话=Task，todo=子项；见 §17 决策 3 |
-| 源状态不完整 | Claude/Kilo 无完成状态；OpenCode 仅 busy/idle 二态 | 无证据时显示“空闲/无显式状态”；MVP 不承诺完成状态，人工状态后续再加 |
+| 源状态不完整 | Claude 有 busy/idle/waiting 实时态但无完成态；Kilo 无完成状态；OpenCode 仅 busy/idle 二态 | 无证据时显示“空闲”；MVP 不承诺完成状态，人工状态后续再加 |
 | Codex 标题覆盖率 | session_index 38/69 | goal objective 兜底 + fallback；Diagnostics 报告覆盖率 |
 | Qoder schema 漂移 | 采集失败 | 只读 + 缺少表时 `schema drift` 错误，其他源继续 |
 | Qoder 无会话深链 | 不能精确跳回会话 | `qoder://chat/<id>` 被 Qoder 判为 `DEEP_LINK_ROUTE_UNSUPPORTED`（官方日志），只能激活 App。Codex `codex://threads/<id>` 是 Codex 自身生成的格式。OpenCode/Kilo App 同样不能定位会话，只能 CLI resume 或切 App 前台并提示限制 |

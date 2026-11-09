@@ -1,10 +1,10 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use rusqlite::Connection;
 use walkdir::WalkDir;
 
-use crate::collectors::common::{is_jsonl, open_read_only};
+use crate::collectors::common::open_read_only;
 use crate::paths::SourcePaths;
 
 pub struct SourceProbe {
@@ -21,6 +21,7 @@ struct SqliteProbe {
 struct JsonlProbe {
     source: &'static str,
     roots: Vec<PathBuf>,
+    json_roots: Vec<PathBuf>,
     last_signature: (u64, u128),
 }
 
@@ -51,6 +52,7 @@ impl SourceProbe {
             JsonlProbe {
                 source: "claude",
                 roots: vec![paths.claude_dir.join("projects")],
+                json_roots: vec![paths.claude_dir.join("sessions")],
                 last_signature: (0, 0),
             },
             JsonlProbe {
@@ -59,6 +61,7 @@ impl SourceProbe {
                     paths.codex_dir.join("sessions"),
                     paths.codex_dir.join("archived_sessions"),
                 ],
+                json_roots: Vec::new(),
                 last_signature: (0, 0),
             },
             JsonlProbe {
@@ -67,6 +70,7 @@ impl SourceProbe {
                     paths.trae_cn_events_dir.clone(),
                     paths.trae_cn_memory_dir.clone(),
                 ],
+                json_roots: Vec::new(),
                 last_signature: (0, 0),
             },
         ];
@@ -92,7 +96,7 @@ impl SourceProbe {
         }
 
         for probe in &mut self.jsonl {
-            let signature = jsonl_signature(&probe.roots);
+            let signature = jsonl_signature(&probe.roots, &probe.json_roots);
             if signature != probe.last_signature {
                 probe.last_signature = signature;
                 changed.push(probe.source);
@@ -104,7 +108,7 @@ impl SourceProbe {
 
     fn reset_jsonl_baseline(&mut self) {
         for probe in &mut self.jsonl {
-            probe.last_signature = jsonl_signature(&probe.roots);
+            probe.last_signature = jsonl_signature(&probe.roots, &probe.json_roots);
         }
     }
 }
@@ -114,29 +118,44 @@ fn data_version(conn: &Connection) -> Option<i64> {
         .ok()
 }
 
-fn jsonl_signature(roots: &[PathBuf]) -> (u64, u128) {
+fn jsonl_signature(roots: &[PathBuf], json_roots: &[PathBuf]) -> (u64, u128) {
     let mut count = 0u64;
     let mut latest = 0u128;
     for root in roots {
-        if !root.is_dir() {
-            continue;
-        }
-        for entry in WalkDir::new(root).into_iter().filter_map(Result::ok) {
-            if !entry.file_type().is_file() || !is_jsonl(entry.path()) {
-                continue;
-            }
-            count += 1;
-            let Ok(metadata) = entry.metadata() else {
-                continue;
-            };
-            let Ok(modified) = metadata.modified() else {
-                continue;
-            };
-            let Ok(duration) = modified.duration_since(UNIX_EPOCH) else {
-                continue;
-            };
-            latest = latest.max(duration.as_nanos());
-        }
+        add_signature(root, "jsonl", &mut count, &mut latest);
+    }
+    for root in json_roots {
+        add_signature(root, "json", &mut count, &mut latest);
     }
     (count, latest)
+}
+
+fn add_signature(root: &Path, extension: &str, count: &mut u64, latest: &mut u128) {
+    if !root.is_dir() {
+        return;
+    }
+    for entry in WalkDir::new(root).into_iter().filter_map(Result::ok) {
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        if !entry
+            .path()
+            .extension()
+            .and_then(|value| value.to_str())
+            .is_some_and(|value| value.eq_ignore_ascii_case(extension))
+        {
+            continue;
+        }
+        *count += 1;
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+        let Ok(modified) = metadata.modified() else {
+            continue;
+        };
+        let Ok(duration) = modified.duration_since(UNIX_EPOCH) else {
+            continue;
+        };
+        *latest = (*latest).max(duration.as_nanos());
+    }
 }

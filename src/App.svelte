@@ -50,6 +50,7 @@
   const STATUS_LABELS: Record<string, string> = {
     running: "运行中",
     active: "活跃",
+    waiting: "等待中",
     paused: "已暂停",
     blocked: "受阻",
     limited: "受限",
@@ -275,14 +276,15 @@
   }
 
   function statusLabel(task: TaskView): string {
-    if (task.status === "idle" && task.source === "claude") return "无显式状态";
     return STATUS_LABELS[task.status] ?? task.status;
   }
 
   function statusClass(task: TaskView): string {
     if (task.status === "running" || task.status === "active") return "live";
     if (task.status === "blocked") return "danger";
-    if (task.status === "limited" || task.status === "paused") return "warn";
+    if (task.status === "limited" || task.status === "paused" || task.status === "waiting") {
+      return "warn";
+    }
     if (task.status === "complete") return "done";
     if (task.status === "archived") return "muted";
     return "idle";

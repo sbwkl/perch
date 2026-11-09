@@ -54,6 +54,21 @@ fn probe_reports_changed_sources_once() {
 }
 
 #[test]
+fn probe_detects_claude_session_state_changes() {
+    let temp = TempDir::new().unwrap();
+    let paths = paths_under(temp.path());
+    let sessions = paths.claude_dir.join("sessions");
+    fs::create_dir_all(&sessions).unwrap();
+
+    let mut probe = SourceProbe::new(&paths);
+    assert!(probe.poll().is_empty(), "initial baseline must be quiet");
+
+    fs::write(sessions.join("123.json"), "{\"status\":\"idle\"}").unwrap();
+    assert_eq!(probe.poll(), vec!["claude"]);
+    assert!(probe.poll().is_empty(), "no further changes expected");
+}
+
+#[test]
 fn probe_detects_trae_cn_hook_events() {
     let temp = TempDir::new().unwrap();
     let paths = paths_under(temp.path());

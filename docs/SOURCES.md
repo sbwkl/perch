@@ -21,7 +21,7 @@
 | 来源 | 存储 | 主要文件 | 待办 | 继续工作 |
 | --- | --- | --- | --- | --- |
 | Qoder | SQLite | `main.sqlite` | 无 | 激活 App |
-| Claude Code | JSONL + JSON | `projects/**/*.jsonl`、`tasks/` | 有 | 终端 `claude --resume` |
+| Claude Code | JSONL + JSON | `projects/**/*.jsonl`、`sessions/`、`tasks/` | 有 | 终端 `claude --resume` |
 | Codex | JSONL + SQLite | `sessions/`、`archived_sessions/`、`session_index.jsonl`、`goals_1.sqlite` | 无（goal 状态） | `codex://threads/<id>` 或终端 |
 | OpenCode | SQLite | `opencode.db` | 旧表有，v2 暂无 | 激活 App 或终端 |
 | Kilo | SQLite | `kilo.db` | 旧表有 | 激活 App 或终端 |
@@ -89,6 +89,7 @@ Qoder App 已注册 `qoder://`，但不支持会话级 URL（`main.log` 报 `DEE
 ```
 ~/.claude/projects/<project>/<sessionId>.jsonl     # 顶层会话
 ~/.claude/projects/**/subagents/...                 # 子会话，仅计数，不解析
+~/.claude/sessions/<pid>.json                       # 运行中进程的实时状态
 ~/.claude/tasks/<sessionId>/*.json                  # 待办
 ```
 
@@ -105,7 +106,9 @@ Qoder App 已注册 `qoder://`，但不支持会话级 URL（`main.log` 报 `DEE
 
 **状态**
 
-Claude Code 不提供会话完成/归档状态，统一为 `idle`，界面显示“无显式状态”，不臆造 `done`。
+Claude Code 在 `~/.claude/sessions/<pid>.json` 写入运行中进程的实时状态（只读）：
+`busy` → 运行中，`waiting` → 等待中，`idle` → 空闲；进程已退出或没有状态文件时记为 `idle`。
+不提供会话完成/归档状态，不臆造 `done`。
 
 **待办**
 
@@ -118,6 +121,7 @@ Claude Code 不提供会话完成/归档状态，统一为 `idle`，界面显示
 
 **已知限制**
 
+- 实时状态依赖 Claude Code 的 `~/.claude/sessions/<pid>.json`；旧版本没有该文件时统一显示空闲。
 - 子会话（`subagents/`）暂不进入主列表，也不读取其待办。
 - 没有运行/完成状态。
 
