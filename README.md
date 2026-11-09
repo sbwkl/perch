@@ -81,7 +81,7 @@ npm run tauri dev
 npm run tauri build
 ```
 
-产物位于 `src-tauri/target/release/bundle/macos/Perch.app`（以及 `.dmg`）。
+产物位于 `target/release/bundle/macos/Perch.app` 与 `target/release/bundle/dmg/*.dmg`。
 当前未做 codesign / notarize，首次打开可能需要右键 → 打开。
 
 开发、测试、环境变量与故障排查见 [DEVELOPMENT.md](DEVELOPMENT.md)。

@@ -86,14 +86,14 @@ Qoder 只能激活 App。
 
 ## 有现成的安装包吗？
 
-还没有签名/公证的 Release。当前需要从源码构建：
+还未提供签名/公证版本。可从 GitHub Release 下载未签名的 `.dmg`，或从源码构建：
 
 ```bash
 npm install
 npm run tauri build
 ```
 
-产物在 `src-tauri/target/release/bundle/macos/Perch.app`，未签名版本首次打开需右键 → 打开。
+产物在 `target/release/bundle/macos/Perch.app` 与 `target/release/bundle/dmg/*.dmg`，未签名版本首次打开需右键 → 打开。
 
 ## 如何卸载？
 
