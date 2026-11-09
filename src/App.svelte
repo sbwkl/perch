@@ -80,11 +80,13 @@
   let reportFailed = $state(false);
   let query = $state("");
   let searchOpen = $state(false);
+  let searchIndex = $state(0);
   let searchHits = $state<SearchHit[]>([]);
   let searchTotal = $state(0);
   let searching = $state(false);
   let searchError = $state("");
   let searchInput = $state<HTMLInputElement>();
+  let searchResultList = $state<HTMLDivElement>();
 
   const WORKSPACE_VISIBLE_LIMIT = 8;
 
@@ -185,6 +187,7 @@
     if (!term) {
       searchHits = [];
       searchTotal = 0;
+      searchIndex = 0;
       searching = false;
       searchError = "";
       return;
@@ -202,10 +205,12 @@
           if (seq !== searchSeq) return;
           searchHits = response.hits;
           searchTotal = response.total;
+          searchIndex = 0;
         } catch (error) {
           if (seq !== searchSeq) return;
           searchHits = [];
           searchTotal = 0;
+          searchIndex = 0;
           searchError = error instanceof Error ? error.message : String(error);
         } finally {
           if (seq === searchSeq) searching = false;
@@ -239,7 +244,6 @@
   );
 
   const heading = $derived.by(() => {
-    if (searchActive) return "搜索结果";
     if (workspaceFilter) {
       return workspaceItems.find((item) => item.key === workspaceFilter)?.name ?? "Workspace";
     }
@@ -248,17 +252,6 @@
   });
 
   const subheading = $derived.by(() => {
-    if (searchActive) {
-      const scope = [
-        workspaceFilter
-          ? workspaceItems.find((item) => item.key === workspaceFilter)?.name ?? "Workspace"
-          : "",
-        sourceFilter ? SOURCE_LABELS[sourceFilter] ?? sourceFilter : "",
-      ].filter(Boolean);
-      const scopeText = scope.length > 0 ? ` · ${scope.join(" / ")}` : "";
-      const status = searching ? " · 搜索中…" : ` · 显示 ${searchResults.length} 条`;
-      return `${searchTotal} 个匹配 · 全部会话（含已归档）${scopeText}${status}`;
-    }
     const generated = payload ? fullTime(payload.generated_at) : "—";
     const summary = lastScanSummary ? ` · ${lastScanSummary}` : "";
     return `${totalVisible} 个任务 · 快照 ${generated}${summary}`;
@@ -340,16 +333,47 @@
     view = next;
     workspaceFilter = null;
     sourceFilter = null;
-    query = "";
-    searchOpen = false;
+    closeSearch();
   }
 
   function openSearch() {
     searchOpen = true;
+    searchIndex = 0;
     void tick().then(() => {
       searchInput?.focus();
       searchInput?.select();
     });
+  }
+
+  function closeSearch() {
+    searchOpen = false;
+    query = "";
+    searchHits = [];
+    searchTotal = 0;
+    searchIndex = 0;
+    searching = false;
+    searchError = "";
+    searchInput?.blur();
+  }
+
+  function openSearchResult(task: TaskView) {
+    selectTask(task.key);
+    closeSearch();
+  }
+
+  function moveSearchSelection(delta: number) {
+    if (searchResults.length === 0) return;
+    searchIndex =
+      (searchIndex + delta + searchResults.length) % searchResults.length;
+    void tick().then(() => {
+      const item = searchResultList?.children[searchIndex] as HTMLElement | undefined;
+      item?.scrollIntoView({ block: "nearest" });
+    });
+  }
+
+  function openActiveSearchResult() {
+    const result = searchResults[searchIndex];
+    if (result) openSearchResult(result.task);
   }
 
   function selectWorkspace(key: string) {
@@ -438,6 +462,7 @@
   }
 
   function handleKeydown(event: KeyboardEvent) {
+    if (event.isComposing) return;
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
       event.preventDefault();
       openSearch();
@@ -447,17 +472,23 @@
       event.preventDefault();
       void refresh();
     }
-    if (event.key === "Escape") {
-      if (query) {
-        query = "";
-        searchInput?.blur();
-      } else if (searchOpen) {
-        searchOpen = false;
-        searchInput?.blur();
-      } else {
-        selectedKey = null;
+    if (searchOpen) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeSearch();
+      } else if (event.key === "ArrowDown") {
+        event.preventDefault();
+        moveSearchSelection(1);
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        moveSearchSelection(-1);
+      } else if (event.key === "Enter") {
+        event.preventDefault();
+        openActiveSearchResult();
       }
+      return;
     }
+    if (event.key === "Escape") selectedKey = null;
   }
 
   onMount(() => {
@@ -495,7 +526,7 @@
   </svg>
 {/snippet}
 
-{#snippet taskRow(task: TaskView, showWorkspace: boolean, matchFields: string[] = [], scopeBadges = false)}
+{#snippet taskRow(task: TaskView, showWorkspace: boolean)}
   <button
     class="task"
     class:selected={selectedKey === task.key}
@@ -520,14 +551,8 @@
           <span class="todo-chip">{task.todo_done}/{task.todo_total}</span>
         {/if}
         {#if task.source_pinned}<span class="pin-badge" title="源置顶" aria-label="源置顶">{@render pinIcon()}</span>{/if}
-        {#if scopeBadges && task.source_archived}<span class="mini-badge">源归档</span>{/if}
-        {#if scopeBadges && task.is_child}<span class="mini-badge">子会话</span>{/if}
-        {#if scopeBadges && task.is_automation}<span class="mini-badge">自动化</span>{/if}
         {#if task.source_missing}<span class="mini-badge danger">源已删除</span>{/if}
       </span>
-      {#if matchFields.length > 0}
-        <span class="match-fields">匹配 {matchFields.join(" · ")}</span>
-      {/if}
     </span>
     <span class="status {statusClass(task)}">{statusLabel(task)}</span>
   </button>
@@ -655,42 +680,6 @@
         <h2>{heading}</h2>
         <p>{subheading}</p>
       </div>
-      {#if searchOpen}
-        <div class="search-box">
-          <svg
-            class="search-icon"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.8"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path d={ICONS.search} />
-          </svg>
-          <input
-            bind:this={searchInput}
-            bind:value={query}
-            class="search-input"
-            type="text"
-            placeholder="搜索标题、项目、待办…"
-            spellcheck="false"
-            autocomplete="off"
-            aria-label="搜索任务"
-          />
-          {#if query}
-            <button
-              class="search-clear"
-              onclick={() => (query = "")}
-              title="清除搜索"
-              aria-label="清除搜索"
-            >
-              ×
-            </button>
-          {/if}
-        </div>
-      {/if}
       <button class="refresh-button" onclick={() => refresh()} disabled={refreshing}>
         <svg
           class="refresh-icon"
@@ -764,30 +753,6 @@
 
     {#if busy && !payload}
       <div class="empty-state">正在读取本地任务…</div>
-    {:else if searchActive}
-      {#if searchError}
-        <div class="empty-state">
-          <p>搜索失败：{searchError}</p>
-          <p class="subtle">请重试，或重新扫描数据源。</p>
-        </div>
-      {:else if searchResults.length === 0}
-        {#if searching}
-          <div class="empty-state">搜索中…</div>
-        {:else}
-          <div class="empty-state">
-            <p>没有匹配“{query.trim()}”的任务。</p>
-            <p class="subtle">支持标题、项目、路径、待办、模型、分支、状态、来源、类型、会话 ID；支持拼音与模糊匹配。</p>
-          </div>
-        {/if}
-      {:else}
-        <div class="groups">
-          <div class="flat-list">
-            {#each searchResults as result (result.task.key)}
-              {@render taskRow(result.task, true, result.hit.fields, true)}
-            {/each}
-          </div>
-        </div>
-      {/if}
     {:else if !hasVisibleTasks}
       <div class="empty-state">
         <p>当前筛选下没有任务。</p>
@@ -950,3 +915,119 @@
     {/if}
   </aside>
 </div>
+
+{#if searchOpen}
+  <div class="search-layer">
+    <button class="search-backdrop" aria-label="关闭搜索" tabindex="-1" onclick={closeSearch}></button>
+    <div class="search-panel" role="dialog" aria-modal="true" aria-label="搜索任务">
+      <div class="search-field">
+        <svg
+          class="search-icon"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d={ICONS.search} />
+        </svg>
+        <input
+          bind:this={searchInput}
+          bind:value={query}
+          class="search-input"
+          type="text"
+          placeholder="搜索任务、项目、待办…"
+          spellcheck="false"
+          autocomplete="off"
+          aria-label="搜索任务"
+        />
+        {#if query}
+          <button
+            class="search-clear"
+            onclick={() => (query = "")}
+            title="清除搜索"
+            aria-label="清除搜索"
+          >
+            ×
+          </button>
+        {:else}
+          <kbd>Esc</kbd>
+        {/if}
+      </div>
+
+      <div class="search-body" bind:this={searchResultList}>
+        {#if searchError}
+          <div class="search-state danger">
+            <p>搜索失败：{searchError}</p>
+            <p class="subtle">请重试，或重新扫描数据源。</p>
+          </div>
+        {:else if !searchActive}
+          <div class="search-state">
+            <p>搜索所有会话（含归档）</p>
+            <p class="subtle">
+              支持标题、项目、路径、待办、模型、分支、状态、来源、类型、会话 ID；支持拼音与模糊匹配。
+            </p>
+          </div>
+        {:else if searchResults.length === 0}
+          <div class="search-state">
+            {#if searching}
+              <p>搜索中…</p>
+            {:else}
+              <p>没有匹配“{query.trim()}”的任务。</p>
+            {/if}
+          </div>
+        {:else}
+          {#each searchResults as result, index (result.task.key)}
+            <button
+              class="search-result"
+              class:active={index === searchIndex}
+              onmouseenter={() => (searchIndex = index)}
+              onclick={() => openSearchResult(result.task)}
+            >
+              <span
+                class="source-dot"
+                style={`--source:${sourceColor(result.task.source)}`}
+              ></span>
+              <span class="result-main">
+                <span class="result-title">{result.task.title}</span>
+                <span class="result-meta">
+                  <span>{result.task.source_label}</span>
+                  <span class="dot-sep">·</span>
+                  <span class="result-workspace">{result.task.workspace_name}</span>
+                  <span class="dot-sep">·</span>
+                  <span>{relativeTime(result.task.updated_at)}</span>
+                  {#if result.task.source_archived}<span class="mini-badge">源归档</span>{/if}
+                  {#if result.task.is_child}<span class="mini-badge">子会话</span>{/if}
+                  {#if result.task.is_automation}<span class="mini-badge">自动化</span>{/if}
+                </span>
+                {#if result.hit.fields.length > 0}
+                  <span class="result-fields">匹配 {result.hit.fields.join(" · ")}</span>
+                {/if}
+              </span>
+              <span class="status {statusClass(result.task)}">{statusLabel(result.task)}</span>
+            </button>
+          {/each}
+        {/if}
+      </div>
+
+      <footer class="search-foot">
+        <span class="search-hints">
+          <kbd>↑</kbd><kbd>↓</kbd> 选择 <kbd>↵</kbd> 打开 <kbd>Esc</kbd> 关闭
+        </span>
+        {#if searchActive && !searchError}
+          <span class="search-count">
+            {#if searching}
+              搜索中…
+            {:else if searchTotal > 0}
+              {searchTotal} 个结果{#if searchTotal > searchResults.length} · 仅显示前 {searchResults.length} 条{/if}
+            {:else}
+              无结果
+            {/if}
+          </span>
+        {/if}
+      </footer>
+    </div>
+  </div>
+{/if}
