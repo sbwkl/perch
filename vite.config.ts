@@ -18,7 +18,8 @@ export default defineConfig({
         }
       : undefined,
     watch: {
-      ignored: ["**/src-tauri/**", "**/crates/**"],
+      // The Rust target/ tree is huge; watching it pins Vite above 200% CPU on macOS.
+      ignored: ["**/src-tauri/**", "**/crates/**", "**/target/**"],
     },
   },
   envPrefix: ["VITE_", "TAURI_ENV_*"],

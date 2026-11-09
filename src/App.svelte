@@ -141,7 +141,8 @@
     for (const group of payload.workspaces) {
       if (workspaceFilter && group.key !== workspaceFilter) continue;
       for (const task of group.tasks) {
-        if (task.is_child || task.is_automation) continue;
+        const isSelected = task.key === selectedKey;
+        if ((task.is_child || task.is_automation) && !isSelected) continue;
         if (view === "archived") {
           if (!task.source_archived) continue;
         } else if (task.source_archived || task.is_recent !== (view === "recent")) {
@@ -245,7 +246,11 @@
 
   const heading = $derived.by(() => {
     if (workspaceFilter) {
-      return workspaceItems.find((item) => item.key === workspaceFilter)?.name ?? "Workspace";
+      return (
+        workspaceItems.find((item) => item.key === workspaceFilter)?.name ??
+        payload?.workspaces.find((group) => group.key === workspaceFilter)?.name ??
+        "Workspace"
+      );
     }
     if (sourceFilter) return SOURCE_LABELS[sourceFilter] ?? sourceFilter;
     return smartLists.find((item) => item.id === view)?.label ?? "任务";
@@ -357,8 +362,20 @@
   }
 
   function openSearchResult(task: TaskView) {
-    selectTask(task.key);
+    revealTask(task);
     closeSearch();
+  }
+
+  function revealTask(task: TaskView) {
+    view = task.source_archived ? "archived" : task.is_recent ? "recent" : "older";
+    workspaceFilter = task.workspace_key;
+    sourceFilter = null;
+    selectTask(task.key);
+    void tick().then(() => {
+      document
+        .querySelector(".flat-list .task.selected")
+        ?.scrollIntoView({ block: "nearest" });
+    });
   }
 
   function moveSearchSelection(delta: number) {
@@ -551,6 +568,8 @@
           <span class="todo-chip">{task.todo_done}/{task.todo_total}</span>
         {/if}
         {#if task.source_pinned}<span class="pin-badge" title="源置顶" aria-label="源置顶">{@render pinIcon()}</span>{/if}
+        {#if task.is_child}<span class="mini-badge">子会话</span>{/if}
+        {#if task.is_automation}<span class="mini-badge">自动化</span>{/if}
         {#if task.source_missing}<span class="mini-badge danger">源已删除</span>{/if}
       </span>
     </span>

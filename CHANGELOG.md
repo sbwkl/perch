@@ -48,6 +48,10 @@
 ### Fixed
 
 - Codex 会话时间改为取 `session_index.jsonl`、rollout 最新活动时间与创建时间的最大值，续用旧会话后不再显示为创建日期
+- 打开搜索结果后侧边栏与任务列表未跟随：现在会切换到该会话所在视图与 workspace，
+  清除来源筛选，在列表中滚动并高亮该行；子会话/自动化命中也会临时显示并带徽标
+- `npm run tauri dev` 持续 200%+ CPU：Vite 文件监听把 6.9 GB 的 Rust `target/` 目录
+  也纳入递归监听；忽略 `target/` 后空闲占用回到约 1%（Tauri 运行时本身约 0–2%）
 
 ### Planned
 
