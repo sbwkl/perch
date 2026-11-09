@@ -113,10 +113,7 @@ impl CodexCollector {
             {
                 (truncate_chars(objective, 240), "source")
             } else {
-                (
-                    fallback_title(project_name.as_deref(), entry.tail_at),
-                    "fallback",
-                )
+                (fallback_title(), "fallback")
             };
 
             let running = recent_running_state(&entry);
@@ -153,9 +150,16 @@ impl CodexCollector {
                 "unknown"
             };
 
-            let updated_at = index_entry
-                .and_then(|item| item.updated_at)
-                .or(entry.tail_at);
+            // session_index.jsonl 可能长期不更新（桌面端续用旧会话时尤其明显），
+            // 因此以 rollout 尾部的最新事件时间兜底，而不是会话创建时间。
+            let updated_at = [
+                index_entry.and_then(|item| item.updated_at),
+                entry.last_at,
+                entry.tail_at,
+            ]
+            .into_iter()
+            .flatten()
+            .reduce(f64::max);
 
             let mut task = TaskSnapshot::new(SOURCE_CODEX, &entry.id);
             task.title = title;
@@ -207,6 +211,8 @@ struct CodexEntry {
     thread_source: Option<String>,
     model: Option<String>,
     tail_at: Option<f64>,
+    last_at: Option<f64>,
+    tail_running: Option<bool>,
     archived: bool,
 }
 
@@ -244,6 +250,8 @@ fn read_rollout_meta(path: &Path) -> crate::Result<Option<CodexEntry>> {
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned);
 
+    let tail = read_rollout_tail(path);
+
     Ok(Some(CodexEntry {
         id,
         path: path.to_path_buf(),
@@ -252,29 +260,41 @@ fn read_rollout_meta(path: &Path) -> crate::Result<Option<CodexEntry>> {
         thread_source: json_string(payload, "thread_source"),
         model,
         tail_at: timestamp,
+        last_at: tail.last_at,
+        tail_running: tail.running,
         archived: false,
     }))
 }
 
-fn recent_running_state(entry: &CodexEntry) -> Option<bool> {
-    let modified = mtime_seconds(&entry.path)?;
-    if now_seconds() - modified > 86_400.0 {
-        return None;
-    }
-    read_running_state(&entry.path)
+struct RolloutTail {
+    last_at: Option<f64>,
+    running: Option<bool>,
 }
 
-fn read_running_state(path: &Path) -> Option<bool> {
+fn read_rollout_tail(path: &Path) -> RolloutTail {
     const TAIL_BYTES: u64 = 256 * 1024;
-    let mut file = File::open(path).ok()?;
-    let length = file.metadata().ok()?.len();
-    let start = length.saturating_sub(TAIL_BYTES);
-    file.seek(SeekFrom::Start(start)).ok()?;
+    let mut tail = RolloutTail {
+        last_at: None,
+        running: None,
+    };
+    let Ok(mut file) = File::open(path) else {
+        return tail;
+    };
+    let Ok(metadata) = file.metadata() else {
+        return tail;
+    };
+    let start = metadata.len().saturating_sub(TAIL_BYTES);
+    if file.seek(SeekFrom::Start(start)).is_err() {
+        return tail;
+    }
     let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer).ok()?;
+    if file.read_to_end(&mut buffer).is_err() {
+        return tail;
+    }
     let text = String::from_utf8_lossy(&buffer);
     let mut lines: Vec<&str> = text.lines().collect();
     if start > 0 && !lines.is_empty() {
+        // 第一条可能是被截断的半行。
         lines.remove(0);
     }
     for line in lines.iter().rev() {
@@ -282,19 +302,30 @@ fn read_running_state(path: &Path) -> Option<bool> {
             Ok(value) => value,
             Err(_) => continue,
         };
-        if value.get("type").and_then(Value::as_str) != Some("event_msg") {
-            continue;
+        if tail.last_at.is_none() {
+            tail.last_at = value.get("timestamp").and_then(parse_timestamp_value);
         }
-        let Some(event) = value.pointer("/payload/type").and_then(Value::as_str) else {
-            continue;
-        };
-        match event {
-            "task_started" => return Some(true),
-            "task_complete" | "turn_aborted" => return Some(false),
-            _ => {}
+        if tail.running.is_none() && value.get("type").and_then(Value::as_str) == Some("event_msg")
+        {
+            tail.running = match value.pointer("/payload/type").and_then(Value::as_str) {
+                Some("task_started") => Some(true),
+                Some("task_complete" | "turn_aborted") => Some(false),
+                _ => None,
+            };
+        }
+        if tail.last_at.is_some() && tail.running.is_some() {
+            break;
         }
     }
-    None
+    tail
+}
+
+fn recent_running_state(entry: &CodexEntry) -> Option<bool> {
+    let modified = mtime_seconds(&entry.path)?;
+    if now_seconds() - modified > 86_400.0 {
+        return None;
+    }
+    entry.tail_running
 }
 
 fn read_index(path: &Path, warnings: &mut Vec<String>) -> HashMap<String, IndexEntry> {

@@ -6,8 +6,17 @@ use crate::models::{
     TodoSnapshot, TodoView, WorkspaceGroup, ALL_SOURCES, RECENT_WINDOW_SECONDS,
 };
 use crate::store::CacheStore;
+use crate::usage::{UsageOverview, UsageSnapshot};
 
 pub fn build_bootstrap(store: &CacheStore, now: f64) -> Result<BootstrapPayload> {
+    build_bootstrap_with_usage(store, now, None)
+}
+
+pub fn build_bootstrap_with_usage(
+    store: &CacheStore,
+    now: f64,
+    usage: Option<&UsageSnapshot>,
+) -> Result<BootstrapPayload> {
     let tasks = store.load_tasks()?;
     let todos = store.load_todos()?;
     let states = store.load_sync_states()?;
@@ -45,30 +54,64 @@ pub fn build_bootstrap(store: &CacheStore, now: f64) -> Result<BootstrapPayload>
     let mut workspaces: Vec<WorkspaceGroup> = groups.into_values().collect();
     for group in &mut workspaces {
         group.tasks.sort_by(|left, right| {
-            right
-                .updated_at
-                .unwrap_or(0.0)
-                .total_cmp(&left.updated_at.unwrap_or(0.0))
+            (right.status == "running")
+                .cmp(&(left.status == "running"))
+                .then_with(|| right.source_pinned.cmp(&left.source_pinned))
+                .then_with(|| {
+                    right
+                        .updated_at
+                        .unwrap_or(0.0)
+                        .total_cmp(&left.updated_at.unwrap_or(0.0))
+                })
                 .then_with(|| left.title.cmp(&right.title))
         });
     }
     workspaces.sort_by(|left, right| {
-        right
-            .last_activity_at
-            .unwrap_or(0.0)
-            .total_cmp(&left.last_activity_at.unwrap_or(0.0))
+        (left.key == NO_PROJECT_KEY)
+            .cmp(&(right.key == NO_PROJECT_KEY))
+            .then_with(|| {
+                right
+                    .last_activity_at
+                    .unwrap_or(0.0)
+                    .total_cmp(&left.last_activity_at.unwrap_or(0.0))
+            })
             .then_with(|| left.name.cmp(&right.name))
     });
 
     let counts = count_tasks(&workspaces);
     let sources = build_sources(&tasks, &states);
+    let usage_summary = attach_usage(&mut workspaces, usage);
 
     Ok(BootstrapPayload {
         generated_at: now,
         sources,
         workspaces,
         counts,
+        usage: usage_summary,
     })
+}
+
+fn attach_usage(
+    workspaces: &mut [WorkspaceGroup],
+    usage: Option<&UsageSnapshot>,
+) -> Option<UsageOverview> {
+    let snapshot = usage?;
+    let mut matched: HashMap<String, i64> = HashMap::new();
+    for group in workspaces.iter_mut() {
+        for task in &mut group.tasks {
+            if let Some(found) = snapshot.task_usage(&task.source, &task.source_id) {
+                *matched.entry(task.source.clone()).or_default() += 1;
+                task.usage = Some(found);
+            }
+        }
+    }
+    let mut overview = snapshot.overview.clone();
+    for entry in &mut overview.sources {
+        entry.matched_tasks = matched.get(&entry.source).copied().unwrap_or(0);
+    }
+    // A source whose sessions no longer exist in Perch would only add noise.
+    overview.sources.retain(|entry| entry.matched_tasks > 0);
+    Some(overview)
 }
 
 fn task_view(
@@ -121,6 +164,7 @@ fn task_view(
         resume_cmd: task.resume_cmd.clone(),
         is_recent: activity >= now - RECENT_WINDOW_SECONDS,
         todos: todo_items,
+        usage: None,
     }
 }
 

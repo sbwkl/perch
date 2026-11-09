@@ -103,6 +103,82 @@ fn tasks_without_project_share_a_no_project_group() {
 }
 
 #[test]
+fn source_pinned_tasks_sort_before_newer_unpinned_tasks() {
+    let store = CacheStore::open_in_memory().unwrap();
+    let now = 1_800_000_000.0;
+    let scan = store.begin_scan("qoder", "full", "source", "test").unwrap();
+
+    let mut pinned = make_task("qoder", "pinned", "alpha", now - 1_000.0);
+    pinned.source_pinned = true;
+    let recent = make_task("qoder", "recent", "alpha", now - 10.0);
+    store
+        .save_result(
+            &SourceResult::ok("qoder", vec![recent, pinned], Vec::new()),
+            scan,
+        )
+        .unwrap();
+
+    let payload = build_bootstrap(&store, now).unwrap();
+    let alpha = payload
+        .workspaces
+        .iter()
+        .find(|group| group.name == "alpha")
+        .unwrap();
+    assert_eq!(alpha.tasks[0].source_id, "pinned");
+    assert_eq!(alpha.tasks[1].source_id, "recent");
+}
+
+#[test]
+fn running_tasks_sort_before_pinned_tasks() {
+    let store = CacheStore::open_in_memory().unwrap();
+    let now = 1_800_000_000.0;
+    let scan = store.begin_scan("qoder", "full", "source", "test").unwrap();
+
+    let mut running = make_task("qoder", "running", "alpha", now - 2_000.0);
+    running.status_source = Some("running".to_owned());
+    let mut pinned = make_task("qoder", "pinned", "alpha", now - 1_000.0);
+    pinned.source_pinned = true;
+    let idle = make_task("qoder", "idle", "alpha", now - 10.0);
+    store
+        .save_result(
+            &SourceResult::ok("qoder", vec![idle, pinned, running], Vec::new()),
+            scan,
+        )
+        .unwrap();
+
+    let payload = build_bootstrap(&store, now).unwrap();
+    let alpha = payload
+        .workspaces
+        .iter()
+        .find(|group| group.name == "alpha")
+        .unwrap();
+    assert_eq!(alpha.tasks[0].source_id, "running");
+    assert_eq!(alpha.tasks[1].source_id, "pinned");
+    assert_eq!(alpha.tasks[2].source_id, "idle");
+}
+
+#[test]
+fn no_project_workspace_sorts_last() {
+    let store = CacheStore::open_in_memory().unwrap();
+    let now = 1_800_000_000.0;
+    let scan = store.begin_scan("qoder", "full", "source", "test").unwrap();
+
+    let mut orphan = make_task("qoder", "orphan", "alpha", now - 10.0);
+    orphan.project_path = None;
+    orphan.project_name = None;
+    let older = make_task("qoder", "older", "beta", now - 1_000.0);
+    store
+        .save_result(
+            &SourceResult::ok("qoder", vec![orphan, older], Vec::new()),
+            scan,
+        )
+        .unwrap();
+
+    let payload = build_bootstrap(&store, now).unwrap();
+    assert_eq!(payload.workspaces.last().unwrap().key, "__no_project__");
+}
+
+#[test]
 fn bootstrap_groups_by_workspace_and_splits_recent_older() {
     let store = CacheStore::open_in_memory().unwrap();
     let now = 1_800_000_000.0;

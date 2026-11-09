@@ -5,6 +5,7 @@ pub mod kilocode;
 pub mod opencode;
 pub mod qoder;
 pub mod session_db;
+pub mod trae_cn;
 
 use crate::models::SourceResult;
 use crate::paths::SourcePaths;
@@ -24,5 +25,9 @@ pub fn all_collectors(paths: &SourcePaths) -> Vec<Box<dyn Collector>> {
             paths.opencode_stable_db.clone(),
         )),
         Box::new(kilocode::KiloCollector::new(paths.kilo_db.clone())),
+        Box::new(trae_cn::TraeCnCollector::new(
+            paths.trae_cn_events_dir.clone(),
+            paths.trae_cn_memory_dir.clone(),
+        )),
     ]
 }

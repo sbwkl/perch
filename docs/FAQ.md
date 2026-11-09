@@ -23,20 +23,34 @@
 
 不需要。Perch 不发起网络请求，没有账号、遥测或云同步。界面不加载远程字体、图片或脚本。
 
+## Trae CN 的任务从哪里来？
+
+Trae CN 的会话列表在服务端，本地 agent 数据库是加密 SQLite，Perch 不读取也不解密。
+Perch 只读 usage-ledger 的 Trae hook 事件（`~/.local/share/usage-ledger/trae-cn/events-*.jsonl`）。
+需要先安装 hook：
+
+```bash
+usage hooks install trae-cn --scope global
+```
+
+未安装时该来源显示不可用。hook 只记录安装之后的会话，且没有标题与状态，
+Perch 统一显示“新会话”和 `idle`，只把 hook 记录的 project basename 作为 workspace 名。
+
 ## 为什么 Qoder 的“打开”只把 App 切到前台？
 
 Qoder 官方支持 `qoder://`，但不支持会话级深链。`qoder://chat/<id>` 在 Qoder 日志中会报
 `DEEP_LINK_ROUTE_UNSUPPORTED`，只能激活 App。Perch 会如实提示“无法定位到具体会话”。
 
-## 为什么 Claude Code 的任务都显示“无显式状态”？
+## Claude Code 的运行状态是怎么来的？
 
-Claude Code 的本地数据没有会话完成/归档状态。Perch 不臆造状态，统一显示“无显式状态”（内部为
-`idle`）。待办进度来自 `~/.claude/tasks/<sessionId>/`。
+Perch 只读 `~/.claude/sessions/<pid>.json`：Claude 进程忙碌时状态为 `busy`，显示“运行中”；
+等待时为 `waiting`，显示“等待中”；空闲或进程已退出显示“空闲”。Claude 不提供会话完成/归档状态，
+Perch 不臆造 `done`。待办进度来自 `~/.claude/tasks/<sessionId>/`。
 
-## 为什么 Trae CN、ChatGPT 桌面没有任务？
+## 为什么 Trae CN 没有任务？ChatGPT 桌面会话去哪了？
 
 - Trae CN：本机 `state.vscdb` 只有模型配置，任务索引为空；没有稳定可读的本地任务列表。
-- ChatGPT 桌面：没有本地任务数据。
+- ChatGPT 桌面：仅 Codex 会话写入 `~/.codex`，计入 Codex 来源；普通聊天存于云端，没有本地任务数据。
 
 没有数据就不会显示在侧边栏。若未来出现稳定的只读数据源，会作为独立采集器加入（见 ROADMAP）。
 
@@ -45,13 +59,10 @@ Claude Code 的本地数据没有会话完成/归档状态。Perch 不臆造状�
 子会话（Claude `subagents/`、OpenCode/Kilo `parent_id`、Qoder `side_chat`）和 Codex 自动化线程
 默认不进入主列表，避免任务碎片化。它们仍保存在快照里，详情面板可显示“子会话”“自动化”徽标。
 
-## 标题里的“临时标题”是什么意思？
+## 会话没有标题时显示什么？
 
-表示标题来自兜底值：
-
-- `临时标题`（provisional）：agent 自己给出的临时标题（如 Qoder 的 `provisionalTitle`）。
-- `回退标题`（fallback）：源没有标题时用 `未命名 · <project> · <date>` 生成。
-- `人工标题` / `AI 标题` / `源标题`：来源不同，均照抄源字段。
+显示 `新会话`。Perch 不会调用模型自行命名：OpenCode 的 `session_v2.title` 在部分会话里为空
+（标题生成没有发生或失败），Qoder 新会话也可能暂时没有正式标题，此时统一使用该占位标题。
 
 ## “源已删除”是什么意思？
 

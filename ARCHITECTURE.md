@@ -26,6 +26,7 @@ Perch 是一个 macOS 桌面应用：Tauri 2 壳 + 纯 Rust core + Svelte 5 前�
 │  collectors ──▶ sync::ScanEngine ──▶ store::CacheStore ──▶ cache.db         │
 │       │                                  │                                  │
 │       └── SourceResult                   └── query::build_bootstrap         │
+│  usage::UsageSnapshot ──（只读 usage.db）──▶ query::build_bootstrap_with_usage│
 │  probe::SourceProbe（SQLite data_version / JSONL 签名）                     │
 │  continue_work::plan_continue（App URL / 激活 App / 终端）                  │
 └──────────────────────────────────────────────────────────────────────────────┘
@@ -42,7 +43,8 @@ Perch 是一个 macOS 桌面应用：Tauri 2 壳 + 纯 Rust core + Svelte 5 前�
 | 采集器 | `crates/perch-core/src/collectors/` | 每个来源一个模块，只读解析并返回 `SourceResult`；不接触 DB 写路径 |
 | 扫描引擎 | `src/sync.rs` | 逐个执行采集器，捕获 panic，写快照，判定缺失，记录同步状态 |
 | 快照存储 | `src/store.rs` | `cache.db` schema、upsert、缺失标记、sync_state / scan_run |
-| 查询 | `src/query.rs` | 把快照组装为 `BootstrapPayload`（workspaces、sources、counts） |
+| 查询 | `src/query.rs` | 把快照组装为 `BootstrapPayload`（workspaces、sources、counts、可选 usage） |
+| 用量桥接 | `src/usage.rs` | 只读打开 usage-ledger 的 `usage.db`，按 `session_id` 聚合 token / credits / est |
 | 探测 | `src/probe.rs` | 轻量判断源是否变化：SQLite `PRAGMA data_version`、JSONL 文件数与最新 mtime |
 | 继续工作 | `src/continue_work.rs` | 按来源和进程探测决定打开 App / URL / 终端，并校验 session id |
 | 路径 | `src/paths.rs` | 默认源路径与环境变量覆盖 |
@@ -55,7 +57,7 @@ Perch 是一个 macOS 桌面应用：Tauri 2 壳 + 纯 Rust core + Svelte 5 前�
 ### 启动与刷新
 
 1. 前端 `onMount` 调用 `bootstrap`，读取 `cache.db` 中的上次快照，立即渲染。
-2. 随后调用 `refresh_sources`：`ScanEngine::scan(None, "manual")` 依次执行五个采集器。
+2. 随后调用 `refresh_sources`：`ScanEngine::scan(None, "manual")` 依次执行六个采集器。
 3. 每个采集器独立返回 `ok / partial / unavailable / error`；单个来源失败不影响其他来源。
 4. `ok` 结果在事务中 upsert，并在扫描记录 `scan_run` 完成后把本次未出现的任务标记
    `source_missing`；`partial / error / unavailable` 保留旧快照。
@@ -70,11 +72,29 @@ Perch 是一个 macOS 桌面应用：Tauri 2 壳 + 纯 Rust core + Svelte 5 前�
 
 - 窗口最小化或不可见时跳过。
 - Qoder / OpenCode / Kilo：`PRAGMA data_version` 是否变化。
-- Claude / Codex：JSONL 文件数 + 最新 mtime 是否变化。
+- Claude / Codex / Trae CN：JSONL 文件数 + 最新 mtime 是否变化（Trae CN 同时覆盖
+  hook 事件与 memory 会话文件两个目录）。
 - 有变化时只重扫对应来源（`trigger = "live"`），完成后再 emit `sources-updated`，
   前端收到事件后重新 `bootstrap`。
 
 探测只做轻量读取，不解析内容；不会常驻 daemon，应用退出即停止。
+
+### 用量附加（可选）
+
+1. `paths::usage_db_path()` 解析 `PERCH_USAGE_DB` → `USAGE_LEDGER_DB` →
+   `USAGE_LEDGER_HOME` → `~/.local/share/usage-ledger/usage.db`。
+2. `UsageSnapshot::try_load` 以只读连接读取 `usage_turn` / `usage_daily` /
+   `usage_credit` / `usage_est`；库不存在、表缺失或 schema 不兼容时返回 `None`。
+3. `query::build_bootstrap_with_usage` 按 `(source, session_id)` 把用量挂到
+   `TaskView.usage`，并在 `BootstrapPayload.usage` 写入**按来源分组**的汇总：来源之间单位
+   不同（token / credits），因此只做来源内的 7 天聚合，不做跨来源合计。
+4. 三块用量分开展示：token 真值、credits（服务端计费）、est（估算）。activity 只有
+   `source + day + project` 粒度，不挂到单个任务。
+5. Tauri 的 3 秒探测同时比较 `usage.db` 主文件与 `-wal` 的 mtime；usage-ledger
+   单独同步后也会触发前端重新 `bootstrap`，但 Perch 不会主动写该库。
+6. 侧边栏的用量报告图标走 usage-ledger 自己的 CLI：`usage html --output <Perch 缓存目录>`，
+   完成后用系统 `open` 打开生成的文件。报告是全局的，不按来源过滤；Perch 只读该库，
+   HTML 与缓存目录属于 Perch 自身。
 
 ### 继续工作
 
@@ -87,6 +107,7 @@ Perch 是一个 macOS 桌面应用：Tauri 2 壳 + 纯 Rust core + Svelte 5 前�
 | Codex | `desktop/automation` → `codex://threads/<id>`；`cli` → 终端 `codex resume <id>`；未知按 App 是否运行决定 |
 | OpenCode | App 运行 → 激活 `ai.opencode.desktop`；否则终端 `opencode --session <id>` |
 | Kilo | App 运行 → 激活 `ai.kilo.desktop`；否则终端 `kilo` |
+| Trae CN | 激活 `cn.trae.app`（hook/memory 无项目路径，也没有确认的会话级深链） |
 
 session id 先经过字符集校验；终端命令由固定模板拼接，前端无法传入任意命令。
 终端通过 `osascript` 在 Terminal 中执行，并在命令前加一个空格，避免 shell 启动提示吞掉首字符。
@@ -106,7 +127,9 @@ session id 先经过字符集校验；终端命令由固定模板拼接，前端
 `agent_kind = "automation"`，两者默认不进入主列表。
 
 `TaskView` / `WorkspaceGroup` / `BootstrapPayload` 等 IPC 类型定义在
-`src/lib/types.ts`，由 Rust 的 serde 序列化生成对应结构。
+`src/lib/types.ts`，由 Rust 的 serde 序列化生成对应结构。任务可选带
+`usage { token?, credits?, est? }`，payload 可选带 `usage` 汇总；两者在
+usage-ledger 不可用时完全不出现。
 
 当前**没有** `overlay.db`：置顶、标签、备注等用户覆盖层尚未实现（见 [ROADMAP.md](ROADMAP.md)）。
 
@@ -120,6 +143,8 @@ session id 先经过字符集校验；终端命令由固定模板拼接，前端
 4. 不读取消息正文、prompt、tool 输出、附件或思考过程；Claude todo 只读 `subject/status`。
 5. `continue_task` 只能使用固定模板命令；session id 必须通过字符集校验。
 6. 删除 `cache.db` 必须只导致数据重建，不影响任何 agent。
+7. usage-ledger 的 `usage.db` 只读打开，不执行迁移、不触发 sync、不写入任何表；
+   其 `usage_turn` / `usage_daily` / `usage_credit` / `usage_est` 必须分轨展示，永不相加。
 
 ## 前端结构
 

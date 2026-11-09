@@ -71,7 +71,7 @@ FROM chat_session_messages GROUP BY session_id;
 
 - 可作为 P0 任务源：会话、标题、项目、时间、归档/未读、模型、分支齐全。
 - 状态较薄：`chat_session_turn_states` 当前为空；默认显示 `idle`，不臆造完成状态。
-- 标题优先级：`title` → `extra_json.provisionalTitle` → fallback；`titleSource` 可用于标注标题来源。
+- 标题优先级：`title` → `extra_json.provisionalTitle` → `新会话`；`titleSource` 仅内部保留，不展示。
 - `scheduled_tasks` 是 Qoder 的定时任务，不是用户会话任务，**不纳入**本项目。
 
 ### 1.6 hooks（P2 相关，既有探测 2026-10-30）
@@ -134,7 +134,8 @@ file-history-snapshot, system, ai-title, custom-title
 ### 2.4 结论
 
 - 可作为 P0：标题覆盖率高，项目/时间/模型齐全。
-- **无会话完成/归档状态**；Claude Code 没有类似 Qoder 的 archived 字段。默认 `idle`，人工状态由 overlay 补。
+- **无会话完成/归档状态**；Claude Code 没有类似 Qoder 的 archived 字段。进程级实时状态见
+  `~/.claude/sessions/<pid>.json`（`busy` / `idle` / `waiting`），Perch 只读接入；人工状态由 overlay 补。
 - todo 可作为子项展示，进度可用于筛选“未完成 todo”。
 - resume 命令已确认：`claude --resume <session-id>`。
 
@@ -168,7 +169,8 @@ history_mode, context_window
   - `codex-tui` = 25
   - `codex_exec` = 2
 - `thread_source` 分布：`user=67`、`automation=2`
-- 只读第一行即可拿到 id/cwd/originator/thread_source/created_at，实测 69 个文件 **0.02s**。
+- 首行 `session_meta` 即可拿到 id/cwd/originator/thread_source/created_at；另读尾部 256KB 取最新活动时间，
+  实测 69 个文件约 **0.09s**。
 - `.jsonl.zst` 归档探测时 0 个；实现仍应跳过并计数，避免未来漏读。
 
 ### 3.3 标题与状态
@@ -280,16 +282,22 @@ agent, model, time_created, time_updated, time_archived
 | `~/Library/Application Support/Trae CN/User/globalStorage/state.vscdb` | 约 970 KB |
 | `ItemTable` 中的任务相关键 | `chat.ChatSessionStore.index` = `{"version":1,"entries":{}}`（空） |
 | 模型配置键 | `AI.agent.model.model_list_map` 等（非任务） |
+| `ModularData/ai-agent/database.db` | SQLCipher 加密 SQLite（页头不可读，未尝试解密） |
+| 其他明文痕迹 | `snapshot/<session>` 为空；`memory/projects/**/session_memory_*.jsonl` 仅覆盖部分会话，首条记录含 `intent` 摘要，没有完整索引 |
 | `~/.trae-cn/hooks.json` | 不存在 |
 | `~/.local/share/usage-ledger/trae-cn` | 不存在（未安装 usage-ledger hooks） |
 | URL scheme | `trae-cn`（Info.plist 已确认） |
 
 ### 6.2 结论
 
-- **当前没有可用的本地任务列表**；本次探测未尝试解密加密库或调用私有 API。
-- 可选：安装 usage-ledger 的 Trae hooks 后，从事件 JSONL 聚合会话；只有安装后的会话可见，
-  无标题/归档/状态，标题用 fallback，允许人工重命名。
-- 未安装 hook 时 source 状态为 `unavailable`，doctor/UI 明确提示。
+- **没有可直接读取的本地任务列表**；session 列表在服务端，本地 agent 库加密。
+- **已实现**：安装 usage-ledger 的 Trae hooks 后，从 `~/.local/share/usage-ledger/trae-cn/events-*.jsonl`
+  聚合会话；状态按最新事件推导 `running` / `idle`，标题优先 memory 首条 `intent`，否则 fallback `新会话`。
+- **已实现（历史会话）**：枚举 `~/.trae-cn/memory/projects/**/session_memory_*.jsonl` 的文件名，
+  补充 hook 安装前的会话；读取日期目录、文件 mtime 与首条记录的 `intent` 摘要作为标题，
+  其余字段与消息正文不读，项目名启发式还原。
+- `snapshot` 目录不足以构成稳定索引，不作为数据源。
+- 未安装 hook 时 source 状态为 `unavailable`，doctor/UI 明确提示安装命令。
 
 ---
 
@@ -297,7 +305,7 @@ agent, model, time_created, time_updated, time_archived
 
 | 源 | 探测 | 结论 |
 |---|---|---|
-| ChatGPT 桌面 | `~/Library/Application Support/com.openai.chat` 不存在 | 无本地任务数据，不支持 |
+| ChatGPT 桌面 | `~/Library/Application Support/com.openai.chat` 不存在；桌面端 bundle 为 `com.openai.codex`，Codex 会话写入 `~/.codex` | 普通聊天云端存储、无本地任务数据；Codex 会话经 Codex 采集 |
 | WorkBuddy | `~/.workbuddy` 不存在 | 本机未安装，后续 adapter |
 
 ---
@@ -308,10 +316,10 @@ agent, model, time_created, time_updated, time_archived
 |---|---|---:|---|
 | Qoder | 183 会话 + 4,111 消息 | 0.08s（group by） | main.sqlite 约 259MB |
 | Claude | 14 个顶层 JSONL，约 25MB | 秒级以内 | 只解析所需字段 |
-| Codex | 69 个 rollout，只读第一行；38 条 index | 0.02s（第一行） | 不扫完整 rollout |
+| Codex | 69 个 rollout，只读首行 + 尾部 256KB | 0.09s（首行 + 尾部） | 不扫完整 rollout |
 | OpenCode | 107 会话；72 todo | 亚秒级 | WAL 只读 |
 | Kilo | 9 会话；10 todo；6 board | 亚秒级 | WAL 只读 |
-| Trae | 无本地任务 | — | 可选 hooks |
+| Trae CN | 事件 JSONL + memory 会话文件名（探测时 13 个会话） | 亚秒级（逐行只取 `session / ts / project / model`，memory 只读路径、mtime 与首条 `intent`） | hook 后会话 + 部分历史会话 |
 
 首版全量扫描目标 **<1.5s**；`serve` 请求按 5s 节流，CLI 用 mtime 签名判断是否刷新。
 
@@ -363,7 +371,8 @@ sqlite3 "file:$HOME/Library/Application Support/Trae CN/User/globalStorage/state
 2. Qoder `chat_session_turn_states.status` 的真实取值集合（当前无行）。
 3. Kilo 是否有可用的会话恢复参数（当前只确认 `kilo session list/delete`）。
 4. Codex `thread_goals` 在实际使用后的状态分布（当前 0 行）。
-5. Claude Code 是否有未落盘的“正在运行”状态（当前只能 `idle`）。
+5. ~~Claude Code 是否有未落盘的“正在运行”状态（当前只能 `idle`）~~：已确认
+   `~/.claude/sessions/<pid>.json` 提供 `busy` / `idle` / `waiting`，Perch 已只读接入。
 6. Trae hooks 安装后的实际事件字段与覆盖范围。
 7. OpenCode/Kilo 的 `session` 表在桌面版/CLI 双写时是否会出现副本（按 id 覆盖即可，但需 fixture 验证）。
 8. Qoder 新会话的落库时机：打开 tab 即写 `chat_sessions`，还是第一条消息后才写；`main.sqlite-wal`

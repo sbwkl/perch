@@ -7,10 +7,11 @@
     ContinueOutcome,
     SyncReport,
     TaskView,
+    UsageReportOutcome,
   } from "./lib/types";
   import { sourceIconMarkup } from "./lib/source-icons";
 
-  type ViewMode = "all" | "recent" | "archived";
+  type ViewMode = "recent" | "older" | "archived";
 
   interface ScanNotice {
     label: string;
@@ -18,12 +19,14 @@
   }
 
   const ICONS = {
-    list: "M4 6h16M4 12h16M4 18h16",
+    history: "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5M12 7v5l4 2",
     clock: "M12 7v5l3 2M21 12a9 9 0 1 1-9-9 9 9 0 0 1 9 9z",
     archive: "M4 7h16M6 7v12h12V7M9 11h6",
     refresh: "M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6",
     folder: "M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z",
     bird: "M7 20c0-5.5 4.5-10 10-10h4l-3-4-5 2-4 4-3 6 1 2zM9 20h10",
+    pin: "M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z",
+    report: "M18 20V10M12 20V4M6 20v-6",
   } as const;
 
   const SOURCE_COLORS: Record<string, string> = {
@@ -31,7 +34,8 @@
     claude: "#d97757",
     codex: "#ffffff",
     opencode: "#201d1d",
-    kilo: "#ffdc04",
+    kilo: "#ffdd00",
+    "trae-cn": "#32f08c",
   };
 
   const SOURCE_LABELS: Record<string, string> = {
@@ -40,11 +44,13 @@
     codex: "Codex",
     opencode: "OpenCode",
     kilo: "Kilo",
+    "trae-cn": "Trae CN",
   };
 
   const STATUS_LABELS: Record<string, string> = {
     running: "运行中",
     active: "活跃",
+    waiting: "等待中",
     paused: "已暂停",
     blocked: "受阻",
     limited: "受限",
@@ -59,19 +65,22 @@
   let errorMessage = $state("");
   let scanNotices = $state<ScanNotice[]>([]);
   let lastScanSummary = $state("");
-  let view = $state<ViewMode>("all");
+  let view = $state<ViewMode>("recent");
   let workspaceFilter = $state<string | null>(null);
   let sourceFilter = $state<string | null>(null);
   let selectedKey = $state<string | null>(null);
   let continuing = $state(false);
   let continueNotice = $state("");
   let showAllWorkspaces = $state(false);
+  let reportOpen = $state(false);
+  let reportNotice = $state("");
+  let reportFailed = $state(false);
 
   const WORKSPACE_VISIBLE_LIMIT = 8;
 
   const smartLists = $derived([
     { id: "recent" as ViewMode, label: "最近", count: payload?.counts.recent ?? 0, icon: ICONS.clock },
-    { id: "all" as ViewMode, label: "全部任务", count: payload?.counts.total ?? 0, icon: ICONS.list },
+    { id: "older" as ViewMode, label: "更早", count: payload?.counts.older ?? 0, icon: ICONS.history },
     { id: "archived" as ViewMode, label: "已归档", count: payload?.counts.archived ?? 0, icon: ICONS.archive },
   ]);
 
@@ -106,33 +115,31 @@
 
   const canToggleWorkspaces = $derived(workspaceItems.length > WORKSPACE_VISIBLE_LIMIT);
 
-  const recentTasks = $derived.by(() => {
-    if (!payload) return [] as TaskView[];
-    const tasks: TaskView[] = [];
-    for (const group of payload.workspaces) {
-      for (const task of group.tasks) {
-        if (task.is_child || task.is_automation || task.source_archived || !task.is_recent) continue;
-        tasks.push(task);
-      }
-    }
-    return tasks.sort((left, right) => (right.updated_at ?? 0) - (left.updated_at ?? 0));
-  });
+  function compareTaskOrder(left: TaskView, right: TaskView): number {
+    const leftRunning = left.status === "running";
+    const rightRunning = right.status === "running";
+    if (leftRunning !== rightRunning) return leftRunning ? -1 : 1;
+    if (left.source_pinned !== right.source_pinned) return left.source_pinned ? -1 : 1;
+    return (right.updated_at ?? 0) - (left.updated_at ?? 0);
+  }
 
   const flatTasks = $derived.by(() => {
-    if (view === "recent") return recentTasks;
     if (!payload) return [] as TaskView[];
-    const archived = view === "archived";
     const tasks: TaskView[] = [];
     for (const group of payload.workspaces) {
       if (workspaceFilter && group.key !== workspaceFilter) continue;
       for (const task of group.tasks) {
         if (task.is_child || task.is_automation) continue;
-        if (task.source_archived !== archived) continue;
+        if (view === "archived") {
+          if (!task.source_archived) continue;
+        } else if (task.source_archived || task.is_recent !== (view === "recent")) {
+          continue;
+        }
         if (sourceFilter && task.source !== sourceFilter) continue;
         tasks.push(task);
       }
     }
-    return tasks.sort((left, right) => (right.updated_at ?? 0) - (left.updated_at ?? 0));
+    return tasks.sort(compareTaskOrder);
   });
 
   const totalVisible = $derived(flatTasks.length);
@@ -147,6 +154,20 @@
     }
     return null;
   });
+
+  const selectedUsage = $derived(selected?.usage ?? null);
+  const selectedToken = $derived(selectedUsage?.token ?? null);
+  const selectedCredits = $derived(selectedUsage?.credits ?? null);
+  const selectedEst = $derived(selectedUsage?.est ?? null);
+
+  // Sources do not share a unit: Qoder reports credits plus estimated tokens,
+  // while the CLI agents report token truth. A mixed summary would be
+  // meaningless, so only show totals once a single source is selected.
+  const sourceUsage = $derived(
+    sourceFilter
+      ? (payload?.usage?.sources.find((item) => item.source === sourceFilter) ?? null)
+      : null,
+  );
 
   const heading = $derived.by(() => {
     if (workspaceFilter) {
@@ -218,6 +239,22 @@
     }
   }
 
+  async function openUsageReport() {
+    if (reportOpen) return;
+    reportOpen = true;
+    reportNotice = "";
+    reportFailed = false;
+    try {
+      await invoke<UsageReportOutcome>("open_usage_report");
+      reportNotice = "已生成用量报告并在浏览器打开";
+    } catch (error) {
+      reportFailed = true;
+      reportNotice = error instanceof Error ? error.message : String(error);
+    } finally {
+      reportOpen = false;
+    }
+  }
+
   function selectView(next: ViewMode) {
     view = next;
     workspaceFilter = null;
@@ -227,13 +264,11 @@
   function selectWorkspace(key: string) {
     workspaceFilter = workspaceFilter === key ? null : key;
     sourceFilter = null;
-    view = "all";
   }
 
   function selectSource(source: string) {
     sourceFilter = sourceFilter === source ? null : source;
     workspaceFilter = null;
-    view = "all";
   }
 
   function sourceColor(source: string): string {
@@ -241,28 +276,18 @@
   }
 
   function statusLabel(task: TaskView): string {
-    if (task.status === "idle" && task.source === "claude") return "无显式状态";
     return STATUS_LABELS[task.status] ?? task.status;
   }
 
   function statusClass(task: TaskView): string {
     if (task.status === "running" || task.status === "active") return "live";
     if (task.status === "blocked") return "danger";
-    if (task.status === "limited" || task.status === "paused") return "warn";
+    if (task.status === "limited" || task.status === "paused" || task.status === "waiting") {
+      return "warn";
+    }
     if (task.status === "complete") return "done";
     if (task.status === "archived") return "muted";
     return "idle";
-  }
-
-  function titleSourceLabel(source: string): string {
-    const labels: Record<string, string> = {
-      custom: "人工标题",
-      ai: "AI 标题",
-      provisional: "临时标题",
-      fallback: "回退标题",
-      source: "源标题",
-    };
-    return labels[source] ?? source;
   }
 
   function todoLabel(status: string): string {
@@ -298,6 +323,27 @@
       hour: "2-digit",
       minute: "2-digit",
     });
+  }
+
+  function formatTokens(value: number): string {
+    if (!Number.isFinite(value) || value <= 0) return "0";
+    if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`;
+    if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
+    if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+    return String(Math.round(value));
+  }
+
+  function formatCredits(value: number): string {
+    return value.toLocaleString("zh-CN", { maximumFractionDigits: 2 });
+  }
+
+  function usageSnapshotLabel(seconds: number | null): string {
+    if (!seconds) return "用量快照时间未知";
+    return `用量快照 ${relativeTime(seconds)}`;
+  }
+
+  function joinModels(models: string[]): string {
+    return models.length > 0 ? models.join(" · ") : "模型未知";
   }
 
   function handleKeydown(event: KeyboardEvent) {
@@ -337,6 +383,12 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
+{#snippet pinIcon()}
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d={ICONS.pin} />
+  </svg>
+{/snippet}
+
 {#snippet taskRow(task: TaskView, showWorkspace: boolean)}
   <button
     class="task"
@@ -347,9 +399,6 @@
       <span class="task-title">
         {#if task.source_unread}<span class="unread-dot"></span>{/if}
         {task.title}
-        {#if task.title_source === "provisional" || task.title_source === "fallback"}
-          <span class="title-flag">{titleSourceLabel(task.title_source)}</span>
-        {/if}
       </span>
       <span class="task-meta">
         {#if showWorkspace}
@@ -364,7 +413,7 @@
         {#if task.todo_total > 0}
           <span class="todo-chip">{task.todo_done}/{task.todo_total}</span>
         {/if}
-        {#if task.source_pinned}<span class="mini-badge">源置顶</span>{/if}
+        {#if task.source_pinned}<span class="pin-badge" title="源置顶" aria-label="源置顶">{@render pinIcon()}</span>{/if}
         {#if task.source_missing}<span class="mini-badge danger">源已删除</span>{/if}
       </span>
     </span>
@@ -391,7 +440,7 @@
       {#each smartLists as item (item.id)}
         <button
           class="nav-item"
-          class:active={view === item.id && !workspaceFilter && !sourceFilter}
+          class:active={view === item.id}
           onclick={() => selectView(item.id)}
         >
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
@@ -446,10 +495,34 @@
           {/if}
         </button>
       {/each}
-      <p class="nav-note">Trae CN、ChatGPT 桌面暂无本地任务数据。</p>
+      <p class="nav-note">Trae CN 需安装 usage-ledger hook 后显示会话；ChatGPT 桌面仅 Codex 会话可见。</p>
     </nav>
 
-    <footer class="sidebar-foot">只读采集 · 不改动源数据</footer>
+    <footer class="sidebar-foot">
+      <span>只读采集 · 不改动源数据</span>
+      {#if payload?.usage}
+        <button
+          class="sidebar-report"
+          onclick={() => void openUsageReport()}
+          disabled={reportOpen}
+          title={reportOpen ? "正在生成用量报告" : "打开 usage-ledger 用量报告"}
+          aria-label={reportOpen ? "正在生成用量报告" : "打开 usage-ledger 用量报告"}
+        >
+          <svg
+            class="report-icon"
+            class:spinning={reportOpen}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d={reportOpen ? ICONS.refresh : ICONS.report} />
+          </svg>
+        </button>
+      {/if}
+    </footer>
   </aside>
 
   <main class="list-pane">
@@ -474,10 +547,48 @@
         <span>{refreshing ? "扫描中" : "刷新"}</span>
         <kbd>⌘R</kbd>
       </button>
+
+      {#if sourceUsage}
+        <div class="usage-strip">
+          {#if sourceUsage.token_7d > 0}
+            <span class="usage-pill" title="usage-ledger token 真值（近 7 天）">
+              <strong>{formatTokens(sourceUsage.token_7d)}</strong><span>tokens · 7d</span>
+            </span>
+          {:else if sourceUsage.token_total > 0}
+            <span class="usage-pill" title="usage-ledger token 真值（全量）">
+              <strong>{formatTokens(sourceUsage.token_total)}</strong><span>tokens · 全量</span>
+            </span>
+          {/if}
+          {#if sourceUsage.credits_billable_7d > 0}
+            <span class="usage-pill credits" title="Qoder 服务端计费，非 token">
+              <strong>{formatCredits(sourceUsage.credits_billable_7d)}</strong><span>credits · 7d</span>
+            </span>
+          {/if}
+          {#if sourceUsage.est_total > 0}
+            <span class="usage-pill est" title="估算 token（全量），不可与真值相加">
+              <strong>{formatTokens(sourceUsage.est_total)}</strong><span>est · 全量</span>
+            </span>
+          {/if}
+          <span class="usage-pill muted" class:stale={payload?.usage?.stale}>
+            {payload?.usage?.stale
+              ? "用量可能已过期"
+              : usageSnapshotLabel(payload?.usage?.as_of ?? null)}
+          </span>
+          {#if sourceUsage.matched_tasks > 0}
+            <span class="usage-pill muted">匹配 {sourceUsage.matched_tasks} 个会话</span>
+          {/if}
+        </div>
+      {/if}
     </header>
 
     {#if errorMessage}
       <div class="banner error">{errorMessage}</div>
+    {/if}
+
+    {#if reportNotice}
+      <div class="banner" class:error={reportFailed} class:notice={!reportFailed}>
+        {reportNotice}
+      </div>
     {/if}
 
     {#if scanNotices.length > 0}
@@ -496,7 +607,7 @@
     {:else if !hasVisibleTasks}
       <div class="empty-state">
         <p>当前筛选下没有任务。</p>
-        <p class="subtle">试试“全部任务”，或点击右上角刷新。</p>
+        <p class="subtle">试试切换视图或清除筛选，或点击右上角刷新。</p>
       </div>
     {:else}
       <div class="groups">
@@ -521,7 +632,6 @@
           <h2>{selected.title}</h2>
           <div class="tag-line">
             {#if selected.source_archived}<span class="badge">源归档</span>{/if}
-            {#if selected.source_pinned}<span class="badge">源置顶</span>{/if}
             {#if selected.source_unread}<span class="badge">未读</span>{/if}
             {#if selected.parent_key}<span class="badge">子会话</span>{/if}
             {#if selected.is_automation}<span class="badge">自动化</span>{/if}
@@ -551,16 +661,80 @@
             {#if selected.model}<dt>模型</dt><dd>{selected.model}</dd>{/if}
             {#if selected.git_branch}<dt>分支</dt><dd class="mono">{selected.git_branch}</dd>{/if}
             {#if selected.message_count !== null}<dt>消息数</dt><dd>{selected.message_count}</dd>{/if}
-            <dt>标题来源</dt><dd>{titleSourceLabel(selected.title_source)}</dd>
             {#if selected.status_raw}<dt>源状态</dt><dd class="mono">{selected.status_raw}</dd>{/if}
           </dl>
         </section>
 
-        <section class="detail-block">
-          <h3>待办 <span class="subtle">{selected.todo_done}/{selected.todo_total}</span></h3>
-          {#if selected.todos.length === 0}
-            <p class="subtle">暂无待办</p>
-          {:else}
+        {#if payload?.usage}
+          <section class="detail-block usage-block">
+            <h3>用量 <span class="subtle">usage-ledger · 只读</span></h3>
+            {#if selectedUsage}
+              {#if selectedToken}
+                <div class="usage-track">
+                  <div class="usage-track-head">
+                    <span class="usage-track-label">token 真值</span>
+                    <span class="usage-track-total">{formatTokens(selectedToken.total)}</span>
+                  </div>
+                  <div class="usage-grid">
+                    <span>输入</span><strong>{formatTokens(selectedToken.input)}</strong>
+                    <span>输出</span><strong>{formatTokens(selectedToken.output)}</strong>
+                    {#if selectedToken.cache_read > 0}
+                      <span>缓存读</span><strong>{formatTokens(selectedToken.cache_read)}</strong>
+                    {/if}
+                    {#if selectedToken.cache_write > 0}
+                      <span>缓存写</span><strong>{formatTokens(selectedToken.cache_write)}</strong>
+                    {/if}
+                    {#if selectedToken.reasoning > 0}
+                      <span>推理</span><strong>{formatTokens(selectedToken.reasoning)}</strong>
+                    {/if}
+                  </div>
+                  <p class="usage-meta">
+                    {joinModels(selectedToken.models)} · {selectedToken.turns} 轮
+                    · 最近 {selectedToken.last_day ?? "—"}
+                  </p>
+                </div>
+              {/if}
+              {#if selectedCredits}
+                <div class="usage-track">
+                  <div class="usage-track-head">
+                    <span class="usage-track-label credits">credits · 服务端计费</span>
+                    <span class="usage-track-total">{formatCredits(selectedCredits.billable)}</span>
+                  </div>
+                  <p class="usage-meta">
+                    {selectedCredits.billable_requests} 个计费请求
+                    {#if selectedCredits.free > 0}
+                      · 免费 {formatCredits(selectedCredits.free)} credits / {selectedCredits.free_requests} 请求
+                    {/if}
+                    · 最近 {selectedCredits.last_day ?? "—"}
+                  </p>
+                </div>
+              {/if}
+              {#if selectedEst}
+                <div class="usage-track">
+                  <div class="usage-track-head">
+                    <span class="usage-track-label est">est 估算</span>
+                    <span class="usage-track-total">{formatTokens(selectedEst.total)}</span>
+                  </div>
+                  <div class="usage-grid">
+                    <span>输入</span><strong>{formatTokens(selectedEst.input)}</strong>
+                    <span>输出</span><strong>{formatTokens(selectedEst.output)}</strong>
+                  </div>
+                  <p class="usage-meta">
+                    {selectedEst.source} · {selectedEst.requests} 请求
+                    · 最近 {selectedEst.last_day ?? "—"}
+                  </p>
+                </div>
+              {/if}
+            {:else}
+              <p class="usage-empty">usage-ledger 中没有该会话的用量记录。</p>
+            {/if}
+            <p class="usage-note">四轨口径不同：token / credits / est 永不相加。</p>
+          </section>
+        {/if}
+
+        {#if selected.todos.length > 0}
+          <section class="detail-block">
+            <h3>待办 <span class="subtle">{selected.todo_done}/{selected.todo_total}</span></h3>
             <ul class="todo-list">
               {#each selected.todos as todo (todo.item_id)}
                 <li class="todo {todo.status}" title={todoLabel(todo.status)}>
@@ -569,8 +743,8 @@
                 </li>
               {/each}
             </ul>
-          {/if}
-        </section>
+          </section>
+        {/if}
 
         {#if selected.resume_cmd}
           <section class="detail-block">

@@ -1,6 +1,6 @@
 # Perch
 
-> 多 agent 任务总览：把 Qoder、Claude Code、Codex、OpenCode、Kilo 的本地会话汇总到一处。
+> 多 agent 任务总览：把 Qoder、Claude Code、Codex、OpenCode、Kilo、Trae CN 的本地会话汇总到一处。
 > 先找到任务，再决定回哪个 agent 继续。
 
 ![Perch 主界面](docs/images/overview.png)
@@ -8,15 +8,23 @@
 Perch 只读取各 agent 已落盘的会话元数据，把散落在不同侧边栏里的任务放进同一个列表。
 它不会写入、修改或删除任何 agent 的数据，也不发起网络请求。
 
+如果本机使用 usage-ledger 归档过 token 用量，Perch 还会**只读**它的
+`usage.db`，在任务详情里附加该会话的 token / credits / 估算值。没有安装或没有归档时，
+这一块会静默隐藏，不影响任务列表。
+
 **当前状态**：v0.1.0，早期可用版本，仅支持 macOS，尚未提供签名安装包，需要从源码构建。
 功能边界与后续计划见 [ROADMAP.md](ROADMAP.md)。
 
 ## 它能做什么
 
-- **统一任务列表**：五个来源的任务按最近活动时间平铺展示，行内标注 workspace。
-- **三种视图**：最近（近 7 天）、全部任务、已归档；可按 workspace 或来源筛选。
+- **统一任务列表**：六个来源的任务按最近活动时间平铺展示，行内标注 workspace。
+- **三种视图**：最近（近 7 天）、更早（7 天之外）、已归档；workspace 与来源筛选可叠加在当前视图上。
 - **实时感知**：窗口可见时每 3 秒探测源变化，变更后自动重扫并刷新界面；也可用 `⌘R` 手动刷新。
-- **详情面板**：展示模型、分支、消息数、标题来源、待办进度和恢复命令。
+- **详情面板**：展示模型、分支、消息数、待办进度和恢复命令。
+- **用量附加（可选）**：按会话关联 usage-ledger 的 token 真值、Qoder credits 与 est 估算，
+  四轨分开展示、永不相加；选中单一来源时，顶部显示该来源的摘要（不同来源单位不同，
+  不做跨来源汇总）。侧边栏页脚的用量报告图标调用 usage-ledger 自己的 `usage html`，
+  在浏览器打开完整的 HTML 报告。
 - **继续工作**：按来源决定激活 App 还是在终端恢复会话，命令由 Rust 侧固定模板生成。
 - **只读保证**：SQLite 只读连接 + 只读 JSONL；界面脚注和详情面板都明确标注不改动源数据。
 
@@ -35,11 +43,26 @@ Perch 只读取各 agent 已落盘的会话元数据，把散落在不同侧边�
 | Codex | `~/.codex/sessions`、`archived_sessions`、`session_index.jsonl` | App 会话用 `codex://threads/<id>`；CLI 会话用终端 `codex resume <id>` |
 | OpenCode | `~/.local/share/opencode/opencode.db` | App 运行中则激活 App；否则终端 `opencode --session <id>` |
 | Kilo | `~/.local/share/kilo/kilo.db` | App 运行中则激活 App；否则终端 `kilo` |
+| Trae CN | `~/.local/share/usage-ledger/trae-cn/events-*.jsonl` 与 `~/.trae-cn/memory/projects/**/session_memory_*.jsonl` | 激活 Trae CN App（无会话级深链） |
 
 各来源的字段映射、状态推断规则与已知限制见 [docs/SOURCES.md](docs/SOURCES.md)。
 
-Trae CN 与 ChatGPT 桌面目前没有可用的本地任务数据，因此不会出现在列表中；
-如果未来出现稳定的只读数据源，会以独立采集器加入。
+Trae CN 的会话列表在服务端，本地 agent 库加密；Perch 只读 usage-ledger 的 Trae hook 事件，
+并枚举 `memory/projects` 下的 `session_memory_*.jsonl` 文件名来覆盖安装 hook 前的历史会话
+（读取文件名、日期目录、mtime 与首条 `intent` 摘要作为标题，不读消息正文）。
+需要先安装 hook（`usage hooks install trae-cn --scope global`），未安装时该来源显示不可用。
+ChatGPT 桌面仅 Codex 会话写入本地并计入 Codex，普通聊天仍存于云端。
+
+### 用量来源（可选）
+
+| 来源 | 读取位置（默认） | 展示方式 |
+| --- | --- | --- |
+| usage-ledger | `~/.local/share/usage-ledger/usage.db` | 按 `session_id` 关联到任务，分 token / credits / est 三块展示 |
+
+路径可用 `PERCH_USAGE_DB`、`USAGE_LEDGER_DB` 或 `USAGE_LEDGER_HOME` 覆盖。
+Perch 只读该库，不会触发 usage-ledger 的 sync；数据新鲜度由 usage-ledger 自己的
+`usage schedule install` 或手动 `usage sync` 维护。四轨口径不同：token 真值、credits
+（服务端计费）、est（估算）、activity（按项目/天，不挂任务）互不相加。
 
 ## 快速开始
 
@@ -64,8 +87,9 @@ npm run tauri build
 ## 只读与隐私
 
 - 采集只使用 SQLite `SQLITE_OPEN_READ_ONLY` + `PRAGMA query_only=ON`，JSONL 只读打开。
+- usage-ledger 的 `usage.db` 同样只读打开，Perch 不会写入、迁移或触发它的 sync。
 - 不读取消息正文、prompt、tool 输出、附件或思考过程；只读取标题、项目路径、时间、模型、分支、
-  计数、待办 subject、状态与置顶/未读标志等元数据。
+  计数、待办 subject、状态与置顶/未读标志等元数据。用量块只读取来源、会话 ID、模型、日期与计数。
 - 不发起任何网络请求，没有遥测、账号或云同步。
 - 本地缓存位于 `~/Library/Application Support/app.perch.desktop/cache.db`，可随时删除重建，
   不影响源 agent 数据。标题由 agent 生成，可能包含 prompt 片段；Perch 只在本机保存。
@@ -76,7 +100,8 @@ npm run tauri build
 ## 当前不包含
 
 - 全局置顶、标签、备注、隐藏、重命名等覆盖层操作（`overlay.db` 尚未实现）。
-- 全文搜索、跨来源自动合并、token/credits 统计、导出、伴生 CLI。
+- 完整的用量报表、按 workspace 汇总、图表与导出；这些仍以 usage-ledger 的 `html` / CLI 为准。
+- 全文搜索、跨来源自动合并、伴生 CLI。
 - Windows / Linux 支持。
 
 这些能力在 [ROADMAP.md](ROADMAP.md) 中按里程碑排列。

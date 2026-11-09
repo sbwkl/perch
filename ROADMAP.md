@@ -45,8 +45,9 @@ Perch 以“先找到任务，再回 agent 继续”为核心。里程碑沿用
 
 ## M5 · 集成与可选能力 — 计划中
 
-- [ ] 可选读取 usage-ledger 的 `usage.db`，在 Inspector 附带 token / credits（分轨标注，永不相加）
-- [ ] Trae CN hooks 事件（仅在安装 hook 后可见，默认关闭）
+- [x] 可选读取 usage-ledger 的 `usage.db`，在 Inspector 附带 token / credits / est（分轨标注，永不相加）
+- [ ] 用量报表视图（按 workspace / 时间聚合图表，复用 usage-ledger 的聚合口径）
+- [x] Trae CN hooks 事件聚合（需安装 usage-ledger hook；未安装时来源不可用）
 - [ ] 伴生 CLI（可选）
 - [ ] 其他来源的只读适配，先做可行性验证
 

@@ -21,12 +21,12 @@
 | 来源 | 存储 | 主要文件 | 待办 | 继续工作 |
 | --- | --- | --- | --- | --- |
 | Qoder | SQLite | `main.sqlite` | 无 | 激活 App |
-| Claude Code | JSONL + JSON | `projects/**/*.jsonl`、`tasks/` | 有 | 终端 `claude --resume` |
+| Claude Code | JSONL + JSON | `projects/**/*.jsonl`、`sessions/`、`tasks/` | 有 | 终端 `claude --resume` |
 | Codex | JSONL + SQLite | `sessions/`、`archived_sessions/`、`session_index.jsonl`、`goals_1.sqlite` | 无（goal 状态） | `codex://threads/<id>` 或终端 |
 | OpenCode | SQLite | `opencode.db` | 旧表有，v2 暂无 | 激活 App 或终端 |
 | Kilo | SQLite | `kilo.db` | 旧表有 | 激活 App 或终端 |
-| Trae CN | — | 无可用本地任务 | — | 未支持 |
-| ChatGPT 桌面 | — | 无本地任务数据 | — | 未支持 |
+| Trae CN | usage-ledger hooks JSONL | `trae-cn/events-*.jsonl` | 无 | 激活 App |
+| ChatGPT 桌面 | — | 普通聊天无本地数据；Codex 会话经 Codex 采集 | — | 未支持 |
 
 ---
 
@@ -53,7 +53,7 @@
 
 1. `title` 非空；若 `extra_json.titleSource` 存在则照抄（如 `custom` / `ai`）。
 2. `extra_json.provisionalTitle`，标记 `provisional`。
-3. `未命名 · <project> · <date>`，标记 `fallback`。
+3. `新会话`，标记 `fallback`。
 
 **状态推断**
 
@@ -89,6 +89,7 @@ Qoder App 已注册 `qoder://`，但不支持会话级 URL（`main.log` 报 `DEE
 ```
 ~/.claude/projects/<project>/<sessionId>.jsonl     # 顶层会话
 ~/.claude/projects/**/subagents/...                 # 子会话，仅计数，不解析
+~/.claude/sessions/<pid>.json                       # 运行中进程的实时状态
 ~/.claude/tasks/<sessionId>/*.json                  # 待办
 ```
 
@@ -100,12 +101,14 @@ Qoder App 已注册 `qoder://`，但不支持会话级 URL（`main.log` 报 `DEE
   的文件跳过。
 - 从 JSONL 中读取：`cwd`、`gitBranch`、`timestamp`、`type`、`message.model`、`isSidechain`。
 - `message_count` = 非 sidechain 的 user + assistant 记录数。
-- 标题：最后一条 `custom-title.customTitle` → 最后一条 `ai-title.aiTitle` → `未命名 · <project> · <date>`。
+- 标题：最后一条 `custom-title.customTitle` → 最后一条 `ai-title.aiTitle` → `新会话`。
 - 时间：首/末记录 timestamp，缺失用文件 mtime。
 
 **状态**
 
-Claude Code 不提供会话完成/归档状态，统一为 `idle`，界面显示“无显式状态”，不臆造 `done`。
+Claude Code 在 `~/.claude/sessions/<pid>.json` 写入运行中进程的实时状态（只读）：
+`busy` → 运行中，`waiting` → 等待中，`idle` → 空闲；进程已退出或没有状态文件时记为 `idle`。
+不提供会话完成/归档状态，不臆造 `done`。
 
 **待办**
 
@@ -118,6 +121,7 @@ Claude Code 不提供会话完成/归档状态，统一为 `idle`，界面显示
 
 **已知限制**
 
+- 实时状态依赖 Claude Code 的 `~/.claude/sessions/<pid>.json`；旧版本没有该文件时统一显示空闲。
 - 子会话（`subagents/`）暂不进入主列表，也不读取其待办。
 - 没有运行/完成状态。
 
@@ -140,17 +144,22 @@ Claude Code 不提供会话完成/归档状态，统一为 `idle`，界面显示
 
 **读取内容**
 
-- 每个 rollout 只读**第一行** `session_meta`：`id`、`timestamp`、`cwd`、`originator`、`thread_source`、`model`。
-  不扫完整 rollout。
+- 每个 rollout 读第一行 `session_meta`：`id`、`timestamp`、`cwd`、`originator`、`thread_source`、`model`；
+  尾部 256 KB 用于最新事件时间与运行状态。不扫完整 rollout。
 - `session_index.jsonl` 提供 `id → thread_name` 与 `updated_at`。
 - `goals_1.sqlite` 提供 `thread_goals` 的 `objective`、`status`。
 - `.jsonl.zst` 不解析。
+
+**更新时间**
+
+`updated_at` 取 `session_index.updated_at`、rollout 尾部最后一条事件时间、`session_meta.timestamp`
+三者的最大值。`session_index.jsonl` 可能长期不更新，不能单独作为续用旧会话的时间依据。
 
 **标题优先级**
 
 1. `session_index.thread_name`。
 2. `thread_goals.objective`（截断 240 字符）。
-3. `未命名 · <project> · <date>`。
+3. `新会话`。
 
 **状态推断**
 
@@ -254,15 +263,83 @@ Kilo 的 schema 与旧版 OpenCode `session` 表同构（没有 `session_v2`、`
 
 ---
 
+## Trae CN
+
+**路径**
+
+```
+~/.local/share/usage-ledger/trae-cn/events-<date>.jsonl
+~/.trae-cn/memory/projects/<encoded-project>/<date>/session_memory_<session>.jsonl
+```
+
+覆盖变量：`PERCH_TRAE_CN_EVENTS_DIR`、`PERCH_TRAE_CN_MEMORY_DIR`；设置 `USAGE_LEDGER_HOME`
+时事件目录跟随其目录。
+
+**来源说明**
+
+Trae CN 没有可读的本地会话索引：`state.vscdb` 只有模型配置与当前窗口状态，
+agent 数据库 `ModularData/ai-agent/database.db` 是加密 SQLite，会话列表在服务端。
+Perch 不接触加密库，只读取 usage-ledger 的 Trae hook 事件——它由 Trae 的
+`UserPromptSubmit` / `Stop` hook 追加，写入纯文本元数据，不包含消息正文。
+hook 安装晚于部分历史会话，因此再枚举 `memory/projects` 下的
+`session_memory_<session>.jsonl` 文件名来覆盖安装前的会话；读取文件名、日期目录、
+文件 mtime，以及每个会话首条记录的 `intent` 摘要作为标题，不读消息正文。
+
+安装 hook 后才会出现会话；未安装时该来源显示 `unavailable`，提示执行：
+
+```bash
+usage hooks install trae-cn --scope global
+```
+
+**读取内容**
+
+- 枚举 `events-*.jsonl`，逐行只读 `session`、`ts`、`project`、`model`。
+- 枚举 `memory/projects/**/session_memory_*.jsonl` 的文件名作为历史会话 id；
+  `created_at` 取日期目录的本地零点，`updated_at` 取文件 mtime。
+- 标题读取每条会话首个记录的 `intent` 字段（AI 生成的短摘要，截断到 60 字）；
+  `actions`、`outcome`、`learned`、`message_id` 与消息正文一律不读。
+- 历史会话与 hook 会话按 session id 合并，hook 事件的时间与状态优先；
+  历史会话状态固定 `idle`。
+- 项目名从编码目录名启发式还原（去掉 `--p2-<hash>` 与常见父目录），不伪造 `project_path`。
+- `tool`、`tool_use_id`、`loop`、`chars_in`、`chars_out` 等字段不读取、不存储。
+- `session = "unknown"` 的行跳过；无法解析的行计入 warning，来源降级为 `partial`。
+- 按 `session` 聚合：`created_at` 取最早 `ts`，`updated_at` 取最晚 `ts`，
+  `project` / `model` 取时间最晚的非空值。
+
+**标题 / 状态**
+
+- 标题优先使用 memory 首条 `intent` 摘要（`title_source = ai`，超过 60 字截断）；
+  没有 memory 记录时显示 `新会话`（`title_source = fallback`）。
+- 状态由会话中时间最晚的已知事件推导：`UserPromptSubmit` / `PreToolUse` / `PostToolUse`
+  视为 `running`，`SessionStart` / `Stop` 视为 `idle`；未知事件不改变状态。
+- 状态没有时间衰减：若 Trae CN 在回合中退出且未产生 `Stop`，会话会停留在 `running`，
+  直到下一次事件或手动刷新。
+- `project` 只是 hook 记录的 basename，因此写入 `project_name`，没有 `project_path`。
+- 没有 hook 事件的历史会话只能按 memory 文件名估计项目与时间，项目名可能与真实路径不完全一致。
+
+**继续工作**
+
+Trae CN 没有确认的会话级深链，只能 `open -b cn.trae.app` 激活窗口。
+
+**已知限制**
+
+- 历史会话只覆盖有 `session_memory_*.jsonl` 的会话，不是完整历史列表。
+- 没有待办、消息数和归档状态；标题固定为 fallback `新会话`，`agent_kind` 固定为 `desktop`。
+- 事件文件缺失或未安装 hook 时来源不可用；单个坏行会导致 `partial`。
+
+**变化探测**：事件与 memory 目录下 JSONL 的文件数 + 最新 mtime 签名。
+
+---
+
 ## 未支持的来源
 
 | 来源 | 原因 |
 | --- | --- |
-| Trae CN | 本机 `state.vscdb` 只有模型配置，`ChatSessionStore.index` 为空；没有稳定可读的任务列表 |
-| ChatGPT 桌面 | 没有本地任务数据 |
+| ChatGPT 桌面 | 普通聊天无本地任务数据；Codex 会话写入 `~/.codex`，经 Codex 采集 |
 | WorkBuddy | 未安装，schema 未知；不猜测 |
 
-这些来源不会出现在侧边栏；如果未来出现稳定的只读数据源，会以独立采集器加入。
+WorkBuddy 不会出现在侧边栏；ChatGPT 桌面的 Codex 会话计入 Codex，普通聊天暂无本地数据。
+如果未来出现稳定的只读数据源，会以独立采集器加入。
 
 ---
 
@@ -295,4 +372,5 @@ cargo test -p perch-core
 | `PERCH_OPENCODE_DB` | OpenCode 主数据库 |
 | `PERCH_OPENCODE_STABLE_DB` | OpenCode 回退数据库 |
 | `PERCH_KILO_DB` | Kilo 数据库 |
+| `PERCH_TRAE_CN_EVENTS_DIR` | Trae CN hook 事件目录 |
 | `PERCH_CACHE_DB` | Perch 快照缓存 |

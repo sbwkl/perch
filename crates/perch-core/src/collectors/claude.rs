@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -64,8 +65,9 @@ impl ClaudeCollector {
 
         let mut tasks = Vec::new();
         let mut todos = Vec::new();
+        let live_sessions = self.load_live_sessions();
         for path in session_files {
-            match self.parse_session(&path) {
+            match self.parse_session(&path, &live_sessions) {
                 Ok(Some(parsed)) => {
                     let mut task = parsed.task;
                     let session_id = task.source_id.clone();
@@ -102,7 +104,11 @@ impl ClaudeCollector {
         Ok(result)
     }
 
-    fn parse_session(&self, path: &Path) -> crate::Result<Option<ParsedSession>> {
+    fn parse_session(
+        &self,
+        path: &Path,
+        live_sessions: &HashMap<String, LiveSession>,
+    ) -> crate::Result<Option<ParsedSession>> {
         let session_id = match path.file_stem().and_then(|stem| stem.to_str()) {
             Some(stem) if !stem.is_empty() => stem.to_owned(),
             _ => return Ok(None),
@@ -203,10 +209,7 @@ impl ClaudeCollector {
         } else if let Some(title) = ai_title {
             (title, "ai")
         } else {
-            (
-                fallback_title(project_name.as_deref(), created_at),
-                "fallback",
-            )
+            (fallback_title(), "fallback")
         };
 
         let mut task = TaskSnapshot::new(SOURCE_CLAUDE, &session_id);
@@ -216,7 +219,12 @@ impl ClaudeCollector {
         task.project_name = project_name;
         task.created_at = created_at;
         task.updated_at = updated_at;
-        task.status_source = Some("idle".to_owned());
+        let live = live_sessions.get(&session_id);
+        task.status_source = Some(
+            live.map(|item| item.status_source.clone())
+                .unwrap_or_else(|| "idle".to_owned()),
+        );
+        task.status_raw = live.and_then(|item| item.status_raw.clone());
         task.model = model;
         task.git_branch = git_branch;
         task.agent_kind = Some("cli".to_owned());
@@ -226,6 +234,52 @@ impl ClaudeCollector {
         task.refresh_fingerprint();
 
         Ok(Some(ParsedSession { task }))
+    }
+
+    /// Claude Code 在 `sessions/<pid>.json` 写入进程级实时状态。
+    fn load_live_sessions(&self) -> HashMap<String, LiveSession> {
+        let mut sessions = HashMap::new();
+        let Ok(entries) = fs::read_dir(self.root.join("sessions")) else {
+            return sessions;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|value| value.to_str()) != Some("json") {
+                continue;
+            }
+            let Ok(raw) = fs::read_to_string(&path) else {
+                continue;
+            };
+            let Ok(value) = serde_json::from_str::<Value>(&raw) else {
+                continue;
+            };
+            let Some(session_id) = json_string(&value, "sessionId") else {
+                continue;
+            };
+            let Some(pid) = value.get("pid").and_then(Value::as_i64) else {
+                continue;
+            };
+            if !process_alive(pid) {
+                continue;
+            }
+            let raw_status = json_string(&value, "status")
+                .unwrap_or_default()
+                .trim()
+                .to_ascii_lowercase();
+            let status_source = match raw_status.as_str() {
+                "busy" => "running",
+                "waiting" => "waiting",
+                _ => "idle",
+            };
+            sessions.insert(
+                session_id,
+                LiveSession {
+                    status_source: status_source.to_owned(),
+                    status_raw: (!raw_status.is_empty()).then_some(raw_status),
+                },
+            );
+        }
+        sessions
     }
 
     fn load_todos(&self, session_id: &str, task_key: &str) -> crate::Result<Vec<TodoSnapshot>> {
@@ -288,6 +342,25 @@ impl Collector for ClaudeCollector {
 
 struct ParsedSession {
     task: TaskSnapshot,
+}
+
+struct LiveSession {
+    status_source: String,
+    status_raw: Option<String>,
+}
+
+#[cfg(unix)]
+fn process_alive(pid: i64) -> bool {
+    if pid <= 0 || pid > i32::MAX as i64 {
+        return false;
+    }
+    // Signal 0 only checks whether the process exists.
+    unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
+}
+
+#[cfg(not(unix))]
+fn process_alive(_pid: i64) -> bool {
+    true
 }
 
 fn normalize_todo_status(raw: Option<&str>) -> String {

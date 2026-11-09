@@ -6,8 +6,9 @@ use perch_core::collectors::codex::CodexCollector;
 use perch_core::collectors::kilocode::KiloCollector;
 use perch_core::collectors::opencode::OpenCodeCollector;
 use perch_core::collectors::qoder::QoderCollector;
+use perch_core::collectors::trae_cn::TraeCnCollector;
 use perch_core::collectors::Collector;
-use perch_core::models::SourceScanStatus;
+use perch_core::models::{SourceScanStatus, SOURCE_TRAE_CN};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
@@ -363,6 +364,77 @@ fn codex_collector_dedupes_rollouts_and_applies_goal_status() {
     assert_eq!(before, after);
 }
 
+#[test]
+fn codex_updated_at_uses_latest_rollout_activity() {
+    fn epoch(value: &str) -> f64 {
+        chrono::DateTime::parse_from_rfc3339(value)
+            .unwrap()
+            .timestamp() as f64
+    }
+
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+
+    let resumed = root.join("sessions/2026/10/rollout-resumed.jsonl");
+    fs::create_dir_all(resumed.parent().unwrap()).unwrap();
+    fs::write(
+        &resumed,
+        concat!(
+            "{\"timestamp\":\"2026-10-01T08:00:00Z\",\"type\":\"session_meta\",\"payload\":{\
+             \"id\":\"resumed\",\"timestamp\":\"2026-10-01T08:00:00Z\",\"cwd\":\"/Users/x/work/beta\",\
+             \"originator\":\"Codex Desktop\",\"thread_source\":\"user\"}}\n",
+            "{\"timestamp\":\"2026-11-03T12:48:22Z\",\"type\":\"event_msg\",\
+             \"payload\":{\"type\":\"task_complete\"}}\n"
+        ),
+    )
+    .unwrap();
+
+    let unindexed = root.join("sessions/2026/10/rollout-unindexed.jsonl");
+    fs::write(
+        &unindexed,
+        concat!(
+            "{\"timestamp\":\"2026-10-08T08:00:00Z\",\"type\":\"session_meta\",\"payload\":{\
+             \"id\":\"unindexed\",\"timestamp\":\"2026-10-08T08:00:00Z\",\"cwd\":\"/Users/x/work/beta\",\
+             \"originator\":\"codex-tui\",\"thread_source\":\"user\"}}\n",
+            "{\"timestamp\":\"2026-10-09T09:30:00Z\",\"type\":\"event_msg\",\
+             \"payload\":{\"type\":\"task_complete\"}}\n"
+        ),
+    )
+    .unwrap();
+
+    fs::write(
+        root.join("session_index.jsonl"),
+        "{\"id\":\"resumed\",\"thread_name\":\"恢复的会话\",\"updated_at\":\"2026-10-02T00:00:00Z\"}\n",
+    )
+    .unwrap();
+
+    let result = CodexCollector::new(root.to_path_buf()).scan();
+    assert_eq!(result.status, SourceScanStatus::Ok, "{:?}", result.error);
+
+    let resumed = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "resumed")
+        .unwrap();
+    assert_eq!(resumed.created_at, Some(epoch("2026-10-01T08:00:00Z")));
+    assert_eq!(
+        resumed.updated_at,
+        Some(epoch("2026-11-03T12:48:22Z")),
+        "过期的 session_index 不能覆盖更新的 rollout 活动时间"
+    );
+
+    let unindexed = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "unindexed")
+        .unwrap();
+    assert_eq!(
+        unindexed.updated_at,
+        Some(epoch("2026-10-09T09:30:00Z")),
+        "没有索引条目时应使用最后一条事件时间，而不是会话创建时间"
+    );
+}
+
 fn source_home() -> String {
     std::env::var("PERCH_SOURCE_HOME")
         .or_else(|_| std::env::var("HOME"))
@@ -703,4 +775,235 @@ fn opencode_and_kilo_collectors_share_session_schema() {
         kilo_top.resume_cmd.as_deref(),
         Some("cd '/Users/x/work/gamma' && kilo")
     );
+}
+
+#[test]
+fn trae_cn_collector_aggregates_hook_events() {
+    let temp = TempDir::new().unwrap();
+    let events = temp.path().join("trae-cn");
+    fs::create_dir_all(&events).unwrap();
+    let first = events.join("events-2026-11-06.jsonl");
+    fs::write(
+        &first,
+        concat!(
+            "{\"v\":1,\"uid\":\"u1\",\"ts\":1700000000.0,\"event\":\"Stop\",\"session\":\"sid_a\",\"project\":\"alpha\",\"tool\":\"Edit\"}\n",
+            "{\"v\":1,\"uid\":\"u2\",\"ts\":1700000100.0,\"event\":\"Stop\",\"session\":\"sid_a\",\"project\":\"alpha\",\"model\":\"glm-5\"}\n",
+            "{\"v\":1,\"uid\":\"u3\",\"ts\":1700000200.0,\"event\":\"Stop\",\"session\":\"sid_b\",\"project\":\"beta\"}\n",
+            "{\"v\":1,\"uid\":\"u4\",\"ts\":1700000300.0,\"event\":\"Stop\",\"session\":\"unknown\",\"project\":\"beta\"}\n",
+        ),
+    )
+    .unwrap();
+    let second = events.join("events-2026-11-07.jsonl");
+    fs::write(
+        &second,
+        "{\"v\":1,\"uid\":\"u5\",\"ts\":1700000400.0,\"event\":\"Stop\",\"session\":\"sid_a\",\"project\":\"gamma\",\"model\":\"doubao-seed\"}\n",
+    )
+    .unwrap();
+    let before = fs::read_to_string(&first).unwrap();
+
+    let result = TraeCnCollector::new(events.clone(), temp.path().join("memory")).scan();
+
+    assert_eq!(result.status, SourceScanStatus::Ok);
+    assert_eq!(result.source, SOURCE_TRAE_CN);
+    assert_eq!(result.files_seen, 2);
+    assert_eq!(result.probe_kind, "file_tree");
+    assert!(result.error.is_none());
+    assert_eq!(result.tasks.len(), 2, "unknown session is skipped");
+
+    let alpha = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sid_a")
+        .unwrap();
+    assert_eq!(alpha.title, "新会话");
+    assert_eq!(alpha.title_source, "fallback");
+    assert_eq!(alpha.project_name.as_deref(), Some("gamma"));
+    assert_eq!(alpha.created_at, Some(1_700_000_000.0));
+    assert_eq!(alpha.updated_at, Some(1_700_000_400.0));
+    assert_eq!(alpha.model.as_deref(), Some("doubao-seed"));
+    assert_eq!(alpha.status_source.as_deref(), Some("idle"));
+    assert_eq!(alpha.agent_kind.as_deref(), Some("desktop"));
+    assert!(alpha.project_path.is_none());
+
+    let beta = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sid_b")
+        .unwrap();
+    assert_eq!(beta.project_name.as_deref(), Some("beta"));
+    assert_eq!(beta.created_at, Some(1_700_000_200.0));
+    assert_eq!(beta.updated_at, Some(1_700_000_200.0));
+    assert!(beta.model.is_none());
+
+    assert_eq!(result.tasks[0].source_id, "sid_a", "newest session first");
+    assert_eq!(fs::read_to_string(&first).unwrap(), before);
+}
+
+#[test]
+fn trae_cn_collector_derives_status_from_latest_event() {
+    let temp = TempDir::new().unwrap();
+    let events = temp.path().join("trae-cn");
+    fs::create_dir_all(&events).unwrap();
+    fs::write(
+        events.join("events-2026-11-07.jsonl"),
+        concat!(
+            "{\"v\":1,\"ts\":1700000100.0,\"event\":\"SessionStart\",\"session\":\"sid_run\"}\n",
+            "{\"v\":1,\"ts\":1700000200.0,\"event\":\"UserPromptSubmit\",\"session\":\"sid_run\"}\n",
+            "{\"v\":1,\"ts\":1700000300.0,\"event\":\"PreToolUse\",\"session\":\"sid_run\"}\n",
+            "{\"v\":1,\"ts\":1700000400.0,\"event\":\"UserPromptSubmit\",\"session\":\"sid_stop\"}\n",
+            "{\"v\":1,\"ts\":1700000500.0,\"event\":\"Stop\",\"session\":\"sid_stop\"}\n",
+            "{\"v\":1,\"ts\":1700000600.0,\"event\":\"SessionStart\",\"session\":\"sid_start\"}\n",
+            "{\"v\":1,\"ts\":1700000800.0,\"event\":\"UnknownEvent\",\"session\":\"sid_start\"}\n",
+        ),
+    )
+    .unwrap();
+
+    let result = TraeCnCollector::new(events, temp.path().join("memory")).scan();
+    assert_eq!(result.status, SourceScanStatus::Ok);
+    let status = |id: &str| {
+        result
+            .tasks
+            .iter()
+            .find(|task| task.source_id == id)
+            .and_then(|task| task.status_source.clone())
+            .unwrap()
+    };
+    assert_eq!(status("sid_run"), "running", "tool activity keeps running");
+    assert_eq!(status("sid_stop"), "idle", "Stop closes the turn");
+    assert_eq!(
+        status("sid_start"),
+        "idle",
+        "unknown events do not change status"
+    );
+}
+
+#[test]
+fn trae_cn_collector_includes_memory_history_sessions() {
+    let temp = TempDir::new().unwrap();
+    let events = temp.path().join("trae-cn");
+    fs::create_dir_all(&events).unwrap();
+    fs::write(
+        events.join("events-2026-11-07.jsonl"),
+        "{\"v\":1,\"ts\":1700000000.0,\"event\":\"Stop\",\"session\":\"sid_hook\"}\n",
+    )
+    .unwrap();
+
+    let memory = temp.path().join("memory/projects");
+    let playground =
+        memory.join("-Users-wayne-workspace-playground--p2-da242afa7f737d3199f2/20261104");
+    fs::create_dir_all(&playground).unwrap();
+    fs::write(
+        playground.join("session_memory_sid_history.jsonl"),
+        "{\"intent\":\"历史会话同步实现\",\"message_summary_time\":\"2026-11-04 10:00:00\"}\n",
+    )
+    .unwrap();
+    let hook_day =
+        memory.join("-Users-wayne-workspace-playground--p2-da242afa7f737d3199f2/20261107");
+    fs::create_dir_all(&hook_day).unwrap();
+    fs::write(
+        hook_day.join("session_memory_sid_hook.jsonl"),
+        "{\"intent\":\"Hook 会话标题\",\"message_summary_time\":\"2026-11-07 20:09:00\"}\n",
+    )
+    .unwrap();
+    let temp_project = memory
+        .join("-Users-wayne-Documents-Trae-CN-temp-20261102-04--p2-3a81734beb95e3c3c9d7/20261008");
+    fs::create_dir_all(&temp_project).unwrap();
+    fs::write(
+        temp_project.join("session_memory_sid_temp.jsonl"),
+        "{\"intent\":\"临时目录实验\",\"message_summary_time\":\"2026-10-08 09:00:00\"}\n",
+    )
+    .unwrap();
+
+    let result = TraeCnCollector::new(events, memory).scan();
+
+    assert_eq!(result.status, SourceScanStatus::Ok);
+    assert_eq!(
+        result.tasks.len(),
+        3,
+        "memory sessions are added exactly once"
+    );
+    assert_eq!(
+        result.files_seen, 4,
+        "one event file plus three memory files"
+    );
+
+    let history = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sid_history")
+        .unwrap();
+    assert_eq!(history.title, "历史会话同步实现");
+    assert_eq!(history.title_source, "ai");
+    assert_eq!(history.project_name.as_deref(), Some("playground"));
+    assert_eq!(history.status_source.as_deref(), Some("idle"));
+    assert_eq!(history.agent_kind.as_deref(), Some("desktop"));
+    assert!(history.created_at.is_some());
+    assert!(history.updated_at.is_some());
+    assert!(history.created_at.unwrap() < history.updated_at.unwrap());
+
+    let temp_session = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sid_temp")
+        .unwrap();
+    assert_eq!(
+        temp_session.project_name.as_deref(),
+        Some("temp-20261102-04")
+    );
+    assert_eq!(temp_session.title, "临时目录实验");
+
+    let hook = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sid_hook")
+        .unwrap();
+    assert_eq!(
+        hook.project_name.as_deref(),
+        Some("playground"),
+        "hook sessions reuse the memory project name"
+    );
+    assert_eq!(
+        hook.title, "Hook 会话标题",
+        "hook sessions reuse the memory intent title"
+    );
+}
+
+#[test]
+fn trae_cn_collector_reports_missing_hook_directory() {
+    let temp = TempDir::new().unwrap();
+    let result = TraeCnCollector::new(
+        temp.path().join("missing"),
+        temp.path().join("missing-memory"),
+    )
+    .scan();
+
+    assert_eq!(result.status, SourceScanStatus::Unavailable);
+    assert_eq!(result.probe_kind, "file_tree");
+    assert!(result.tasks.is_empty());
+    assert_eq!(result.files_seen, 0);
+    assert!(result
+        .error
+        .as_deref()
+        .is_some_and(|error| error.contains("usage hooks install trae-cn")));
+}
+
+#[test]
+fn trae_cn_collector_reports_partial_on_bad_lines() {
+    let temp = TempDir::new().unwrap();
+    let events = temp.path().join("trae-cn");
+    fs::create_dir_all(&events).unwrap();
+    fs::write(
+        events.join("events-2026-11-07.jsonl"),
+        concat!(
+            "{\"ts\":1700000000.0,\"session\":\"sid_a\",\"project\":\"alpha\"}\n",
+            "{\"ts\":1700000100.0,\"session\":\n",
+        ),
+    )
+    .unwrap();
+
+    let result = TraeCnCollector::new(events, temp.path().join("memory")).scan();
+
+    assert_eq!(result.status, SourceScanStatus::Partial);
+    assert_eq!(result.tasks.len(), 1);
+    assert!(result.error.is_some());
 }

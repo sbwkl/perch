@@ -160,10 +160,7 @@ impl QoderCollector {
             } else if let Some(provisional) = provisional {
                 (provisional, "provisional".to_owned())
             } else {
-                (
-                    fallback_title(project_name.as_deref(), created_at),
-                    "fallback".to_owned(),
-                )
+                (fallback_title(), "fallback".to_owned())
             };
 
             let archived = row.archived.unwrap_or(0) != 0;
@@ -220,7 +217,12 @@ impl QoderCollector {
                 .get(&row.session_id)
                 .copied()
                 .unwrap_or(false);
-            task.model = row.model.filter(|value| !value.trim().is_empty());
+            task.model = row
+                .model
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(model_label);
             task.git_branch = row.git_branch.filter(|value| !value.trim().is_empty());
             task.agent_kind = Some("desktop".to_owned());
             task.message_count = message_counts.get(&row.session_id).copied();
@@ -248,6 +250,33 @@ impl Collector for QoderCollector {
     }
 }
 
+// Qoder 的 chat_sessions.model 存的是内部键，界面文案在其 dynamic-text/qoder.json 里。
+fn model_label(raw: &str) -> String {
+    let label = match raw {
+        "auto" => "Auto",
+        "ultimate" => "Ultimate",
+        "fast" => "Fast",
+        "efficient" => "Efficient",
+        "lite" => "Lite",
+        "performance" => "Performance",
+        "cmodel" => "Cantus",
+        "dmodel" => "DeepSeek-V4-Pro",
+        "dfmodel" => "DeepSeek-Flash",
+        "gmodel" => "GLM-5.3",
+        "gfmodel" => "GLM-5.3-Flash",
+        "kmodel" => "Kimi-K2.8-Preview",
+        "kmodel_latest" => "Kimi-K3.1-Pro",
+        "mmodel" => "MiniMax-M3.1-Flash",
+        "qmodel" => "Qwen3.7-Plus",
+        "qmodel_latest" => "Qwen3.7-Max",
+        "qmodel_38max" => "Qwen3.8-Max",
+        "qfmodel" => "Qwen3.8-Flash",
+        "smodel" => "Sonus",
+        other => other,
+    };
+    label.to_owned()
+}
+
 struct QoderRow {
     session_id: String,
     session_kind: Option<String>,
@@ -262,4 +291,17 @@ struct QoderRow {
     archived: Option<i64>,
     unread: Option<i64>,
     extra_json: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::model_label;
+
+    #[test]
+    fn maps_qoder_model_keys_to_display_labels() {
+        assert_eq!(model_label("dfmodel"), "DeepSeek-Flash");
+        assert_eq!(model_label("gfmodel"), "GLM-5.3-Flash");
+        assert_eq!(model_label("qmodel_38max"), "Qwen3.8-Max");
+        assert_eq!(model_label("qwen3.5"), "qwen3.5");
+    }
 }

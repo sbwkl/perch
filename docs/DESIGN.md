@@ -35,9 +35,9 @@
 - **形态**：Tauri v2 macOS app。MVP 只提供置顶操作，通过 Tauri command 只写 `overlay.db`；
   无本地 HTTP 服务、无云、无网络请求、无常驻 daemon。
 - **默认视图**：智能列表第一个是 **最近**（近 7 天，按最后更新时间倒序的平铺列表，workspace 作为
-  每行属性展示）；**全部任务** 为全部非归档任务的平铺列表，**已归档** 同为平铺列表，均按最后更新
-  时间倒序；源归档任务只出现在已归档视图，子会话、自动化默认隐藏。
-- **明确的数据缺口**：Trae CN 当前无本地任务列表（仅可选 hook 事件），ChatGPT 桌面端无本地数据；
+  每行属性展示）；**更早** 为 7 天窗口之外的非归档任务，与最近互为补集；**已归档** 同为平铺列表，
+  均按最后更新时间倒序；源归档任务只出现在已归档视图，子会话、自动化默认隐藏。
+- **明确的数据缺口**：Trae CN 的会话列表在服务端、本地 agent 库加密，只能通过 usage-ledger hook 事件补齐（需安装 hook）；ChatGPT 桌面普通聊天无本地数据（Codex 会话经 Codex 采集）；
   MVP 不解密、不爬私有 API、不编造“已完成”状态；后续如要覆盖，按 §11.2 的 opt-in 规则单独评估。
 - **可选的伴生 CLI**：复用同一 Rust core，P2 提供 `perch-cli list/pin/doctor/export`，主形态仍是 app。
 
@@ -76,15 +76,15 @@
 | 源 | 本地任务列表 | 标题 | 项目 | 状态 | 子项 | 结论 |
 |---|---|---|---|---|---|---|
 | Qoder | ✅ `main.sqlite/chat_sessions` 183 条 | `title`，`extra_json.titleSource` 可区分 ai/custom/fallback | `cwd` | archived / unread / turn state | 无 todo，只有消息计数 | P0 |
-| Claude Code | ✅ 14 个顶层 session JSONL | `custom-title` / `ai-title`，14/14 有标题 | `cwd` | 无显式状态 | `~/.claude/tasks/<session>/*.json` | P0 |
+| Claude Code | ✅ 14 个顶层 session JSONL | `custom-title` / `ai-title`，14/14 有标题 | `cwd` | `sessions/<pid>.json` 实时 busy/idle/waiting | `~/.claude/tasks/<session>/*.json` | P0 |
 | Codex | ✅ 69 个 rollout + 38 条 `session_index` | `thread_name` / goal objective | session_meta `cwd` | `thread_goals.status`（当前 0 行；有 goal 时可用） | goal objective | P0 |
 | OpenCode | ✅ `session_v2` 表 117 条（旧 `session` 107 条已冻结） | `title` | `directory` | `time_archived` / `time_busy` 运行中 | `todo` 表（v2 时代停更） | P0 |
 | Kilo | ✅ `session` 表 9 条（6 个顶层） | `title` | `directory` | `time_archived` | `todo` 表 | P0 |
-| Trae CN | ❌ 本地只有模型配置；`ChatSessionStore.index` 为空 | 无 | hook 事件可给 project | 无 | 无 | P2 可选（仅 hook 安装后） |
-| ChatGPT 桌面 | ❌ 无本地数据 | — | — | — | — | 明确不支持 |
+| Trae CN | ✅ hook 事件 + memory 文件名（含历史会话） | memory 首条 `intent` 摘要（fallback 新会话） | hook basename / memory 启发式 | 事件推导 running / idle（无时间衰减） | 无 | P2（已实现） |
+| ChatGPT 桌面 | ❌ 普通聊天无本地数据；Codex 会话经 Codex 采集 | — | — | — | — | 不单独支持 |
 | WorkBuddy | 本机未安装 | — | — | — | — | 后续 adapter |
 
-**关键结论**：P0 五个源已经能覆盖用户当前的主要任务；Trae/ChatGPT 的缺口必须在 Diagnostics 与 UI 中显式说明，
+**关键结论**：P0 五个源加上 Trae CN hook 源已经能覆盖用户当前的主要任务；ChatGPT 普通聊天的缺口必须在 Diagnostics 与 UI 中显式说明，
 不能让“没采到”看起来像“没有任务”。
 
 ---
@@ -407,7 +407,7 @@ CREATE TABLE task_group_member (
 
 - 路径：`~/Library/Application Support/com.qoder.app.stable/main.sqlite`（`PERCH_QODER_DB` 可覆盖）。
 - 任务：`chat_sessions`，过滤 `deleted_at IS NULL`；`session_kind='side_chat'` 归为子任务（`parent_key` = `owner_session_id`）。
-- 标题优先级：`title`（非空）→ `extra_json.provisionalTitle` → `未命名 · <project> · <date>`。
+- 标题优先级：`title`（非空）→ `extra_json.provisionalTitle` → `新会话`。
 - `title_source`：`extra_json.titleSource`（custom/ai/fallback）存在时照抄；使用 provisional 时标 `provisional`。
 - 项目：`cwd`；`created_at/updated_at` 是 epoch ms，转为秒。
 - 状态：`archived` → `archived`；`unread` → `source_unread=1`；`chat_session_turn_states.status` 最新值
@@ -429,7 +429,8 @@ CREATE TABLE task_group_member (
 - 项目：记录里的 `cwd`；`project_name` 取 basename。
 - 时间：首/末记录 `timestamp`；文件 mtime 兜底。
 - 模型/分支：最后一条 assistant 的 `message.model`；`gitBranch` 若存在。
-- 状态：Claude Code 不提供会话完成/归档状态，统一 `idle`（UI 显示“无显式状态”），不臆造 `done`。
+- 状态：读取 `~/.claude/sessions/<pid>.json` 的实时状态（只读）：`busy` → 运行中，
+  `waiting` → 等待中，`idle` → 空闲；进程已退出或无状态文件时记为 `idle`。不臆造 `done`。
 - 子项：`~/.claude/tasks/<sessionId>/*.json`，只读 `subject` / `status` / `blocks` / `blockedBy`；
   **不读 `description`**。状态映射 pending/in_progress/completed。
 - resume：`cd <cwd> && claude --resume <sessionId>`。
@@ -443,7 +444,7 @@ CREATE TABLE task_group_member (
   - `~/.codex/session_index.jsonl`（id → thread_name、updated_at）
   - `~/.codex/goals_1.sqlite`（`thread_goals`：objective、status、tokens_used）
 - 任务：每个 rollout 的**第一行** `session_meta` 提供 `id`、`timestamp`、`cwd`、`originator`、`thread_source`；
-  只读第一行，不扫完整 rollout（本机 69 文件 0.02s）。`.jsonl.zst` 跳过并在 Diagnostics 计数。
+  另读尾部 256KB 取最新活动时间，不扫完整 rollout（本机 69 文件约 0.09s）。`.jsonl.zst` 跳过并在 Diagnostics 计数。
 - 标题：`session_index.thread_name` → `thread_goals.objective`（截断 240）→ fallback。
   本机 session_index 38 条、rollout 69 个，缺失标题属正常，Diagnostics 显示覆盖率。
 - 状态：归档目录 → `archived`；否则读 rollout 尾部 256KB，最后一条 `event_msg` 为 `task_started`
@@ -480,20 +481,33 @@ CREATE TABLE task_group_member (
   **不猜测命令**。
 - 本机：9 个会话 / 6 个顶层 / 2 个归档。
 
-### 6.6 Trae CN（`trae-cn`，P2 可选）
+### 6.6 Trae CN（`trae-cn`，hook 源已实现）
 
-- 本机 `state.vscdb` 只有模型配置；`chat.ChatSessionStore.index` 为 `{"version":1,"entries":{}}`；
-  无 hooks 配置。**结论：当前没有可用的本地任务列表。**
-- 可选方案：复用 usage-ledger 已安装的 Trae hooks 事件
+- 本地 `state.vscdb` 只有模型配置；`chat.ChatSessionStore.index` 为 `{"version":1,"entries":{}}`；
+  agent 数据库 `ModularData/ai-agent/database.db` 是加密 SQLite，会话列表在服务端。
+  **结论：没有可直接读取的本地任务列表。**
+- 已实现：只读 usage-ledger 的 Trae hooks 事件
   （`~/.local/share/usage-ledger/trae-cn/events-*.jsonl`，字段 `session/project/ts/model`），
-  聚合成会话任务。只有安装 hook 之后的会话可见，且没有标题/归档/状态；标题用 `Trae CN 会话 · <project> · <date>`，
-  后续可用人工重命名能力覆盖。未安装时 source 状态为 `unavailable`，Diagnostics 说明。
-- MVP 不解密 Trae 的加密库、不调用私有 API；若后续要覆盖 Trae，先做只读可行性验证（加密方式、schema 稳定性、升级频率、失败隔离），再决定是否实现。
-  该能力默认关闭，启用时在 Diagnostics 明确标注数据来源与风险（§11.2）。
+  按 `session` 聚合成会话任务。`created_at` / `updated_at` 取最早 / 最晚 `ts`，
+  `project` / `model` 取时间最晚的非空值；`session = "unknown"` 的行跳过。
+- 历史会话：hook 安装前没有事件，因此枚举 `~/.trae-cn/memory/projects/**/session_memory_<id>.jsonl`
+  的文件名作为会话 id，读取日期目录与文件 mtime；标题读取首条记录的 `intent`
+  摘要（截断到 60 字），不读 `actions/outcome` 与消息正文。`created_at` 取日期目录
+  本地零点，`updated_at` 取 mtime；按 session id 与 hook 会话合并，hook 优先。
+  项目名从编码目录名启发式还原，不伪造 `project_path`。
+- 没有标题、归档和待办：标题统一 fallback `新会话`；状态取会话中时间最晚的已知事件——
+  `UserPromptSubmit` / `PreToolUse` / `PostToolUse` → `running`，
+  `SessionStart` / `Stop` → `idle`，未知事件不改变状态；历史会话固定 `idle`，
+  `agent_kind = desktop`。状态不做时间衰减，回合中退出且无 `Stop` 时会停留在 `running`。
+  继续工作只激活 `cn.trae.app`，不使用未确认的深链。
+- 未安装 hook 时 source 状态为 `unavailable`，Diagnostics 提示
+  `usage hooks install trae-cn --scope global`。
+- MVP 不解密 Trae 的加密库、不调用私有 API，也不读取 memory 的 `actions/outcome` 或消息正文；
+  仅为标题读取首条 `intent` 摘要。历史会话只覆盖存在 memory 文件的会话，不是完整历史列表（§11.2）。
 
 ### 6.7 ChatGPT 桌面 / WorkBuddy
 
-- ChatGPT 桌面端无本地任务数据：source 固定 `unavailable`，Diagnostics 与 UI 页脚说明。
+- ChatGPT 桌面普通聊天无本地任务数据；其 Codex 会话写入 `~/.codex`，由 Codex 采集器覆盖。
 - WorkBuddy 本机未安装：保留 adapter 位置，P2 实现；不在本设计中猜测其 schema。
 
 ### 6.8 子会话与自动化
@@ -542,7 +556,7 @@ MVP：有效状态 = status_source（源状态） > "idle"
 - `needs attention` 筛选：`source_unread=1` 或 `status_source in (blocked, limited)`；
   人工 `doing` 且长期未活动的提醒随后续状态能力加入。
 - `stale` 角标：`updated_at` 超过 14 天且未归档；只提示，不改状态。
-- 源状态未知时显示“无显式状态/空闲”，不显示“已完成”。
+- 源状态未知时显示“空闲”，不显示“已完成”。
 
 ### 7.3 全局置顶区
 
@@ -643,13 +657,13 @@ FSEvents、hooks 留 P1/P2，不阻塞 M1–M3。
 | Codex | JSONL + SQLite | rollout/archive 清单、`session_index.jsonl` size/offset、`goals_1.sqlite` `data_version` | 新 rollout | index 新行（标题/更新时间）、goal 状态；归档移动=归档，不是删除 |
 | OpenCode | SQLite 只读长连接 | `data_version`；回退 `-wal` mtime/size | 新 `session_v2.id` | 标题/项目/模型/归档/busy 状态/活动 |
 | Kilo | SQLite 只读长连接 | 同 OpenCode | 新 `session.id` | 标题/项目/模型/归档/todo/活动 |
-| Trae CN | hooks 事件文件 | 事件文件 offset | 仅安装 hook 后的会话 | 事件聚合；无 hook 时 `unavailable` |
-| ChatGPT 桌面 / WorkBuddy | 无 | — | — | 明确不支持/未安装 |
+| Trae CN | hooks 事件文件 | `events-*.jsonl` 文件数 + 最新 mtime | 仅安装 hook 后的会话 | 事件聚合；无 hook 时 `unavailable` |
+| ChatGPT 桌面 / WorkBuddy | 无（ChatGPT 普通聊天）；Codex 会话见 Codex | — | — | 普通聊天不单独支持 / WorkBuddy 未安装 |
 
 路径以 [DATA-PROBE.md](DATA-PROBE.md) 为准：Qoder `main.sqlite`；Claude `~/.claude/projects` +
 `~/.claude/tasks`；Codex `~/.codex/sessions` / `archived_sessions` / `session_index.jsonl` /
 `goals_1.sqlite`；OpenCode `~/.local/share/opencode/opencode.db`；Kilo `~/.local/share/kilo/kilo.db`；
-Trae hooks 事件目录。
+Trae `~/.local/share/usage-ledger/trae-cn/events-*.jsonl`。
 
 **增量读取**：
 
@@ -845,7 +859,7 @@ perch-cli export --output snapshot.html
 │               │                                │                      │
 │ 智能列表       │ ★ Global pinned                │ 标题 / source /       │
 │  最近          │ ┌────────────────────────────┐ │ workspace             │
-│  全部任务      │ │ ★ Qoder 任务…  2h          │ │ 源状态 / todos        │
+│  更早          │ │ ★ Qoder 任务…  2h          │ │ 源状态 / todos        │
 │  已归档        │ └────────────────────────────┘ │ 最近活动 / session id │
 │               │ playground · Qoder · 2h    ☆   │ resume 命令（只读）   │
 │ Workspaces    │ article-… · Claude · 昨天  ☆   │ 项目路径              │
@@ -861,14 +875,14 @@ perch-cli export --output snapshot.html
 └───────────────┴────────────────────────────────┴──────────────────────┘
 ```
 
-- **最近视图**：智能列表第一项；不按 workspace 分组，按 `updated_at` 倒序平铺，每行 meta 展示
-  `workspace · source · 最近活动`，workspace 仅作为任务属性。
-- **平铺列表**：全部任务与已归档均按 `updated_at` 倒序平铺，不再按 workspace 分组，也不折叠
-  “更早”任务；每行 meta 为 `workspace · source · 最近活动`，按 workspace 过滤时省略重复的 workspace 名。
-- **时间窗口**：最近视图只显示最近 7 天；全部任务与已归档显示全部匹配任务。时间以 `updated_at`
-  为准，缺失时用 `seen_at`。
+- **最近 / 更早**：最近为 7 天窗口内的非归档任务，更早为窗口外的非归档任务，两者互为补集；
+  都不按 workspace 分组，按 `updated_at` 倒序平铺。
+- **平铺列表**：更早与已归档同样按 `updated_at` 倒序平铺，不再按 workspace 分组，也不折叠任务；
+  每行 meta 为 `workspace · source · 最近活动`，按 workspace 过滤时省略重复的 workspace 名。
+- **时间窗口**：最近视图只显示最近 7 天，更早视图只显示窗口之外的任务，已归档展示全部匹配的归档任务。
+  时间以 `updated_at` 为准，缺失时用 `seen_at`。
 - **Global pinned**：任务列表顶部独立区域，始终展开，不受视图、筛选影响。
-- **侧边栏**：智能列表（最近 / 全部任务 / 已归档）、Workspaces、来源。
+- **侧边栏**：智能列表（最近 / 更早 / 已归档）、Workspaces、来源；workspace 与来源筛选叠加在当前视图上。
   Workspaces 按组内最近活动倒序（同时间按名称）；来源固定按 Qoder、Claude Code、Codex、OpenCode、Kilo 排列。
   来源项显示各工具的品牌图标、名称与任务数；扫描出错时名称后显示红色 `!`，完整状态/错误通过悬停提示查看。
   标签和人工分组是后续能力，MVP 不显示空入口。
@@ -876,7 +890,7 @@ perch-cli export --output snapshot.html
   resume 命令和项目路径；顶部保留一个来源色点作为界面中唯一的颜色来源标识。
   MVP 唯一写操作是 Pin/Unpin。备注/标签编辑后续再加。
 - 顶部工具栏：搜索框、筛选 chips、刷新、扫描状态、排序。
-- 行信息：`★ | source 标签 | 标题 | workspace（最近视图） | 源状态 | todo 进度 | 最近活动`。
+- 行信息：`★ | source 标签 | 标题 | workspace（未按 workspace 过滤时） | 源状态 | todo 进度 | 最近活动`。
 - 源原生标记：`源置顶`、`未读`、`已归档`、`子会话`、`自动化`、`源已删除`。
 - 空状态：显示“没有匹配任务”+ 清除筛选；源不可用时显示上次成功扫描时间与错误，不清空快照。
 - 主题：跟随系统 + 手动覆盖；无外部字体/图片；所有图标内联 SVG。
@@ -885,11 +899,11 @@ perch-cli export --output snapshot.html
 
 - 单击行选中并在 Inspector 显示；双击只打开 Inspector，MVP 不执行主操作。
 - 置顶：点击星标立即写入 overlay；乐观更新，失败回滚并 toast。这是 MVP 唯一的任务写操作。
-- 视图与窗口：最近、全部任务、已归档均为按最近活动倒序的平铺列表，行内展示 workspace；
-  最近视图只取近 7 天，其余视图展示全部匹配任务。
+- 视图与窗口：最近、更早、已归档均为按最近活动倒序的平铺列表，行内展示 workspace；
+  运行中任务固定最前，其后为源置顶任务；最近与更早按 7 天窗口互补，已归档展示归档任务。
 - 搜索：title / project / key 子串；中文直接匹配；输入即筛。MVP 不搜索 tag/note。
 - 筛选：来源多选、workspace、源状态、归档/子会话/自动化。
-- 排序：Global pinned 固定在最上方，其余按最近活动排序；可切换创建时间/标题。
+- 排序：运行中任务固定最前，其后为源置顶，再按最近活动排序；M2 的 Global pinned 固定在最上方；可切换创建时间/标题。
 - 后续交互：状态、备注、标签、隐藏、重命名、复制 resume、打开项目、拖拽排序和分组。
 - 键盘：↑/↓ 选择，Enter 打开 Inspector，空格预览（后续）。
 
@@ -979,16 +993,26 @@ perch-cli export --output snapshot.html
 
 ---
 
-## 12. 与 usage-ledger 的可选集成（P2）
+## 12. 与 usage-ledger 的可选集成（已实现）
 
-- 只读打开 `~/.local/share/usage-ledger/usage.db`（`USAGE_LEDGER_DB` 可覆盖），不写。
-- 匹配：`usage_turn.source = task.source AND usage_turn.session_id = task.source_id`。
+- 只读打开 `~/.local/share/usage-ledger/usage.db`（`PERCH_USAGE_DB` / `USAGE_LEDGER_DB` /
+  `USAGE_LEDGER_HOME` 可覆盖），不写、不迁移、不触发 sync。
+- 匹配：`usage_turn.source = task.source AND usage_turn.session_id = task.source_id`；
+  Qoder credits / est 也按 `session_id` 挂到 qoder 任务。
+- 数据来源：`usage_turn`（未归档）与 `usage_daily`（已 prune 的历史）合并；
+  `usage_credit`、`usage_est` 分表读取。旧版 `usage_est` 无 `source` 列时按 `qoder.est` 处理。
 - 展示：
   - token 真值（Claude/Codex/OpenCode/Kilo/Qoder 历史）→ “本任务 token”
-  - Qoder `usage_credit`（billable credits）→ “本任务 credits”，单独标注
+  - Qoder `usage_credit`（billable / free credits、请求数）→ “本任务 credits”，单独标注
   - Qoder `usage_est` → “est”，单独标注，永不与真值/credits 相加
-- usage-ledger DB 不存在或版本不兼容 → 自动隐藏这些区块，不影响任务总览。
-- 该集成只在 Inspector 中展示，不改变任务快照表结构；按需查询/聚合，结果不落库（或写独立 `task_usage_cache`，P2 再定）。
+  - 选中单一来源时，顶部显示该来源的 7 天 token / credits / est 摘要；不同来源单位不同
+    （Qoder 是 credits、CLI agent 是 token），不做跨来源汇总；不展示无法挂到任务的 activity
+  - 侧边栏页脚的用量报告图标：调用 usage-ledger 的 `usage html`，报告写入 Perch 缓存目录后
+    用默认浏览器打开（等价 `usage html --open`）。这是全局报告，不按来源过滤。
+    与直接运行该命令一样，usage-ledger 可能会先自动同步自己的库；Perch 不参与写入
+- usage-ledger DB 不存在、表缺失或 schema 不兼容 → 自动隐藏这些区块，不影响任务总览。
+- 该集成只在 Inspector 与顶部摘要中展示，不改变任务快照表结构；按需查询/聚合，结果不落库。
+- usage-ledger 主库或 `-wal` mtime 变化时，Tauri 的 3 秒 probe 会刷新前端；Perch 本身不写该库。
 
 ---
 
@@ -1130,12 +1154,12 @@ M1–M3 是核心价值；M4/M5 可按反馈调整顺序。
 | 风险 | 影响 | 处置 |
 |---|---|---|
 | “Task”定义分歧 | 做成 todo 列表则碎片化 | 本方案明确会话=Task，todo=子项；见 §17 决策 3 |
-| 源状态不完整 | Claude/Kilo 无完成状态；OpenCode 仅 busy/idle 二态 | 无证据时显示“空闲/无显式状态”；MVP 不承诺完成状态，人工状态后续再加 |
+| 源状态不完整 | Claude 有 busy/idle/waiting 实时态但无完成态；Kilo 无完成状态；OpenCode 仅 busy/idle 二态 | 无证据时显示“空闲”；MVP 不承诺完成状态，人工状态后续再加 |
 | Codex 标题覆盖率 | session_index 38/69 | goal objective 兜底 + fallback；Diagnostics 报告覆盖率 |
 | Qoder schema 漂移 | 采集失败 | 只读 + 缺少表时 `schema drift` 错误，其他源继续 |
 | Qoder 无会话深链 | 不能精确跳回会话 | `qoder://chat/<id>` 被 Qoder 判为 `DEEP_LINK_ROUTE_UNSUPPORTED`（官方日志），只能激活 App。Codex `codex://threads/<id>` 是 Codex 自身生成的格式。OpenCode/Kilo App 同样不能定位会话，只能 CLI resume 或切 App 前台并提示限制 |
 | Kilo resume 未验证 | 不能一键恢复 | MVP 展示命令 + 项目路径；复制后续加入；不猜测参数 |
-| Trae/ChatGPT 无本地任务 | 总览不完整 | Diagnostics/UI 显式说明；Trae 可选 hook；MVP 不解密。后续按 §11.2 评估加密源/官方 API |
+| Trae/ChatGPT 普通聊天无本地任务 | 总览不完整 | Diagnostics/UI 显式说明；Trae 可选 hook；ChatGPT Codex 会话经 Codex 采集；MVP 不解密。后续按 §11.2 评估加密源/官方 API |
 | 标题含 prompt 片段 | 隐私顾虑 | MVP 只存标题元数据；正文能力默认关闭、opt-in；可切 fallback 模式 |
 | mtime 不可靠 | 增量漏数 | 签名只做跳过；启动/周期全量对账兜底；不把 mtime 当唯一真相 |
 | 源 ID 迁移 | overlay 孤立 | `source_missing=1` 保留 overlay；P1 提供人工 re-link，不自动合并 |
@@ -1159,7 +1183,7 @@ M1–M3 是核心价值；M4/M5 可按反馈调整顺序。
 5. **前端栈**：Svelte 5 + TypeScript + Vite。
 6. **MVP 操作范围**：**只做全局置顶/取消置顶**。人工状态、标签、备注、隐藏、重命名、复制 resume、
    打开项目目录、置顶排序、跨 agent 分组、静态导出全部后置，不在 M1–M3 实现。
-7. **默认视图**：任务列表平铺，行内展示 workspace；最近视图取近 7 天，全部任务/已归档展示全部；
+7. **默认视图**：任务列表平铺，行内展示 workspace；最近（近 7 天）与更早（窗口外）互为补集，已归档单独成视图；
    所有全局 pin 始终显示；子会话/自动化默认隐藏，源归档任务只在已归档视图出现。
 8. **标题与正文**：MVP 只存标题等元数据；正文/摘要默认不落盘，后续按源 opt-in；
    标题默认显示源标题；如后续有隐私需求，可加 `title_mode=fallback` 开关（默认关闭）。

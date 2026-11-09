@@ -123,10 +123,7 @@ fn build_task(source: &str, row: SessionRow, resume_builder: ResumeBuilder) -> T
         .filter(|value| !value.is_empty());
     let (title, title_source) = match raw_title {
         Some(title) => (title.to_owned(), "source"),
-        None => (
-            fallback_title(project_name.as_deref(), created_at),
-            "fallback",
-        ),
+        None => (fallback_title(), "fallback"),
     };
 
     let parent_key = row
