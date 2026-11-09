@@ -11,7 +11,7 @@
   } from "./lib/types";
   import { sourceIconMarkup } from "./lib/source-icons";
 
-  type ViewMode = "all" | "recent" | "archived";
+  type ViewMode = "recent" | "older" | "archived";
 
   interface ScanNotice {
     label: string;
@@ -19,7 +19,7 @@
   }
 
   const ICONS = {
-    list: "M4 6h16M4 12h16M4 18h16",
+    history: "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5M12 7v5l4 2",
     clock: "M12 7v5l3 2M21 12a9 9 0 1 1-9-9 9 9 0 0 1 9 9z",
     archive: "M4 7h16M6 7v12h12V7M9 11h6",
     refresh: "M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6",
@@ -64,7 +64,7 @@
   let errorMessage = $state("");
   let scanNotices = $state<ScanNotice[]>([]);
   let lastScanSummary = $state("");
-  let view = $state<ViewMode>("all");
+  let view = $state<ViewMode>("recent");
   let workspaceFilter = $state<string | null>(null);
   let sourceFilter = $state<string | null>(null);
   let selectedKey = $state<string | null>(null);
@@ -79,7 +79,7 @@
 
   const smartLists = $derived([
     { id: "recent" as ViewMode, label: "最近", count: payload?.counts.recent ?? 0, icon: ICONS.clock },
-    { id: "all" as ViewMode, label: "全部任务", count: payload?.counts.total ?? 0, icon: ICONS.list },
+    { id: "older" as ViewMode, label: "更早", count: payload?.counts.older ?? 0, icon: ICONS.history },
     { id: "archived" as ViewMode, label: "已归档", count: payload?.counts.archived ?? 0, icon: ICONS.archive },
   ]);
 
@@ -122,28 +122,18 @@
     return (right.updated_at ?? 0) - (left.updated_at ?? 0);
   }
 
-  const recentTasks = $derived.by(() => {
-    if (!payload) return [] as TaskView[];
-    const tasks: TaskView[] = [];
-    for (const group of payload.workspaces) {
-      for (const task of group.tasks) {
-        if (task.is_child || task.is_automation || task.source_archived || !task.is_recent) continue;
-        tasks.push(task);
-      }
-    }
-    return tasks.sort(compareTaskOrder);
-  });
-
   const flatTasks = $derived.by(() => {
-    if (view === "recent") return recentTasks;
     if (!payload) return [] as TaskView[];
-    const archived = view === "archived";
     const tasks: TaskView[] = [];
     for (const group of payload.workspaces) {
       if (workspaceFilter && group.key !== workspaceFilter) continue;
       for (const task of group.tasks) {
         if (task.is_child || task.is_automation) continue;
-        if (task.source_archived !== archived) continue;
+        if (view === "archived") {
+          if (!task.source_archived) continue;
+        } else if (task.source_archived || task.is_recent !== (view === "recent")) {
+          continue;
+        }
         if (sourceFilter && task.source !== sourceFilter) continue;
         tasks.push(task);
       }
@@ -273,13 +263,11 @@
   function selectWorkspace(key: string) {
     workspaceFilter = workspaceFilter === key ? null : key;
     sourceFilter = null;
-    view = "all";
   }
 
   function selectSource(source: string) {
     sourceFilter = sourceFilter === source ? null : source;
     workspaceFilter = null;
-    view = "all";
   }
 
   function sourceColor(source: string): string {
@@ -450,7 +438,7 @@
       {#each smartLists as item (item.id)}
         <button
           class="nav-item"
-          class:active={view === item.id && !workspaceFilter && !sourceFilter}
+          class:active={view === item.id}
           onclick={() => selectView(item.id)}
         >
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
@@ -617,7 +605,7 @@
     {:else if !hasVisibleTasks}
       <div class="empty-state">
         <p>当前筛选下没有任务。</p>
-        <p class="subtle">试试“全部任务”，或点击右上角刷新。</p>
+        <p class="subtle">试试切换视图或清除筛选，或点击右上角刷新。</p>
       </div>
     {:else}
       <div class="groups">
