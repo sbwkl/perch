@@ -7,7 +7,7 @@ Perch 以“先找到任务，再回 agent 继续”为核心。里程碑沿用
 
 ## M1 · 只读聚合与任务列表 — 已完成
 
-- [x] 五个 P0 采集器：Qoder、Claude Code、Codex、OpenCode、Kilo
+- [x] 六个来源的采集器：Qoder、Claude Code、Codex、OpenCode、Kilo、Trae CN
 - [x] `cache.db` 快照（task / task_todo / sync_state / scan_run）
 - [x] 完整扫描后的 `source_missing` 判定与防误删保护
 - [x] Tauri 2 壳 + `bootstrap` / `refresh_sources` / `continue_task`
@@ -27,12 +27,13 @@ Perch 以“先找到任务，再回 agent 继续”为核心。里程碑沿用
 ## M3 · macOS 体验与实时性 — 进行中
 
 - [x] 三栏布局、平铺任务列表、行内 workspace
-- [x] 最近（7 天）/ 全部 / 已归档视图
+- [x] 最近（7 天）/ 更早 / 已归档视图
 - [x] 窗口可见时每 3 秒 probe，变化后自动重扫并刷新
 - [x] 手动刷新（`⌘R`）、扫描状态提示
 - [x] 来源图标与品牌色、只读脚注
 - [ ] 启用 CSP（当前 `tauri.conf.json` 中为 `null`）
-- [ ] 打包、codesign、notarize，产出可分发的 `.dmg`
+- [x] 打包 `.dmg` 并发布 GitHub Release
+- [ ] codesign / notarize（等待 Developer ID 证书与协议确认）
 - [ ] 应用菜单、窗口状态记忆等原生细节打磨
 
 ## M4 · 覆盖层扩展与效率 — 计划中
@@ -58,7 +59,7 @@ Perch 以“先找到任务，再回 agent 继续”为核心。里程碑沿用
 - [x] 演示模式（`demo/`）与脱敏截图
 - [x] README、DEVELOPMENT、ARCHITECTURE、SOURCES、FAQ、SECURITY、CONTRIBUTING
 - [x] Issue / PR 模板、CHANGELOG
-- [ ] 发布流程（tag → 构建 → GitHub Release）
+- [x] 发布流程（tag → 构建 → GitHub Release；当前为未签名包）
 - [ ] 依赖更新与安全公告流程
 
 ## 当前默认不做（后续可 opt-in）

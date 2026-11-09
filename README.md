@@ -12,7 +12,9 @@ Perch 只读取各 agent 已落盘的会话元数据，把散落在不同侧边�
 `usage.db`，在任务详情里附加该会话的 token / credits / 估算值。没有安装或没有归档时，
 这一块会静默隐藏，不影响任务列表。
 
-**当前状态**：v0.1.0，早期可用版本，仅支持 macOS，尚未提供签名安装包，需要从源码构建。
+**当前状态**：v0.1.0，早期可用版本，仅支持 macOS（Apple Silicon）。可从
+[Releases](https://github.com/sbwkl/perch/releases/latest) 下载未签名的 `.dmg`，
+或从源码构建；安装包尚未 codesign / notarize。
 功能边界与后续计划见 [ROADMAP.md](ROADMAP.md)。
 
 ## 它能做什么
