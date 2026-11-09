@@ -1,7 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import type {
     BootstrapPayload,
     ContinueOutcome,
@@ -79,6 +79,7 @@
   let reportNotice = $state("");
   let reportFailed = $state(false);
   let query = $state("");
+  let searchOpen = $state(false);
   let searchHits = $state<SearchHit[]>([]);
   let searchTotal = $state(0);
   let searching = $state(false);
@@ -340,6 +341,15 @@
     workspaceFilter = null;
     sourceFilter = null;
     query = "";
+    searchOpen = false;
+  }
+
+  function openSearch() {
+    searchOpen = true;
+    void tick().then(() => {
+      searchInput?.focus();
+      searchInput?.select();
+    });
   }
 
   function selectWorkspace(key: string) {
@@ -430,8 +440,7 @@
   function handleKeydown(event: KeyboardEvent) {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
       event.preventDefault();
-      searchInput?.focus();
-      searchInput?.select();
+      openSearch();
       return;
     }
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "r") {
@@ -441,6 +450,9 @@
     if (event.key === "Escape") {
       if (query) {
         query = "";
+        searchInput?.blur();
+      } else if (searchOpen) {
+        searchOpen = false;
         searchInput?.blur();
       } else {
         selectedKey = null;
@@ -550,42 +562,18 @@
           <span class="nav-count">{item.count}</span>
         </button>
       {/each}
-      <div class="search-box sidebar-search">
-        <svg
-          class="search-icon"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.8"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
-        >
+      <button
+        class="nav-item search-entry"
+        class:active={searchOpen}
+        title="搜索任务（⌘F）"
+        onclick={openSearch}
+      >
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
           <path d={ICONS.search} />
         </svg>
-        <input
-          bind:this={searchInput}
-          bind:value={query}
-          class="search-input"
-          type="text"
-          placeholder="搜索标题、项目、待办…"
-          spellcheck="false"
-          autocomplete="off"
-          aria-label="搜索任务"
-        />
-        {#if query}
-          <button
-            class="search-clear"
-            onclick={() => (query = "")}
-            title="清除搜索"
-            aria-label="清除搜索"
-          >
-            ×
-          </button>
-        {:else}
-          <kbd>⌘F</kbd>
-        {/if}
-      </div>
+        <span class="nav-label">搜索</span>
+        <kbd>⌘F</kbd>
+      </button>
     </nav>
 
     <nav class="nav-section scroll-section">
@@ -667,6 +655,42 @@
         <h2>{heading}</h2>
         <p>{subheading}</p>
       </div>
+      {#if searchOpen}
+        <div class="search-box">
+          <svg
+            class="search-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d={ICONS.search} />
+          </svg>
+          <input
+            bind:this={searchInput}
+            bind:value={query}
+            class="search-input"
+            type="text"
+            placeholder="搜索标题、项目、待办…"
+            spellcheck="false"
+            autocomplete="off"
+            aria-label="搜索任务"
+          />
+          {#if query}
+            <button
+              class="search-clear"
+              onclick={() => (query = "")}
+              title="清除搜索"
+              aria-label="清除搜索"
+            >
+              ×
+            </button>
+          {/if}
+        </div>
+      {/if}
       <button class="refresh-button" onclick={() => refresh()} disabled={refreshing}>
         <svg
           class="refresh-icon"

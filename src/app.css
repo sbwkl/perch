@@ -407,10 +407,12 @@ button:focus-visible {
   color: var(--text);
 }
 
-.sidebar-search {
+.search-entry {
+  margin-top: 3px;
+}
+
+.search-entry kbd {
   flex: none;
-  width: 100%;
-  margin: 3px 0 2px;
 }
 
 .refresh-button {
