@@ -63,7 +63,10 @@ impl SourceProbe {
             },
             JsonlProbe {
                 source: crate::models::SOURCE_TRAE_CN,
-                roots: vec![paths.trae_cn_events_dir.clone()],
+                roots: vec![
+                    paths.trae_cn_events_dir.clone(),
+                    paths.trae_cn_memory_dir.clone(),
+                ],
                 last_signature: (0, 0),
             },
         ];

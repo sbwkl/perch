@@ -15,6 +15,9 @@
 - Qoder 模型键映射为可读名称（如 `dfmodel` → `DeepSeek-Flash`），覆盖 19 个内置模型
 - 新增 Trae CN 来源：只读 usage-ledger 的 Trae hook 事件，按 session 聚合会话；
   未安装 hook 时来源显示不可用，继续工作只激活 Trae CN App
+- Trae CN 历史会话覆盖：枚举 `~/.trae-cn/memory/projects` 下的
+  `session_memory_*.jsonl` 文件名，只读目录与 mtime，不打开文件内容；
+  历史会话按 session id 与 hook 事件合并，项目名启发式还原
 
 ### Changed
 
@@ -23,6 +26,8 @@
 - 无标题会话统一显示「新会话」，不再拼接项目与日期
 - 源置顶任务在工作区内优先排序，列表改用图钉图标
 - 运行中的会话排在工作区最前，优先于源置顶任务
+- 「全部任务」改为「更早」，只显示近 7 天窗口之外的未归档任务，与「最近」互为补集；
+  workspace 与来源筛选改为叠加在当前视图上
 - 未关联项目的 workspace 固定排在最后
 - Kilo 来源图标改为官方像素风格
 - 应用图标按 macOS 图标网格重新导出，Dock 尺寸与系统图标一致

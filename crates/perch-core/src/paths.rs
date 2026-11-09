@@ -24,6 +24,7 @@ pub struct SourcePaths {
     pub opencode_stable_db: PathBuf,
     pub kilo_db: PathBuf,
     pub trae_cn_events_dir: PathBuf,
+    pub trae_cn_memory_dir: PathBuf,
 }
 
 impl SourcePaths {
@@ -44,6 +45,8 @@ impl SourcePaths {
             trae_cn_events_dir: env_path("PERCH_TRAE_CN_EVENTS_DIR")
                 .or_else(|| env_path("USAGE_LEDGER_HOME").map(|home| home.join("trae-cn")))
                 .unwrap_or_else(|| data_dir.join("usage-ledger/trae-cn")),
+            trae_cn_memory_dir: env_path("PERCH_TRAE_CN_MEMORY_DIR")
+                .unwrap_or_else(|| home.join(".trae-cn/memory/projects")),
             home,
         }
     }

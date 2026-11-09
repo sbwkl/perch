@@ -801,7 +801,7 @@ fn trae_cn_collector_aggregates_hook_events() {
     .unwrap();
     let before = fs::read_to_string(&first).unwrap();
 
-    let result = TraeCnCollector::new(events.clone()).scan();
+    let result = TraeCnCollector::new(events.clone(), temp.path().join("memory")).scan();
 
     assert_eq!(result.status, SourceScanStatus::Ok);
     assert_eq!(result.source, SOURCE_TRAE_CN);
@@ -858,8 +858,7 @@ fn trae_cn_collector_derives_status_from_latest_event() {
     )
     .unwrap();
 
-    let result = TraeCnCollector::new(events).scan();
-
+    let result = TraeCnCollector::new(events, temp.path().join("memory")).scan();
     assert_eq!(result.status, SourceScanStatus::Ok);
     let status = |id: &str| {
         result
@@ -879,9 +878,86 @@ fn trae_cn_collector_derives_status_from_latest_event() {
 }
 
 #[test]
+fn trae_cn_collector_includes_memory_history_sessions() {
+    let temp = TempDir::new().unwrap();
+    let events = temp.path().join("trae-cn");
+    fs::create_dir_all(&events).unwrap();
+    fs::write(
+        events.join("events-2026-11-07.jsonl"),
+        "{\"v\":1,\"ts\":1700000000.0,\"event\":\"Stop\",\"session\":\"sid_hook\"}\n",
+    )
+    .unwrap();
+
+    let memory = temp.path().join("memory/projects");
+    let playground =
+        memory.join("-Users-wayne-workspace-playground--p2-da242afa7f737d3199f2/20261104");
+    fs::create_dir_all(&playground).unwrap();
+    fs::write(playground.join("session_memory_sid_history.jsonl"), "").unwrap();
+    let hook_day =
+        memory.join("-Users-wayne-workspace-playground--p2-da242afa7f737d3199f2/20261107");
+    fs::create_dir_all(&hook_day).unwrap();
+    fs::write(hook_day.join("session_memory_sid_hook.jsonl"), "").unwrap();
+    let temp_project = memory
+        .join("-Users-wayne-Documents-Trae-CN-temp-20261102-04--p2-3a81734beb95e3c3c9d7/20261008");
+    fs::create_dir_all(&temp_project).unwrap();
+    fs::write(temp_project.join("session_memory_sid_temp.jsonl"), "").unwrap();
+
+    let result = TraeCnCollector::new(events, memory).scan();
+
+    assert_eq!(result.status, SourceScanStatus::Ok);
+    assert_eq!(
+        result.tasks.len(),
+        3,
+        "memory sessions are added exactly once"
+    );
+    assert_eq!(
+        result.files_seen, 4,
+        "one event file plus three memory files"
+    );
+
+    let history = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sid_history")
+        .unwrap();
+    assert_eq!(history.title, "新会话");
+    assert_eq!(history.project_name.as_deref(), Some("playground"));
+    assert_eq!(history.status_source.as_deref(), Some("idle"));
+    assert_eq!(history.agent_kind.as_deref(), Some("desktop"));
+    assert!(history.created_at.is_some());
+    assert!(history.updated_at.is_some());
+    assert!(history.created_at.unwrap() < history.updated_at.unwrap());
+
+    let temp_session = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sid_temp")
+        .unwrap();
+    assert_eq!(
+        temp_session.project_name.as_deref(),
+        Some("temp-20261102-04")
+    );
+
+    let hook = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sid_hook")
+        .unwrap();
+    assert_eq!(
+        hook.project_name.as_deref(),
+        Some("playground"),
+        "hook sessions reuse the memory project name"
+    );
+}
+
+#[test]
 fn trae_cn_collector_reports_missing_hook_directory() {
     let temp = TempDir::new().unwrap();
-    let result = TraeCnCollector::new(temp.path().join("missing")).scan();
+    let result = TraeCnCollector::new(
+        temp.path().join("missing"),
+        temp.path().join("missing-memory"),
+    )
+    .scan();
 
     assert_eq!(result.status, SourceScanStatus::Unavailable);
     assert_eq!(result.probe_kind, "file_tree");
@@ -907,7 +983,7 @@ fn trae_cn_collector_reports_partial_on_bad_lines() {
     )
     .unwrap();
 
-    let result = TraeCnCollector::new(events).scan();
+    let result = TraeCnCollector::new(events, temp.path().join("memory")).scan();
 
     assert_eq!(result.status, SourceScanStatus::Partial);
     assert_eq!(result.tasks.len(), 1);

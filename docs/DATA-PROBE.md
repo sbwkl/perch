@@ -291,8 +291,10 @@ agent, model, time_created, time_updated, time_archived
 
 - **没有可直接读取的本地任务列表**；session 列表在服务端，本地 agent 库加密。
 - **已实现**：安装 usage-ledger 的 Trae hooks 后，从 `~/.local/share/usage-ledger/trae-cn/events-*.jsonl`
-  聚合会话；只有安装后的会话可见，无标题/归档/状态，标题 fallback `新会话`。
-- `snapshot` 与 `memory` 目录不足以构成稳定完整的会话索引，不作为数据源。
+  聚合会话；状态按最新事件推导 `running` / `idle`，标题 fallback `新会话`。
+- **已实现（历史会话）**：枚举 `~/.trae-cn/memory/projects/**/session_memory_*.jsonl` 的文件名，
+  补充 hook 安装前的会话；只读日期目录与文件 mtime，不打开文件内容，项目名启发式还原。
+- `snapshot` 目录不足以构成稳定索引，不作为数据源。
 - 未安装 hook 时 source 状态为 `unavailable`，doctor/UI 明确提示安装命令。
 
 ---
@@ -315,7 +317,7 @@ agent, model, time_created, time_updated, time_archived
 | Codex | 69 个 rollout，只读首行 + 尾部 256KB | 0.09s（首行 + 尾部） | 不扫完整 rollout |
 | OpenCode | 107 会话；72 todo | 亚秒级 | WAL 只读 |
 | Kilo | 9 会话；10 todo；6 board | 亚秒级 | WAL 只读 |
-| Trae CN | 事件 JSONL（安装 hook 后）；无本地会话索引 | 亚秒级（逐行只取 session / ts / project / model） | 仅 hook 后会话可见 |
+| Trae CN | 事件 JSONL + memory 会话文件名（探测时 13 个会话） | 亚秒级（逐行只取 `session / ts / project / model`，memory 只读路径与 mtime） | hook 后会话 + 部分历史会话 |
 
 首版全量扫描目标 **<1.5s**；`serve` 请求按 5s 节流，CLI 用 mtime 签名判断是否刷新。
 

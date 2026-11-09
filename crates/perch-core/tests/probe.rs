@@ -18,6 +18,7 @@ fn paths_under(root: &Path) -> SourcePaths {
         opencode_stable_db: root.join("opencode-stable.db"),
         kilo_db: root.join("kilo.db"),
         trae_cn_events_dir: root.join("usage-ledger/trae-cn"),
+        trae_cn_memory_dir: root.join("trae-cn/memory/projects"),
     }
 }
 
@@ -68,6 +69,15 @@ fn probe_detects_trae_cn_hook_events() {
     let mut handle = fs::OpenOptions::new().append(true).open(&file).unwrap();
     writeln!(handle, "{{\"session\":\"abc\",\"event\":\"Stop\"}}").unwrap();
     drop(handle);
+
+    assert_eq!(probe.poll(), vec!["trae-cn"]);
+    assert!(probe.poll().is_empty(), "no further changes expected");
+
+    let session_dir = paths
+        .trae_cn_memory_dir
+        .join("-Users-wayne-workspace-playground--p2-abc/20261104");
+    fs::create_dir_all(&session_dir).unwrap();
+    fs::write(session_dir.join("session_memory_history.jsonl"), "").unwrap();
 
     assert_eq!(probe.poll(), vec!["trae-cn"]);
     assert!(probe.poll().is_empty(), "no further changes expected");

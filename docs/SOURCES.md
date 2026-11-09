@@ -265,9 +265,11 @@ Kilo 的 schema 与旧版 OpenCode `session` 表同构（没有 `session_v2`、`
 
 ```
 ~/.local/share/usage-ledger/trae-cn/events-<date>.jsonl
+~/.trae-cn/memory/projects/<encoded-project>/<date>/session_memory_<session>.jsonl
 ```
 
-覆盖变量：`PERCH_TRAE_CN_EVENTS_DIR`；设置 `USAGE_LEDGER_HOME` 时跟随其目录。
+覆盖变量：`PERCH_TRAE_CN_EVENTS_DIR`、`PERCH_TRAE_CN_MEMORY_DIR`；设置 `USAGE_LEDGER_HOME`
+时事件目录跟随其目录。
 
 **来源说明**
 
@@ -275,6 +277,9 @@ Trae CN 没有可读的本地会话索引：`state.vscdb` 只有模型配置与�
 agent 数据库 `ModularData/ai-agent/database.db` 是加密 SQLite，会话列表在服务端。
 Perch 不接触加密库，只读取 usage-ledger 的 Trae hook 事件——它由 Trae 的
 `UserPromptSubmit` / `Stop` hook 追加，写入纯文本元数据，不包含消息正文。
+hook 安装晚于部分历史会话，因此再枚举 `memory/projects` 下的
+`session_memory_<session>.jsonl` 文件名来覆盖安装前的会话；只读取路径、日期目录与
+文件 mtime，不打开 memory 文件内容。
 
 安装 hook 后才会出现会话；未安装时该来源显示 `unavailable`，提示执行：
 
@@ -285,6 +290,11 @@ usage hooks install trae-cn --scope global
 **读取内容**
 
 - 枚举 `events-*.jsonl`，逐行只读 `session`、`ts`、`project`、`model`。
+- 枚举 `memory/projects/**/session_memory_*.jsonl` 的文件名作为历史会话 id；
+  `created_at` 取日期目录的本地零点，`updated_at` 取文件 mtime，不读取文件内容。
+- 历史会话与 hook 会话按 session id 合并，hook 事件的时间与状态优先；
+  历史会话状态固定 `idle`。
+- 项目名从编码目录名启发式还原（去掉 `--p2-<hash>` 与常见父目录），不伪造 `project_path`。
 - `tool`、`tool_use_id`、`loop`、`chars_in`、`chars_out` 等字段不读取、不存储。
 - `session = "unknown"` 的行跳过；无法解析的行计入 warning，来源降级为 `partial`。
 - 按 `session` 聚合：`created_at` 取最早 `ts`，`updated_at` 取最晚 `ts`，
@@ -298,6 +308,7 @@ usage hooks install trae-cn --scope global
 - 状态没有时间衰减：若 Trae CN 在回合中退出且未产生 `Stop`，会话会停留在 `running`，
   直到下一次事件或手动刷新。
 - `project` 只是 hook 记录的 basename，因此写入 `project_name`，没有 `project_path`。
+- 没有 hook 事件的历史会话只能按 memory 文件名估计项目与时间，项目名可能与真实路径不完全一致。
 
 **继续工作**
 
@@ -305,11 +316,11 @@ Trae CN 没有确认的会话级深链，只能 `open -b cn.trae.app` 激活窗�
 
 **已知限制**
 
-- 只能看到安装 hook 之后的会话，无法回溯历史会话。
+- 历史会话只覆盖有 `session_memory_*.jsonl` 的会话，不是完整历史列表。
 - 没有待办、消息数和归档状态；标题固定为 fallback `新会话`，`agent_kind` 固定为 `desktop`。
 - 事件文件缺失或未安装 hook 时来源不可用；单个坏行会导致 `partial`。
 
-**变化探测**：`trae-cn/` 下 JSONL 的文件数 + 最新 mtime 签名。
+**变化探测**：事件与 memory 目录下 JSONL 的文件数 + 最新 mtime 签名。
 
 ---
 
