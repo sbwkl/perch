@@ -407,6 +407,12 @@ button:focus-visible {
   color: var(--text);
 }
 
+.sidebar-search {
+  flex: none;
+  width: 100%;
+  margin: 3px 0 2px;
+}
+
 .refresh-button {
   display: inline-flex;
   align-items: center;

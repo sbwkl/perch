@@ -22,7 +22,7 @@
 
 - 界面已有视图（最近/更早/已归档）、workspace 筛选、来源筛选，全部在前端 `flatTasks` 中完成。
 - `cache.db` 的 `task` / `task_todo` 已保存任务元数据；`bootstrap` 一次性返回全部 workspace 与任务。
-- P0 元数据搜索已实现：`perch-core::search` + `search_tasks` 命令 + 列表头部搜索框；搜索范围固定为全部会话（含归档、子会话、自动化），只读 `cache.db`。
+- P0 元数据搜索已实现：`perch-core::search` + `search_tasks` 命令 + 侧边栏搜索框；搜索范围固定为全部会话（含归档、子会话、自动化），只读 `cache.db`。
 - 内容搜索（P1）尚未实现，当前隐私声明（README、SECURITY）“不读取消息正文、prompt、assistant 输出、tool 输入/输出”仍然成立。
   **一旦实现内容搜索，该表述必须同步修订并限定为 opt-in。**
 
@@ -174,7 +174,7 @@ App.svelte ──invoke("search_tasks", {query, source?, workspace?})──▶ s
 
 ### 5.4 UI 交互
 
-- 列表头部搜索框（标题右侧、刷新按钮左侧），placeholder：`搜索标题、项目、待办…`。
+- 搜索框位于侧边栏「任务」分组内、「已归档」下方；placeholder：`搜索标题、项目、待办…`。
 - `⌘F`（或 `Ctrl+F`）聚焦并全选；`Esc` 清空搜索并失焦；输入即搜（150 ms 防抖）。
 - 查询非空时列表切换为“搜索结果”，行下显示命中字段（如 `匹配 标题 · 待办`）；复用现有任务行，不引入新组件。
 - 归档、子会话、自动化命中时在行内显示对应徽标，避免“搜到了但不知道是什么”。
