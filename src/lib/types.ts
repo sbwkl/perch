@@ -132,6 +132,17 @@ export interface UsageReportOutcome {
   path: string;
 }
 
+export interface SearchHit {
+  task_key: string;
+  score: number;
+  fields: string[];
+}
+
+export interface SearchResponse {
+  hits: SearchHit[];
+  total: number;
+}
+
 export interface SyncReport {
   started_at: number;
   finished_at: number;

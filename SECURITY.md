@@ -21,8 +21,10 @@ https://github.com/sbwkl/perch/security/advisories/new
 Perch 是本机单用户的只读查看器：
 
 - 不发起网络请求，没有遥测、账号或云同步。
-- 不启用 Tauri 的 `fs` / `shell` / `http` 等插件；前端只能调用三个窄命令：
-  `bootstrap`、`refresh_sources`、`continue_task`。
+- 不启用 Tauri 的 `fs` / `shell` / `http` 等插件；前端只能调用五个窄命令：
+  `bootstrap`、`refresh_sources`、`search_tasks`、`continue_task`、`open_usage_report`。
+- `search_tasks` 只读 `cache.db` 中已有的元数据与待办，不读取会话正文；搜索词只在内存中使用，
+  不写入数据库、不写日志、不进入错误信息；只返回命中任务 key、分数与字段标签。
 - 所有源读取在 Rust core 中完成；源 SQLite 使用只读连接和 `PRAGMA query_only=ON`，
   JSONL 只读打开。usage-ledger 的 `usage.db` 同样只读打开，Perch 不写入、不迁移、
   不触发它的 sync。

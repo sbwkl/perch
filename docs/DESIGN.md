@@ -901,7 +901,9 @@ perch-cli export --output snapshot.html
 - 置顶：点击星标立即写入 overlay；乐观更新，失败回滚并 toast。这是 MVP 唯一的任务写操作。
 - 视图与窗口：最近、更早、已归档均为按最近活动倒序的平铺列表，行内展示 workspace；
   运行中任务固定最前，其后为源置顶任务；最近与更早按 7 天窗口互补，已归档展示归档任务。
-- 搜索：title / project / key 子串；中文直接匹配；输入即筛。MVP 不搜索 tag/note。
+- 搜索：标题、项目、项目路径、待办、模型、分支、状态、来源、类型、会话 ID；NFKC + 小写归一，
+  支持中文子串、拼音全拼/首字母、拉丁子序列与拼写容错；多词 AND；默认搜全部会话（含归档/子会话/自动化）；
+  输入防抖 150 ms，返回前 10 条并显示真实命中总数。P1 内容搜索为 opt-in，当前不读正文。
 - 筛选：来源多选、workspace、源状态、归档/子会话/自动化。
 - 排序：运行中任务固定最前，其后为源置顶，再按最近活动排序；M2 的 Global pinned 固定在最上方；可切换创建时间/标题。
 - 后续交互：状态、备注、标签、隐藏、重命名、复制 resume、打开项目、拖拽排序和分组。
@@ -912,7 +914,9 @@ perch-cli export --output snapshot.html
 ```rust
 #[tauri::command] fn bootstrap(state) -> Result<BootstrapPayload, AppError>;
 #[tauri::command] async fn refresh_sources(state, source: Option<String>) -> Result<SyncReport, AppError>;
+#[tauri::command] fn search_tasks(state, query: String, source: Option<String>, workspace: Option<String>) -> Result<SearchResponse, AppError>;
 #[tauri::command] fn continue_task(state, task_key: String) -> Result<ContinueOutcome, AppError>;
+#[tauri::command] fn open_usage_report(state) -> Result<UsageReportOutcome, AppError>;
 #[tauri::command] fn set_pin(state, key: String, pinned: bool) -> Result<OverlayView, AppError>;
 #[tauri::command] fn doctor(state) -> Result<DoctorReport, AppError>;
 #[tauri::command] fn reveal_data_dir(state) -> Result<(), AppError>;

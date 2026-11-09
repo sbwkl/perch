@@ -5,6 +5,7 @@ pub mod models;
 pub mod paths;
 pub mod probe;
 pub mod query;
+pub mod search;
 pub mod store;
 pub mod sync;
 pub mod usage;

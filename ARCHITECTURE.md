@@ -10,13 +10,15 @@ Perch 是一个 macOS 桌面应用：Tauri 2 壳 + 纯 Rust core + Svelte 5 前�
 
 ```
 ┌──────────────────────────── Svelte 5 (WKWebView) ───────────────────────────┐
-│  App.svelte：三栏界面 / 视图与筛选 / Inspector                              │
-│  invoke("bootstrap" | "refresh_sources" | "continue_task")                  │
+│  App.svelte：三栏界面 / 视图与筛选 / 搜索 / Inspector                        │
+│  invoke("bootstrap" | "refresh_sources" | "search_tasks" |                    │
+│         "continue_task" | "open_usage_report")                                │
 └───────────────────────────────────┬─────────────────────────────────────────┘
                                     │ Tauri IPC
 ┌───────────────────────────────────▼─────────────────────────────────────────┐
 │  src-tauri/src/lib.rs                                                       │
-│  · bootstrap / refresh_sources / continue_task                             │
+│  · bootstrap / refresh_sources / search_tasks / continue_task /             │
+│    open_usage_report                                                        │
 │  · AppState = Arc<Mutex<ScanEngine>>                                        │
 │  · 每 3 秒 SourceProbe（窗口可见时），变化后重扫并 emit "sources-updated"    │
 └───────────────────────────────────┬─────────────────────────────────────────┘
@@ -28,12 +30,13 @@ Perch 是一个 macOS 桌面应用：Tauri 2 壳 + 纯 Rust core + Svelte 5 前�
 │       └── SourceResult                   └── query::build_bootstrap         │
 │  usage::UsageSnapshot ──（只读 usage.db）──▶ query::build_bootstrap_with_usage│
 │  probe::SourceProbe（SQLite data_version / JSONL 签名）                     │
+│  search::search_tasks（只读 cache.db 元数据；拼音/模糊/加权排序）           │
 │  continue_work::plan_continue（App URL / 激活 App / 终端）                  │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 依赖方向单向：`src-tauri → perch-core`，`perch-core` 内部
-`collectors / probe → models`、`query → store`、`sync → collectors + store`。
+`collectors / probe → models`、`query / search → store + models`、`sync → collectors + store`。
 `perch-core` 不依赖 Tauri，可以独立编译和测试。
 
 ## 模块职责
@@ -44,12 +47,13 @@ Perch 是一个 macOS 桌面应用：Tauri 2 壳 + 纯 Rust core + Svelte 5 前�
 | 扫描引擎 | `src/sync.rs` | 逐个执行采集器，捕获 panic，写快照，判定缺失，记录同步状态 |
 | 快照存储 | `src/store.rs` | `cache.db` schema、upsert、缺失标记、sync_state / scan_run |
 | 查询 | `src/query.rs` | 把快照组装为 `BootstrapPayload`（workspaces、sources、counts、可选 usage） |
+| 搜索 | `src/search.rs` | 只读 `task` / `task_todo`，NFKC 归一 + 拼音 + 模糊匹配 + 字段加权，返回前 10 条与总数 |
 | 用量桥接 | `src/usage.rs` | 只读打开 usage-ledger 的 `usage.db`，按 `session_id` 聚合 token / credits / est |
 | 探测 | `src/probe.rs` | 轻量判断源是否变化：SQLite `PRAGMA data_version`、JSONL 文件数与最新 mtime |
 | 继续工作 | `src/continue_work.rs` | 按来源和进程探测决定打开 App / URL / 终端，并校验 session id |
 | 路径 | `src/paths.rs` | 默认源路径与环境变量覆盖 |
 | Tauri 壳 | `src-tauri/src/lib.rs` | IPC 命令、状态管理、3 秒探测循环、事件 |
-| 前端 | `src/App.svelte` | 三栏布局、任务筛选、详情与“打开”按钮 |
+| 前端 | `src/App.svelte` | 三栏布局、任务筛选、元数据搜索、详情与“打开”按钮 |
 | 演示夹具 | `demo/` | 仅开发用：假数据 + Tauri API stub，用于截图与 UI 调试 |
 
 ## 数据流

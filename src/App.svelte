@@ -5,6 +5,8 @@
   import type {
     BootstrapPayload,
     ContinueOutcome,
+    SearchHit,
+    SearchResponse,
     SyncReport,
     TaskView,
     UsageReportOutcome,
@@ -27,6 +29,7 @@
     bird: "M7 20c0-5.5 4.5-10 10-10h4l-3-4-5 2-4 4-3 6 1 2zM9 20h10",
     pin: "M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z",
     report: "M18 20V10M12 20V4M6 20v-6",
+    search: "M21 21l-4.35-4.35M11 19a8 8 0 1 1 0-16 8 8 0 0 1 0 16z",
   } as const;
 
   const SOURCE_COLORS: Record<string, string> = {
@@ -75,6 +78,12 @@
   let reportOpen = $state(false);
   let reportNotice = $state("");
   let reportFailed = $state(false);
+  let query = $state("");
+  let searchHits = $state<SearchHit[]>([]);
+  let searchTotal = $state(0);
+  let searching = $state(false);
+  let searchError = $state("");
+  let searchInput = $state<HTMLInputElement>();
 
   const WORKSPACE_VISIBLE_LIMIT = 8;
 
@@ -146,6 +155,65 @@
 
   const hasVisibleTasks = $derived(flatTasks.length > 0);
 
+  const allTasks = $derived.by(() => {
+    const map = new Map<string, TaskView>();
+    for (const group of payload?.workspaces ?? []) {
+      for (const task of group.tasks) map.set(task.key, task);
+    }
+    return map;
+  });
+
+  const searchActive = $derived(query.trim().length > 0);
+
+  const searchResults = $derived.by(() => {
+    const results: Array<{ hit: SearchHit; task: TaskView }> = [];
+    for (const hit of searchHits) {
+      const task = allTasks.get(hit.task_key);
+      if (task) results.push({ hit, task });
+    }
+    return results;
+  });
+
+  let searchSeq = 0;
+  $effect(() => {
+    const term = query.trim();
+    const source = sourceFilter;
+    const workspace = workspaceFilter;
+    void payload?.generated_at;
+    const seq = ++searchSeq;
+    if (!term) {
+      searchHits = [];
+      searchTotal = 0;
+      searching = false;
+      searchError = "";
+      return;
+    }
+    searching = true;
+    searchError = "";
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const response = await invoke<SearchResponse>("search_tasks", {
+            query: term,
+            source,
+            workspace,
+          });
+          if (seq !== searchSeq) return;
+          searchHits = response.hits;
+          searchTotal = response.total;
+        } catch (error) {
+          if (seq !== searchSeq) return;
+          searchHits = [];
+          searchTotal = 0;
+          searchError = error instanceof Error ? error.message : String(error);
+        } finally {
+          if (seq === searchSeq) searching = false;
+        }
+      })();
+    }, 150);
+    return () => clearTimeout(timer);
+  });
+
   const selected = $derived.by<TaskView | null>(() => {
     if (!payload || !selectedKey) return null;
     for (const group of payload.workspaces) {
@@ -170,6 +238,7 @@
   );
 
   const heading = $derived.by(() => {
+    if (searchActive) return "搜索结果";
     if (workspaceFilter) {
       return workspaceItems.find((item) => item.key === workspaceFilter)?.name ?? "Workspace";
     }
@@ -178,6 +247,17 @@
   });
 
   const subheading = $derived.by(() => {
+    if (searchActive) {
+      const scope = [
+        workspaceFilter
+          ? workspaceItems.find((item) => item.key === workspaceFilter)?.name ?? "Workspace"
+          : "",
+        sourceFilter ? SOURCE_LABELS[sourceFilter] ?? sourceFilter : "",
+      ].filter(Boolean);
+      const scopeText = scope.length > 0 ? ` · ${scope.join(" / ")}` : "";
+      const status = searching ? " · 搜索中…" : ` · 显示 ${searchResults.length} 条`;
+      return `${searchTotal} 个匹配 · 全部会话（含已归档）${scopeText}${status}`;
+    }
     const generated = payload ? fullTime(payload.generated_at) : "—";
     const summary = lastScanSummary ? ` · ${lastScanSummary}` : "";
     return `${totalVisible} 个任务 · 快照 ${generated}${summary}`;
@@ -259,6 +339,7 @@
     view = next;
     workspaceFilter = null;
     sourceFilter = null;
+    query = "";
   }
 
   function selectWorkspace(key: string) {
@@ -347,11 +428,24 @@
   }
 
   function handleKeydown(event: KeyboardEvent) {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
+      event.preventDefault();
+      searchInput?.focus();
+      searchInput?.select();
+      return;
+    }
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "r") {
       event.preventDefault();
       void refresh();
     }
-    if (event.key === "Escape") selectedKey = null;
+    if (event.key === "Escape") {
+      if (query) {
+        query = "";
+        searchInput?.blur();
+      } else {
+        selectedKey = null;
+      }
+    }
   }
 
   onMount(() => {
@@ -389,7 +483,7 @@
   </svg>
 {/snippet}
 
-{#snippet taskRow(task: TaskView, showWorkspace: boolean)}
+{#snippet taskRow(task: TaskView, showWorkspace: boolean, matchFields: string[] = [], scopeBadges = false)}
   <button
     class="task"
     class:selected={selectedKey === task.key}
@@ -414,8 +508,14 @@
           <span class="todo-chip">{task.todo_done}/{task.todo_total}</span>
         {/if}
         {#if task.source_pinned}<span class="pin-badge" title="源置顶" aria-label="源置顶">{@render pinIcon()}</span>{/if}
+        {#if scopeBadges && task.source_archived}<span class="mini-badge">源归档</span>{/if}
+        {#if scopeBadges && task.is_child}<span class="mini-badge">子会话</span>{/if}
+        {#if scopeBadges && task.is_automation}<span class="mini-badge">自动化</span>{/if}
         {#if task.source_missing}<span class="mini-badge danger">源已删除</span>{/if}
       </span>
+      {#if matchFields.length > 0}
+        <span class="match-fields">匹配 {matchFields.join(" · ")}</span>
+      {/if}
     </span>
     <span class="status {statusClass(task)}">{statusLabel(task)}</span>
   </button>
@@ -531,6 +631,42 @@
         <h2>{heading}</h2>
         <p>{subheading}</p>
       </div>
+      <div class="search-box">
+        <svg
+          class="search-icon"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d={ICONS.search} />
+        </svg>
+        <input
+          bind:this={searchInput}
+          bind:value={query}
+          class="search-input"
+          type="text"
+          placeholder="搜索标题、项目、待办…"
+          spellcheck="false"
+          autocomplete="off"
+          aria-label="搜索任务"
+        />
+        {#if query}
+          <button
+            class="search-clear"
+            onclick={() => (query = "")}
+            title="清除搜索"
+            aria-label="清除搜索"
+          >
+            ×
+          </button>
+        {:else}
+          <kbd>⌘F</kbd>
+        {/if}
+      </div>
       <button class="refresh-button" onclick={() => refresh()} disabled={refreshing}>
         <svg
           class="refresh-icon"
@@ -604,6 +740,30 @@
 
     {#if busy && !payload}
       <div class="empty-state">正在读取本地任务…</div>
+    {:else if searchActive}
+      {#if searchError}
+        <div class="empty-state">
+          <p>搜索失败：{searchError}</p>
+          <p class="subtle">请重试，或重新扫描数据源。</p>
+        </div>
+      {:else if searchResults.length === 0}
+        {#if searching}
+          <div class="empty-state">搜索中…</div>
+        {:else}
+          <div class="empty-state">
+            <p>没有匹配“{query.trim()}”的任务。</p>
+            <p class="subtle">支持标题、项目、路径、待办、模型、分支、状态、来源、类型、会话 ID；支持拼音与模糊匹配。</p>
+          </div>
+        {/if}
+      {:else}
+        <div class="groups">
+          <div class="flat-list">
+            {#each searchResults as result (result.task.key)}
+              {@render taskRow(result.task, true, result.hit.fields, true)}
+            {/each}
+          </div>
+        </div>
+      {/if}
     {:else if !hasVisibleTasks}
       <div class="empty-state">
         <p>当前筛选下没有任务。</p>

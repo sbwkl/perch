@@ -68,6 +68,23 @@ async fn refresh_sources(
     .map_err(|error| error.to_string())?
 }
 
+#[tauri::command]
+fn search_tasks(
+    state: State<'_, AppState>,
+    query: String,
+    source: Option<String>,
+    workspace: Option<String>,
+) -> Result<perch_core::search::SearchResponse, String> {
+    let engine = state.engine.lock().map_err(|error| error.to_string())?;
+    perch_core::search::search_tasks(
+        engine.store(),
+        &query,
+        source.as_deref(),
+        workspace.as_deref(),
+    )
+    .map_err(|error| error.to_string())
+}
+
 #[derive(serde::Serialize)]
 struct ContinueOutcome {
     channel: String,
@@ -288,6 +305,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             bootstrap,
             refresh_sources,
+            search_tasks,
             continue_task,
             open_usage_report
         ])

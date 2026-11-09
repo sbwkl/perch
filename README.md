@@ -19,6 +19,8 @@ Perch 只读取各 agent 已落盘的会话元数据，把散落在不同侧边�
 
 - **统一任务列表**：六个来源的任务按最近活动时间平铺展示，行内标注 workspace。
 - **三种视图**：最近（近 7 天）、更早（7 天之外）、已归档；workspace 与来源筛选可叠加在当前视图上。
+- **搜索**：`⌘F` 搜索标题、项目、路径、待办、模型、分支、状态、来源、类型与会话 ID；
+  支持中文、拼音与拉丁模糊匹配；默认搜索全部会话（含归档），结果取前 10 条。
 - **实时感知**：窗口可见时每 3 秒探测源变化，变更后自动重扫并刷新界面；也可用 `⌘R` 手动刷新。
 - **详情面板**：展示模型、分支、消息数、待办进度和恢复命令。
 - **用量附加（可选）**：按会话关联 usage-ledger 的 token 真值、Qoder credits 与 est 估算，
@@ -113,6 +115,7 @@ npm run tauri build
 | [docs/DESIGN.md](docs/DESIGN.md) | 产品与数据设计、逐源采集规格、方案取舍 |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 代码结构、数据流、只读不变量、扩展点 |
 | [docs/SOURCES.md](docs/SOURCES.md) | 每个来源的路径、schema、状态规则和怪癖 |
+| [docs/SEARCH.md](docs/SEARCH.md) | 搜索字段、模糊/拼音/语义方案与隐私边界 |
 | [docs/FAQ.md](docs/FAQ.md) | 常见问题（深链限制、数据位置、卸载等） |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | 开发环境、命令、环境变量、演示模式 |
 | [ROADMAP.md](ROADMAP.md) | 里程碑与当前进度 |

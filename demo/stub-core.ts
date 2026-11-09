@@ -31,6 +31,63 @@ export async function invoke<T>(
       };
       return report as T;
     }
+    case "search_tasks": {
+      const query = String(args?.query ?? "").trim().toLocaleLowerCase();
+      if (!query) return { hits: [], total: 0 } as T;
+      const source = args?.source ? String(args.source) : null;
+      const workspace = args?.workspace ? String(args.workspace) : null;
+      const terms = query.split(/\s+/).filter(Boolean);
+      const payload = demoPayload();
+      const matches: Array<{
+        task_key: string;
+        score: number;
+        fields: string[];
+        updated_at: number;
+      }> = [];
+      for (const group of payload.workspaces) {
+        for (const task of group.tasks) {
+          if (source && task.source !== source) continue;
+          if (workspace && task.workspace_key !== workspace) continue;
+          const fields: Array<[string, string]> = [
+            ["标题", task.title],
+            ["项目", task.workspace_name],
+            ["项目路径", task.project_path ?? ""],
+            ["待办", task.todos.map((todo) => todo.subject).join(" ")],
+            ["模型", task.model ?? ""],
+            ["分支", task.git_branch ?? ""],
+            ["来源", task.source_label],
+            ["会话 ID", task.source_id],
+          ];
+          let matched: string[] | null = [];
+          for (const term of terms) {
+            const fieldHits = fields
+              .filter(([, value]) => value.toLocaleLowerCase().includes(term))
+              .map(([label]) => label);
+            if (fieldHits.length === 0) {
+              matched = null;
+              break;
+            }
+            matched.push(...fieldHits);
+          }
+          if (!matched) continue;
+          matches.push({
+            task_key: task.key,
+            score: matched.length,
+            fields: [...new Set(matched)],
+            updated_at: task.updated_at ?? 0,
+          });
+        }
+      }
+      matches.sort(
+        (left, right) => right.score - left.score || right.updated_at - left.updated_at,
+      );
+      return {
+        total: matches.length,
+        hits: matches
+          .slice(0, 10)
+          .map(({ task_key, score, fields }) => ({ task_key, score, fields })),
+      } as T;
+    }
     case "continue_task":
       return {
         channel: "app",
