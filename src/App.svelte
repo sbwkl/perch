@@ -39,6 +39,7 @@
     opencode: "#201d1d",
     kilo: "#ffdd00",
     "trae-cn": "#32f08c",
+    cline: "#e7e5e7",
   };
 
   const SOURCE_LABELS: Record<string, string> = {
@@ -48,6 +49,7 @@
     opencode: "OpenCode",
     kilo: "Kilo",
     "trae-cn": "Trae CN",
+    cline: "Cline",
   };
 
   const STATUS_LABELS: Record<string, string> = {
@@ -59,6 +61,7 @@
     limited: "受限",
     complete: "已完成",
     archived: "已归档",
+    failed: "失败",
     idle: "空闲",
   };
 
@@ -413,7 +416,7 @@
 
   function statusClass(task: TaskView): string {
     if (task.status === "running" || task.status === "active") return "live";
-    if (task.status === "blocked") return "danger";
+    if (task.status === "blocked" || task.status === "failed") return "danger";
     if (task.status === "limited" || task.status === "paused" || task.status === "waiting") {
       return "warn";
     }

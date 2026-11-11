@@ -1,6 +1,6 @@
 # Perch
 
-> 多 agent 任务总览：把 Qoder、Claude Code、Codex、OpenCode、Kilo、Trae CN 的本地会话汇总到一处。
+> 多 agent 任务总览：把 Qoder、Claude Code、Codex、OpenCode、Kilo、Trae CN、Cline 的本地会话汇总到一处。
 > 先找到任务，再决定回哪个 agent 继续。
 
 ![Perch 主界面](docs/images/overview.png)
@@ -19,7 +19,7 @@ Perch 只读取各 agent 已落盘的会话元数据，把散落在不同侧边�
 
 ## 它能做什么
 
-- **统一任务列表**：六个来源的任务按最近活动时间平铺展示，行内标注 workspace。
+- **统一任务列表**：七个来源的任务按最近活动时间平铺展示，行内标注 workspace。
 - **三种视图**：最近（近 7 天）、更早（7 天之外）、已归档；workspace 与来源筛选可叠加在当前视图上。
 - **搜索**：`⌘F` 或侧边栏入口打开搜索弹层，即时搜索标题、项目、路径、待办、模型、分支、状态、来源、类型与会话 ID；
   支持中文、拼音与拉丁模糊匹配；默认搜索全部会话（含归档），结果取前 10 条，`↑`/`↓` 选择、`Enter` 打开。
@@ -48,6 +48,7 @@ Perch 只读取各 agent 已落盘的会话元数据，把散落在不同侧边�
 | OpenCode | `~/.local/share/opencode/opencode.db` | App 运行中则激活 App；否则终端 `opencode --session <id>` |
 | Kilo | `~/.local/share/kilo/kilo.db` | App 运行中则激活 App；否则终端 `kilo` |
 | Trae CN | `~/.local/share/usage-ledger/trae-cn/events-*.jsonl` 与 `~/.trae-cn/memory/projects/**/session_memory_*.jsonl` | 激活 Trae CN App（无会话级深链） |
+| Cline | `~/.cline/data/db/sessions.db` | App 会话激活 Cline App；CLI 会话终端 `cline --id <id>` |
 
 各来源的字段映射、状态推断规则与已知限制见 [docs/SOURCES.md](docs/SOURCES.md)。
 
@@ -55,6 +56,8 @@ Trae CN 的会话列表在服务端，本地 agent 库加密；Perch 只读 usag
 并枚举 `memory/projects` 下的 `session_memory_*.jsonl` 文件名来覆盖安装 hook 前的历史会话
 （读取文件名、日期目录、mtime 与首条 `intent` 摘要作为标题，不读消息正文）。
 需要先安装 hook（`usage hooks install trae-cn --scope global`），未安装时该来源显示不可用。
+Cline 的 CLI 与桌面 App 共用 `sessions.db`，Perch 只读其中的会话元数据（标题、项目、状态、
+模型、父子关系），不读取消息正文；Cline 没有会话级深链，App 会话只能激活窗口。
 ChatGPT 桌面仅 Codex 会话写入本地并计入 Codex，普通聊天仍存于云端。
 
 ### 用量来源（可选）

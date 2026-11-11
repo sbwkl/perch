@@ -35,6 +35,7 @@ impl SourceProbe {
             ("qoder", Some(paths.qoder_db.clone())),
             ("opencode", opencode_db),
             ("kilo", Some(paths.kilo_db.clone())),
+            ("cline", Some(paths.cline_db.clone())),
         ]
         .into_iter()
         .map(|(source, path)| {

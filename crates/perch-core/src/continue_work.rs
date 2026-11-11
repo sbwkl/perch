@@ -2,8 +2,8 @@ use std::path::Path;
 use std::process::Command;
 
 use crate::models::{
-    TaskSnapshot, SOURCE_CLAUDE, SOURCE_CODEX, SOURCE_KILO, SOURCE_OPENCODE, SOURCE_QODER,
-    SOURCE_TRAE_CN,
+    TaskSnapshot, SOURCE_CLAUDE, SOURCE_CLINE, SOURCE_CODEX, SOURCE_KILO, SOURCE_OPENCODE,
+    SOURCE_QODER, SOURCE_TRAE_CN,
 };
 
 pub const QODER_BUNDLE_ID: &str = "com.qoder.app";
@@ -11,6 +11,7 @@ pub const CODEX_BUNDLE_ID: &str = "com.openai.codex";
 pub const OPENCODE_BUNDLE_ID: &str = "ai.opencode.desktop";
 pub const KILO_BUNDLE_ID: &str = "ai.kilo.desktop";
 pub const TRAE_CN_BUNDLE_ID: &str = "cn.trae.app";
+pub const CLINE_BUNDLE_ID: &str = "bot.cline.app";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContinueChannel {
@@ -117,6 +118,26 @@ pub fn plan_continue(task: &TaskSnapshot, probe: &dyn ChannelProbe) -> crate::Re
             action: ContinueAction::ActivateApp(TRAE_CN_BUNDLE_ID.to_owned()),
             target: "Trae CN App".to_owned(),
         }),
+        // Cline 桌面版没有会话级深链；CLI 会话可用 `cline --id` 精确恢复。
+        SOURCE_CLINE => match task.agent_kind.as_deref() {
+            Some("desktop") => Ok(ContinuePlan {
+                channel: ContinueChannel::App,
+                action: ContinueAction::ActivateApp(CLINE_BUNDLE_ID.to_owned()),
+                target: "Cline App".to_owned(),
+            }),
+            Some("cli") => Ok(terminal_plan(
+                task,
+                format!("cline --id {}", task.source_id),
+            )),
+            _ => Ok(probed_plan(
+                task,
+                probe,
+                CLINE_BUNDLE_ID,
+                ContinueAction::ActivateApp(CLINE_BUNDLE_ID.to_owned()),
+                format!("cline --id {}", task.source_id),
+                "Cline App",
+            )),
+        },
         other => Err(crate::PerchError::message(format!(
             "未知来源，无法继续工作：{other}"
         ))),
@@ -242,6 +263,18 @@ pub fn parse_ps_presence(source: &str, session_id: &str, listing: &str) -> CliPr
             SOURCE_KILO => name == "kilo",
             SOURCE_CODEX => name == "codex",
             SOURCE_CLAUDE => name == "claude",
+            SOURCE_CLINE => {
+                // npm 版 CLI 以 `node .../bin/cline` 启动，可执行文件名不是 cline。
+                let cline_token = tokens.iter().any(|token| {
+                    matches!(
+                        Path::new(token)
+                            .file_name()
+                            .and_then(|value| value.to_str()),
+                        Some("cline" | "cline-cli")
+                    )
+                });
+                cline_token && !tokens.contains(&"--cline-hub-daemon")
+            }
             _ => false,
         };
         if !is_cli {
@@ -447,6 +480,45 @@ mod tests {
     }
 
     #[test]
+    fn cline_channels_follow_session_origin() {
+        let desktop = plan_continue(
+            &task(SOURCE_CLINE, Some("desktop")),
+            &probe(false, CliPresence::None),
+        )
+        .unwrap();
+        assert_eq!(desktop.channel, ContinueChannel::App);
+        assert_eq!(
+            desktop.action,
+            ContinueAction::ActivateApp(CLINE_BUNDLE_ID.to_owned())
+        );
+
+        let cli = plan_continue(
+            &task(SOURCE_CLINE, Some("cli")),
+            &probe(true, CliPresence::None),
+        )
+        .unwrap();
+        assert_eq!(cli.channel, ContinueChannel::Cli);
+        assert_eq!(
+            cli.action,
+            ContinueAction::Terminal {
+                cwd: Some("/Users/x/work/gamma".to_owned()),
+                command: "cline --id ses_abc123".to_owned(),
+            }
+        );
+
+        let app =
+            plan_continue(&task(SOURCE_CLINE, None), &probe(true, CliPresence::None)).unwrap();
+        assert_eq!(
+            app.action,
+            ContinueAction::ActivateApp(CLINE_BUNDLE_ID.to_owned())
+        );
+
+        let detected =
+            plan_continue(&task(SOURCE_CLINE, None), &probe(false, CliPresence::Agent)).unwrap();
+        assert_eq!(detected.channel, ContinueChannel::Cli);
+    }
+
+    #[test]
     fn rejects_unsafe_session_ids() {
         let mut bad = task(SOURCE_QODER, None);
         bad.source_id = "abc; rm -rf /".to_owned();
@@ -458,10 +530,15 @@ mod tests {
         let listing = "\
   100     1 /Applications/OpenCode.app/Contents/MacOS/OpenCode
   101   100 /Users/x/Library/Application Support/ai.opencode.desktop/cli/2.2.5-arm64/opencode-cli serve --service
-  102     1 /bin/zsh -lc ls
+  102     1 /Applications/Cline.app/Contents/MacOS/cline-cli --cline-hub-daemon --cwd / --port 25463
+  103     1 /bin/zsh -lc ls
 ";
         assert_eq!(
             parse_ps_presence(SOURCE_OPENCODE, "ses_abc123", listing),
+            CliPresence::None
+        );
+        assert_eq!(
+            parse_ps_presence(SOURCE_CLINE, "ses_abc123", listing),
             CliPresence::None
         );
     }
@@ -473,6 +550,7 @@ mod tests {
   200     1 /Applications/OpenCode.app/Contents/Resources/opencode-cli --session ses_abc123
   300     1 /opt/homebrew/Cellar/kilo/7.8.15/libexec/kilo
   400     1 /opt/homebrew/bin/codex resume 01a0f16e
+  500     1 /Users/x/.nvm/versions/node/v24/bin/cline --id ses_abc123
 ";
         assert_eq!(
             parse_ps_presence(SOURCE_OPENCODE, "ses_abc123", listing),
@@ -489,6 +567,14 @@ mod tests {
         assert_eq!(
             parse_ps_presence(SOURCE_CODEX, "01a0f16e", listing),
             CliPresence::Session
+        );
+        assert_eq!(
+            parse_ps_presence(SOURCE_CLINE, "ses_abc123", listing),
+            CliPresence::Session
+        );
+        assert_eq!(
+            parse_ps_presence(SOURCE_CLINE, "ses_other", listing),
+            CliPresence::Agent
         );
     }
 }
