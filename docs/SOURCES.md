@@ -26,6 +26,7 @@
 | OpenCode | SQLite | `opencode.db` | 旧表有，v2 暂无 | 激活 App 或终端 |
 | Kilo | SQLite | `kilo.db` | 旧表有 | 激活 App 或终端 |
 | Trae CN | usage-ledger hooks JSONL | `trae-cn/events-*.jsonl` | 无 | 激活 App |
+| Cline | SQLite | `~/.cline/data/db/sessions.db` | 无 | 激活 App 或终端 |
 | ChatGPT 桌面 | — | 普通聊天无本地数据；Codex 会话经 Codex 采集 | — | 未支持 |
 
 ---
@@ -331,6 +332,55 @@ Trae CN 没有确认的会话级深链，只能 `open -b cn.trae.app` 激活窗�
 
 ---
 
+## Cline
+
+**路径**
+
+```
+~/.cline/data/db/sessions.db
+```
+
+覆盖变量：`PERCH_CLINE_DB`。Cline CLI 与 Cline macOS App 共用该数据库。
+
+**读取内容**
+
+- 只读表 `sessions`：`session_id`、`source`（`cli` / `desktop`）、`status`、`started_at`、
+  `updated_at`、`cwd`、`workspace_root`、`parent_session_id`、`model`、`metadata_json`。
+- 标题取自 `metadata_json.title`（SQLite `json_extract`，先用 `json_valid` 校验）；
+  不加载 `metadata_json` 中的 `systemPrompt` 等其他字段。
+- 消息正文存放在 `<id>/<id>.messages.json`，Perch 不打开该文件，也不统计消息数。
+
+**标题 / 状态**
+
+- 标题：`metadata_json.title` 非空 → 原样（截断 240 字符）；否则 `新会话`（`title_source = fallback`）。
+- 状态映射：`running` → `running`；`completed` / `complete` / `done` → `complete`；
+  `failed` / `error` → `failed`；其他（含 `idle`、`cancelled`）→ `idle`，原值保留在 `status_raw`。
+- `agent_kind` 取 `source` 列（`cli` / `desktop`），未知值记为 `unknown`。
+
+**项目与子会话**
+
+- 项目路径优先 `workspace_root`，为空时回退 `cwd`。
+- `~/.cline/data/workspaces/chat` 是 Cline 的内置聊天工作区，不作为项目路径，
+  这类会话归入“未关联项目”。
+- `parent_session_id` 非空且不等于自身时写入 `parent_key`（`cline:<parent>`），
+  子会话默认不进入主列表。
+
+**继续工作**
+
+- `desktop`：激活 `bot.cline.app`。Cline 没有会话级 URL scheme，无法定位到具体会话。
+- `cli`：终端 `cd '<project>' && cline --id <session_id>`（Cline CLI 支持 `--id` 恢复会话）。
+- 未知 `agent_kind`：Cline App 运行中优先激活 App，否则检测到 Cline CLI 进程时走终端。
+
+**已知限制**
+
+- 没有待办数据；不统计消息数。
+- 状态是 Cline 自己写入的 session 状态，不是实时进程探测。
+- 数据库缺失时来源不可用。
+
+**变化探测**：`PRAGMA data_version`。
+
+---
+
 ## 未支持的来源
 
 | 来源 | 原因 |
@@ -373,4 +423,5 @@ cargo test -p perch-core
 | `PERCH_OPENCODE_STABLE_DB` | OpenCode 回退数据库 |
 | `PERCH_KILO_DB` | Kilo 数据库 |
 | `PERCH_TRAE_CN_EVENTS_DIR` | Trae CN hook 事件目录 |
+| `PERCH_CLINE_DB` | Cline 会话数据库 |
 | `PERCH_CACHE_DB` | Perch 快照缓存 |

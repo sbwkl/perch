@@ -5,6 +5,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- Cline 来源：只读 `~/.cline/data/db/sessions.db` 的会话元数据（Cline CLI 与桌面 App 共用），
+  展示标题、项目、状态、模型与父子会话；桌面会话激活 Cline App，CLI 会话在终端执行
+  `cline --id <id>`；窗口可见时通过 `PRAGMA data_version` 探测变化
+- 会话状态新增 `failed` 映射与危险色显示，用于 Cline 的失败会话
+
 ### Planned
 
 - `overlay.db` 与全局置顶（M2）

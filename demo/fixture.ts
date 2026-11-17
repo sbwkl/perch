@@ -17,9 +17,10 @@ const SOURCE_LABELS: Record<string, string> = {
   codex: "Codex",
   opencode: "OpenCode",
   kilo: "Kilo",
+  cline: "Cline",
 };
 
-const SOURCES = ["qoder", "claude", "codex", "opencode", "kilo"] as const;
+const SOURCES = ["qoder", "claude", "codex", "opencode", "kilo", "cline"] as const;
 
 const WORKSPACES = [
   { name: "acme-storefront", path: "/Users/demo/code/acme-storefront" },
@@ -282,6 +283,17 @@ const TASKS: TaskView[] = [
     ],
   }),
   makeTask({
+    source: "cline",
+    title: "梳理 Cline 会话存储结构",
+    workspace: 2,
+    status: "running",
+    updated_minutes_ago: 75,
+    created_days_ago: 1,
+    model: "Claude Sonnet 4.5",
+    resume_cmd:
+      "cd '/Users/demo/code/data-pipeline' && cline --id demo-cline-0001",
+  }),
+  makeTask({
     source: "qoder",
     title: "实验：多模态输入解析",
     workspace: 3,
@@ -307,6 +319,15 @@ const TASKS: TaskView[] = [
     updated_minutes_ago: 4 * 1_440,
     created_days_ago: 9,
     messages: 7,
+  }),
+  makeTask({
+    source: "cline",
+    title: "修复 Cline 配置迁移脚本",
+    workspace: 3,
+    status: "failed",
+    updated_minutes_ago: 6 * 1_440,
+    created_days_ago: 8,
+    messages: 14,
   }),
   makeTask({
     source: "codex",

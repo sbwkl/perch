@@ -19,6 +19,7 @@ fn paths_under(root: &Path) -> SourcePaths {
         kilo_db: root.join("kilo.db"),
         trae_cn_events_dir: root.join("usage-ledger/trae-cn"),
         trae_cn_memory_dir: root.join("trae-cn/memory/projects"),
+        cline_db: root.join("cline/sessions.db"),
     }
 }
 
@@ -95,5 +96,26 @@ fn probe_detects_trae_cn_hook_events() {
     fs::write(session_dir.join("session_memory_history.jsonl"), "").unwrap();
 
     assert_eq!(probe.poll(), vec!["trae-cn"]);
+    assert!(probe.poll().is_empty(), "no further changes expected");
+}
+
+#[test]
+fn probe_detects_cline_session_changes() {
+    let temp = TempDir::new().unwrap();
+    let paths = paths_under(temp.path());
+    fs::create_dir_all(paths.cline_db.parent().unwrap()).unwrap();
+
+    let cline = rusqlite::Connection::open(&paths.cline_db).unwrap();
+    cline
+        .execute_batch("CREATE TABLE sessions (session_id TEXT PRIMARY KEY);")
+        .unwrap();
+
+    let mut probe = SourceProbe::new(&paths);
+    assert!(probe.poll().is_empty(), "initial baseline must be quiet");
+
+    cline
+        .execute("INSERT INTO sessions VALUES ('s1')", [])
+        .unwrap();
+    assert_eq!(probe.poll(), vec!["cline"]);
     assert!(probe.poll().is_empty(), "no further changes expected");
 }

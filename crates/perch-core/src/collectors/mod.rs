@@ -1,4 +1,5 @@
 pub mod claude;
+pub mod cline;
 pub mod codex;
 pub mod common;
 pub mod kilocode;
@@ -29,5 +30,6 @@ pub fn all_collectors(paths: &SourcePaths) -> Vec<Box<dyn Collector>> {
             paths.trae_cn_events_dir.clone(),
             paths.trae_cn_memory_dir.clone(),
         )),
+        Box::new(cline::ClineCollector::new(paths.cline_db.clone())),
     ]
 }

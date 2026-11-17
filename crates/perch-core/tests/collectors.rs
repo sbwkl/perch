@@ -2,13 +2,14 @@ use std::fs;
 use std::path::Path;
 
 use perch_core::collectors::claude::ClaudeCollector;
+use perch_core::collectors::cline::ClineCollector;
 use perch_core::collectors::codex::CodexCollector;
 use perch_core::collectors::kilocode::KiloCollector;
 use perch_core::collectors::opencode::OpenCodeCollector;
 use perch_core::collectors::qoder::QoderCollector;
 use perch_core::collectors::trae_cn::TraeCnCollector;
 use perch_core::collectors::Collector;
-use perch_core::models::{SourceScanStatus, SOURCE_TRAE_CN};
+use perch_core::models::{SourceScanStatus, SOURCE_CLINE, SOURCE_TRAE_CN};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
@@ -1006,4 +1007,167 @@ fn trae_cn_collector_reports_partial_on_bad_lines() {
     assert_eq!(result.status, SourceScanStatus::Partial);
     assert_eq!(result.tasks.len(), 1);
     assert!(result.error.is_some());
+}
+
+fn create_cline_db(path: &Path) {
+    let conn = Connection::open(path).unwrap();
+    conn.execute_batch(
+        r#"
+        CREATE TABLE sessions (
+          session_id TEXT PRIMARY KEY,
+          source TEXT NOT NULL,
+          status TEXT NOT NULL,
+          started_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          cwd TEXT NOT NULL,
+          workspace_root TEXT NOT NULL,
+          parent_session_id TEXT,
+          model TEXT,
+          metadata_json TEXT
+        );
+        "#,
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO sessions VALUES ('desk1', 'desktop', 'completed', \
+         '2026-11-01T02:00:00.000Z', '2026-11-01T03:00:00.000Z', \
+         '/Users/x/work/alpha', '/Users/x/work/alpha', NULL, 'cline-free/mimo-v2.6-flash', \
+         '{\"title\":\"Alpha 任务\",\"systemPrompt\":\"must not be read\"}')",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO sessions VALUES ('cli1', 'cli', 'failed', \
+         '2026-11-02T02:00:00.000Z', '2026-11-02T03:00:00.000Z', \
+         '/Users/x/work/beta', '/Users/x/work/beta', NULL, 'deepseek/deepseek-v4-flash', \
+         '{\"title\":\"Beta 任务\"}')",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO sessions VALUES ('chat1', 'desktop', 'idle', \
+         '2026-11-03T02:00:00.000Z', '2026-11-03T03:00:00.000Z', \
+         '/Users/wayne/.cline/data/workspaces/chat', '/Users/wayne/.cline/data/workspaces/chat', \
+         NULL, 'cline-free/step-5-preview', '{\"title\":\"聊天任务\"}')",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO sessions VALUES ('sub1', 'cli', 'running', \
+         '2026-11-03T04:00:00.000Z', '2026-11-03T04:30:00.000Z', \
+         '/Users/x/work/beta', '/Users/x/work/beta', 'cli1', NULL, '{\"title\":\"子任务\"}')",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO sessions VALUES ('broken1', 'cli', 'idle', \
+         '2026-11-04T04:00:00.000Z', '2026-11-04T04:30:00.000Z', \
+         '/Users/x/work/beta', '/Users/x/work/beta', NULL, NULL, 'not-json')",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO sessions VALUES ('cwd1', 'cli', 'cancelled', \
+         '2026-11-05T04:00:00.000Z', '2026-11-05T04:30:00.000Z', \
+         '/Users/x/work/gamma', '', NULL, NULL, '{}')",
+        [],
+    )
+    .unwrap();
+}
+
+#[test]
+fn cline_collector_maps_sessions_and_keeps_source_read_only() {
+    let temp = TempDir::new().unwrap();
+    let db_path = temp.path().join("sessions.db");
+    create_cline_db(&db_path);
+    let before = fs::read(&db_path).unwrap();
+
+    let result = ClineCollector::new(db_path.clone()).scan();
+
+    assert_eq!(result.status, SourceScanStatus::Ok);
+    assert_eq!(result.source, SOURCE_CLINE);
+    assert_eq!(result.tasks.len(), 6);
+    assert_eq!(result.files_seen, 1);
+    assert_eq!(result.probe_kind, "sqlite");
+
+    let desktop = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "desk1")
+        .unwrap();
+    assert_eq!(desktop.title, "Alpha 任务");
+    assert_eq!(desktop.title_source, "source");
+    assert_eq!(desktop.project_path.as_deref(), Some("/Users/x/work/alpha"));
+    assert_eq!(desktop.project_name.as_deref(), Some("alpha"));
+    assert_eq!(desktop.status_source.as_deref(), Some("complete"));
+    assert_eq!(desktop.status_raw.as_deref(), Some("completed"));
+    assert_eq!(desktop.agent_kind.as_deref(), Some("desktop"));
+    assert_eq!(desktop.model.as_deref(), Some("cline-free/mimo-v2.6-flash"));
+    assert_eq!(desktop.created_at, Some(1793498400.0));
+    assert_eq!(desktop.updated_at, Some(1793502000.0));
+    assert_eq!(
+        desktop.resume_cmd.as_deref(),
+        Some("cd '/Users/x/work/alpha' && cline --id desk1")
+    );
+
+    let cli = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "cli1")
+        .unwrap();
+    assert_eq!(cli.status_source.as_deref(), Some("failed"));
+    assert_eq!(cli.agent_kind.as_deref(), Some("cli"));
+
+    let chat = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "chat1")
+        .unwrap();
+    assert_eq!(chat.project_path, None, "Cline chat workspace is internal");
+    assert_eq!(chat.project_name, None);
+    assert_eq!(chat.status_source.as_deref(), Some("idle"));
+
+    let sub = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sub1")
+        .unwrap();
+    assert_eq!(sub.parent_key.as_deref(), Some("cline:cli1"));
+    assert_eq!(sub.status_source.as_deref(), Some("running"));
+
+    let broken = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "broken1")
+        .unwrap();
+    assert_eq!(broken.title, "新会话");
+    assert_eq!(broken.title_source, "fallback");
+
+    let cwd = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "cwd1")
+        .unwrap();
+    assert_eq!(cwd.project_path.as_deref(), Some("/Users/x/work/gamma"));
+    assert_eq!(cwd.status_source.as_deref(), Some("idle"));
+    assert_eq!(cwd.status_raw.as_deref(), Some("cancelled"));
+
+    let after = fs::read(&db_path).unwrap();
+    assert_eq!(
+        before, after,
+        "collector must not write the source database"
+    );
+}
+
+#[test]
+fn cline_collector_reports_missing_database() {
+    let temp = TempDir::new().unwrap();
+    let result = ClineCollector::new(temp.path().join("missing.db")).scan();
+
+    assert_eq!(result.status, SourceScanStatus::Unavailable);
+    assert!(result.tasks.is_empty());
+    assert!(result
+        .error
+        .as_deref()
+        .is_some_and(|error| error.contains("未找到 Cline 数据库")));
 }

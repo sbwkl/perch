@@ -25,6 +25,7 @@ pub struct SourcePaths {
     pub kilo_db: PathBuf,
     pub trae_cn_events_dir: PathBuf,
     pub trae_cn_memory_dir: PathBuf,
+    pub cline_db: PathBuf,
 }
 
 impl SourcePaths {
@@ -47,6 +48,8 @@ impl SourcePaths {
                 .unwrap_or_else(|| data_dir.join("usage-ledger/trae-cn")),
             trae_cn_memory_dir: env_path("PERCH_TRAE_CN_MEMORY_DIR")
                 .unwrap_or_else(|| home.join(".trae-cn/memory/projects")),
+            cline_db: env_path("PERCH_CLINE_DB")
+                .unwrap_or_else(|| home.join(".cline/data/db/sessions.db")),
             home,
         }
     }
