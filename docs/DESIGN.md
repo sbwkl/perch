@@ -495,7 +495,7 @@ CREATE TABLE task_group_member (
   摘要（截断到 60 字），不读 `actions/outcome` 与消息正文。`created_at` 取日期目录
   本地零点，`updated_at` 取 mtime；按 session id 与 hook 会话合并，hook 优先。
   项目名从编码目录名启发式还原，不伪造 `project_path`。
-- 没有标题、归档和待办：标题统一 fallback `新会话`；状态取会话中时间最晚的已知事件——
+- 没有归档和待办：标题优先 memory `intent` 摘要，没有 memory 记录时 fallback `新会话`；状态取会话中时间最晚的已知事件——
   `UserPromptSubmit` / `PreToolUse` / `PostToolUse` → `running`，
   `SessionStart` / `Stop` → `idle`，未知事件不改变状态；历史会话固定 `idle`，
   `agent_kind = desktop`。状态不做时间衰减，回合中退出且无 `Stop` 时会停留在 `running`。

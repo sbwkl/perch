@@ -62,6 +62,8 @@ docs/                    设计、逐源规格、FAQ、截图
 | Codex 源 | `~/.codex/` |
 | OpenCode 源 | `~/.local/share/opencode/opencode.db`（回退 `opencode-stable.db`） |
 | Kilo 源 | `~/.local/share/kilo/kilo.db` |
+| Trae CN 源 | `~/.local/share/usage-ledger/trae-cn/`（hook 事件）+ `~/.trae-cn/memory/projects/`（历史会话） |
+| Cline 源 | `~/.cline/data/db/sessions.db` |
 | usage-ledger（可选） | `~/.local/share/usage-ledger/usage.db` |
 
 `cache.db` 是完全可重建的派生数据：退出 Perch 后删除 `cache.db`、`cache.db-wal`、`cache.db-shm`，
@@ -80,10 +82,14 @@ docs/                    设计、逐源规格、FAQ、截图
 | `PERCH_OPENCODE_DB` | OpenCode 主数据库 |
 | `PERCH_OPENCODE_STABLE_DB` | OpenCode 回退数据库 |
 | `PERCH_KILO_DB` | Kilo 数据库 |
+| `PERCH_TRAE_CN_EVENTS_DIR` | Trae CN hook 事件目录 |
+| `PERCH_TRAE_CN_MEMORY_DIR` | Trae CN 会话记忆目录（`memory/projects`） |
+| `PERCH_CLINE_DB` | Cline 会话数据库 |
 | `PERCH_CACHE_DB` | Perch 自己的 `cache.db` 路径 |
 | `PERCH_USAGE_DB` | usage-ledger 的 `usage.db` 路径（优先于下面两个） |
 | `USAGE_LEDGER_DB` | 与 usage-ledger 自身一致的数据库覆盖变量 |
 | `USAGE_LEDGER_HOME` | usage-ledger 数据目录；默认 `~/.local/share/usage-ledger` |
+| `PERCH_USAGE_BIN` | “打开用量报表”使用的 `usage` 可执行文件路径（默认在 PATH 与 `~/.local/bin` 查找） |
 
 集成测试使用临时目录 + 这些变量构造最小 fixture，不会读取真实用户数据。
 

@@ -325,7 +325,7 @@ Trae CN 没有确认的会话级深链，只能 `open -b cn.trae.app` 激活窗�
 **已知限制**
 
 - 历史会话只覆盖有 `session_memory_*.jsonl` 的会话，不是完整历史列表。
-- 没有待办、消息数和归档状态；标题固定为 fallback `新会话`，`agent_kind` 固定为 `desktop`。
+- 没有待办、消息数和归档状态；没有 memory 记录时标题 fallback `新会话`，`agent_kind` 固定为 `desktop`。
 - 事件文件缺失或未安装 hook 时来源不可用；单个坏行会导致 `partial`。
 
 **变化探测**：事件与 memory 目录下 JSONL 的文件数 + 最新 mtime 签名。
@@ -423,5 +423,6 @@ cargo test -p perch-core
 | `PERCH_OPENCODE_STABLE_DB` | OpenCode 回退数据库 |
 | `PERCH_KILO_DB` | Kilo 数据库 |
 | `PERCH_TRAE_CN_EVENTS_DIR` | Trae CN hook 事件目录 |
+| `PERCH_TRAE_CN_MEMORY_DIR` | Trae CN 会话记忆目录（`memory/projects`） |
 | `PERCH_CLINE_DB` | Cline 会话数据库 |
 | `PERCH_CACHE_DB` | Perch 快照缓存 |

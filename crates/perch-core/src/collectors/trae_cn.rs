@@ -379,7 +379,6 @@ fn memory_project_name(directory: &str) -> String {
     }
     let roots = [
         "Users",
-        "wayne",
         "Documents",
         "workspace",
         "private",
@@ -391,7 +390,11 @@ fn memory_project_name(directory: &str) -> String {
     let start = segments[..last]
         .iter()
         .rposition(|segment| roots.contains(segment))
-        .map(|index| index + 1)
+        .map(|index| {
+            // `Users`/`home` 后紧跟任意用户名目录，一并跳过。
+            let skips_username = matches!(segments[index], "Users" | "home") && index + 1 < last;
+            index + 1 + usize::from(skips_username)
+        })
         .unwrap_or(last);
     segments[start..].join("-")
 }
@@ -424,4 +427,27 @@ struct SessionAggregate {
     model_ts: f64,
     last_event: Option<String>,
     last_event_ts: f64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::memory_project_name;
+
+    #[test]
+    fn memory_project_name_strips_any_username() {
+        assert_eq!(
+            memory_project_name("-Users-alice-myapp--p2-abc123"),
+            "myapp"
+        );
+        assert_eq!(
+            memory_project_name("-Users-bob-workspace-playground--p2-abc123"),
+            "playground"
+        );
+        assert_eq!(memory_project_name("-home-carol-proj--p2-abc123"), "proj");
+    }
+
+    #[test]
+    fn memory_project_name_keeps_home_directory_itself() {
+        assert_eq!(memory_project_name("-Users-alice--p2-abc123"), "alice");
+    }
 }

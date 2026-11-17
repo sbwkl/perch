@@ -26,15 +26,18 @@
 ## Trae CN 的任务从哪里来？
 
 Trae CN 的会话列表在服务端，本地 agent 数据库是加密 SQLite，Perch 不读取也不解密。
-Perch 只读 usage-ledger 的 Trae hook 事件（`~/.local/share/usage-ledger/trae-cn/events-*.jsonl`）。
+Perch 只读 usage-ledger 的 Trae hook 事件（`~/.local/share/usage-ledger/trae-cn/events-*.jsonl`）
+和 Trae 本地会话记忆的文件名与首条 `intent` 摘要（`~/.trae-cn/memory/projects/`）。
 需要先安装 hook：
 
 ```bash
 usage hooks install trae-cn --scope global
 ```
 
-未安装时该来源显示不可用。hook 只记录安装之后的会话，且没有标题与状态，
-Perch 统一显示“新会话”和 `idle`，只把 hook 记录的 project basename 作为 workspace 名。
+未安装时该来源显示不可用。hook 只记录安装之后的会话，更早的历史会话从会话记忆文件名补齐。
+标题优先取 memory 首条 `intent` 摘要，没有 memory 记录时显示“新会话”；
+状态由最新 hook 事件推导（`running` / `idle`），历史会话固定 `idle`；
+workspace 名从编码目录名启发式还原，不伪造完整路径。
 
 ## 为什么 Qoder 的“打开”只把 App 切到前台？
 

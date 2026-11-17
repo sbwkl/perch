@@ -253,11 +253,3 @@ pub fn now_seconds() -> f64 {
         .map(|duration| duration.as_secs_f64())
         .unwrap_or(0.0)
 }
-
-pub fn is_recent(updated_at: Option<f64>, seen_at: f64, now: f64, window_seconds: f64) -> bool {
-    updated_at.unwrap_or(seen_at) >= now - window_seconds
-}
-
-pub fn path_key(path: &str) -> String {
-    normalize_project_path(path)
-}
