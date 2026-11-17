@@ -5,6 +5,7 @@
 Owner：wayne
 所属模块/入口：perch-core（collectors/trae_cn、search、store、models、collectors/common）+ docs
 功能卡：无（一次性审计清理）
+关联：PR https://github.com/sbwkl/perch/pull/3；commit 7a79d1e
 
 ## 问题
 
