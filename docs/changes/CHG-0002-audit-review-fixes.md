@@ -3,7 +3,7 @@
 - **状态**：已验证
 - **日期**：2026-11-18
 - **所属模块/入口**：perch-core（usage / probe / store / collectors::cline）、src-tauri（lib.rs）、前端（App.svelte、demo、构建配置）
-- **分支**：`feat/audit-review-fixes`（基于 main `1b3d50c`）
+- **分支**：`feat/audit-review-fixes`（基于 main `1b3d50c`）｜ PR #4
 - **关联**：CHG-0001（PR #3，未合并）列出的 7 项待审核项；用户授权由执行者决定修改方式
 
 ## 理由
@@ -44,7 +44,7 @@ CHG-0001 审计后留下 7 项需要决策的问题。逐项决定如下并实�
 - `cargo fmt --all`、`cargo check --workspace`、`cargo clippy --all-targets -- -D warnings` 零告警。
 - `cargo test --workspace`：61 通过（2+20+5+16+5+8+5）。
 - `npm run check`：0 errors 0 warnings；`npm run build` 成功。
-- 集成测试：tmp/integration-audit-review-fixes（见提交记录）。
+- 集成测试：tmp/integration-audit-review-fixes 合入 main 后全量测试与 svelte-check 通过，临时分支已删除。
 
 ## 回滚
 
