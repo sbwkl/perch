@@ -19,9 +19,10 @@ use crate::Result;
 /// touched for longer than this, the UI marks the snapshot as possibly stale.
 const STALE_AFTER_SECONDS: f64 = 6.0 * 3600.0;
 
-/// Token truth exists for these sources. Qoder only has historical token data;
-/// its newer desktop sessions expose activity / credits / estimates instead.
-const PERCH_SOURCES: [&str; 5] = ["qoder", "claude", "codex", "opencode", "kilo"];
+/// Sources Perch collects; usage rows from anything else are ignored. Token
+/// truth exists only for some of them — Qoder's newer desktop sessions and
+/// Trae CN expose activity / credits / estimates instead.
+const PERCH_SOURCES: [&str; 6] = ["qoder", "claude", "codex", "opencode", "kilo", "trae-cn"];
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TokenUsage {
@@ -335,8 +336,15 @@ fn load_credits(
         return Ok(());
     }
 
-    let mut statement = conn.prepare(
-        "SELECT session_id, \
+    // Older archives predate the `source` column; usage-ledger migrates them
+    // with `qoder` as the default, so treat the stored rows the same way.
+    let source_expr = if has_column(conn, "usage_credit", "source")? {
+        "source"
+    } else {
+        "'qoder'"
+    };
+    let sql = format!(
+        "SELECT {source_expr}, session_id, \
          COALESCE(SUM(CASE WHEN billable = 1 THEN credits ELSE 0 END), 0), \
          COALESCE(SUM(CASE WHEN billable = 0 THEN credits ELSE 0 END), 0), \
          COALESCE(SUM(CASE WHEN billable = 1 THEN 1 ELSE 0 END), 0), \
@@ -344,32 +352,34 @@ fn load_credits(
          MAX(day) \
          FROM usage_credit \
          WHERE session_id IS NOT NULL AND session_id <> '' \
-         GROUP BY session_id",
-    )?;
+         GROUP BY {source_expr}, session_id"
+    );
+    let mut statement = conn.prepare(&sql)?;
     let rows = statement.query_map([], |row| {
         Ok((
             row.get::<_, String>(0)?,
-            row.get::<_, f64>(1)?,
+            row.get::<_, String>(1)?,
             row.get::<_, f64>(2)?,
-            row.get::<_, i64>(3)?,
+            row.get::<_, f64>(3)?,
             row.get::<_, i64>(4)?,
-            row.get::<_, Option<String>>(5)?,
+            row.get::<_, i64>(5)?,
+            row.get::<_, Option<String>>(6)?,
         ))
     })?;
 
     for row in rows {
-        let (session, billable, free, billable_requests, free_requests, day) = row?;
+        let (source, session, billable, free, billable_requests, free_requests, day) = row?;
         let day = day.unwrap_or_default();
-        if day.is_empty() {
+        if day.is_empty() || !PERCH_SOURCES.contains(&source.as_str()) {
             continue;
         }
-        let qoder = source_entry(by_source, "qoder");
+        let totals = source_entry(by_source, &source);
         if day.as_str() >= cutoff {
-            qoder.credits_billable_7d += billable;
+            totals.credits_billable_7d += billable;
         }
-        update_day(&mut qoder.last_day, &day);
+        update_day(&mut totals.last_day, &day);
         let entry = by_session
-            .entry(("qoder".to_owned(), session))
+            .entry((source, session))
             .or_default()
             .credits
             .get_or_insert_with(CreditUsage::default);
@@ -509,7 +519,9 @@ fn has_columns(conn: &Connection, table: &str, columns: &[&str]) -> Result<bool>
         .all(|column| names.iter().any(|name| name == column)))
 }
 
-fn newest_mtime(path: &Path) -> Option<f64> {
+/// Newest mtime of the archive and its WAL, in epoch seconds; used both for
+/// staleness and by the shell's live watch.
+pub fn newest_mtime(path: &Path) -> Option<f64> {
     let wal = PathBuf::from(format!("{}-wal", path.display()));
     [path.to_path_buf(), wal]
         .iter()

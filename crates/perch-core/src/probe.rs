@@ -14,6 +14,7 @@ pub struct SourceProbe {
 
 struct SqliteProbe {
     source: &'static str,
+    candidates: Vec<PathBuf>,
     conn: Option<Connection>,
     last_version: i64,
 }
@@ -27,22 +28,24 @@ struct JsonlProbe {
 
 impl SourceProbe {
     pub fn new(paths: &SourcePaths) -> Self {
-        let opencode_db = SourcePaths::first_existing(&[
-            paths.opencode_db.clone(),
-            paths.opencode_stable_db.clone(),
-        ]);
         let sqlite = [
-            ("qoder", Some(paths.qoder_db.clone())),
-            ("opencode", opencode_db),
-            ("kilo", Some(paths.kilo_db.clone())),
-            ("cline", Some(paths.cline_db.clone())),
+            ("qoder", vec![paths.qoder_db.clone()]),
+            (
+                "opencode",
+                vec![paths.opencode_db.clone(), paths.opencode_stable_db.clone()],
+            ),
+            ("kilo", vec![paths.kilo_db.clone()]),
+            ("cline", vec![paths.cline_db.clone()]),
         ]
         .into_iter()
-        .map(|(source, path)| {
-            let conn = path.as_deref().and_then(|path| open_read_only(path).ok());
+        .map(|(source, candidates)| {
+            let conn = SourcePaths::first_existing(&candidates)
+                .as_deref()
+                .and_then(|path| open_read_only(path).ok());
             let last_version = conn.as_ref().and_then(data_version).unwrap_or(0);
             SqliteProbe {
                 source,
+                candidates,
                 conn,
                 last_version,
             }
@@ -84,10 +87,25 @@ impl SourceProbe {
         let mut changed = Vec::new();
 
         for probe in &mut self.sqlite {
-            let Some(conn) = probe.conn.as_ref() else {
+            if probe.conn.is_none() {
+                // The database may appear after startup (agent installed later);
+                // keep retrying instead of staying deaf until relaunch.
+                let Some(path) = SourcePaths::first_existing(&probe.candidates) else {
+                    continue;
+                };
+                let Ok(conn) = open_read_only(&path) else {
+                    continue;
+                };
+                probe.last_version = data_version(&conn).unwrap_or(0);
+                probe.conn = Some(conn);
+                changed.push(probe.source);
                 continue;
-            };
-            let Some(version) = data_version(conn) else {
+            }
+            let version = probe.conn.as_ref().and_then(data_version);
+            let Some(version) = version else {
+                // Unreadable or deleted database: drop the handle so the next
+                // poll can reopen a replacement.
+                probe.conn = None;
                 continue;
             };
             if version != probe.last_version {

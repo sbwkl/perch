@@ -276,3 +276,57 @@ fn bootstrap_groups_by_workspace_and_splits_recent_older() {
         .unwrap();
     assert_eq!(qoder.task_count, 4);
 }
+
+#[test]
+fn load_task_returns_single_snapshot_by_key() {
+    let store = CacheStore::open_in_memory().unwrap();
+    let scan = store.begin_scan("qoder", "full", "source", "test").unwrap();
+    store
+        .save_result(
+            &SourceResult::ok(
+                "qoder",
+                vec![make_task("qoder", "a", "alpha", 1_000.0)],
+                Vec::new(),
+            ),
+            scan,
+        )
+        .unwrap();
+
+    let found = store.load_task("qoder:a").unwrap().unwrap();
+    assert_eq!(found.source_id, "a");
+    assert_eq!(found.title, "任务 a");
+    assert!(store.load_task("qoder:missing").unwrap().is_none());
+}
+
+#[test]
+fn scan_runs_are_pruned_per_source() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let path = temp.path().join("cache.db");
+    let store = CacheStore::open(&path).unwrap();
+    for _ in 0..210 {
+        let scan = store.begin_scan("qoder", "full", "source", "test").unwrap();
+        store.finish_scan(scan, "ok", 0, 0, None).unwrap();
+    }
+    let other = store
+        .begin_scan("claude", "full", "source", "test")
+        .unwrap();
+    store.finish_scan(other, "ok", 0, 0, None).unwrap();
+
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    let qoder: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM scan_run WHERE source = 'qoder'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let claude: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM scan_run WHERE source = 'claude'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(qoder, 200, "old runs beyond the per-source cap are pruned");
+    assert_eq!(claude, 1, "pruning one source must not touch another");
+}

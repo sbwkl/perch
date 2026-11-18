@@ -368,7 +368,8 @@ Trae CN 没有确认的会话级深链，只能 `open -b cn.trae.app` 激活窗�
 **继续工作**
 
 - `desktop`：激活 `bot.cline.app`。Cline 没有会话级 URL scheme，无法定位到具体会话。
-- `cli`：终端 `cd '<project>' && cline --id <session_id>`（Cline CLI 支持 `--id` 恢复会话）。
+- `cli`：终端 `cd '<project>' && cline --id <session_id>`（Cline CLI 支持 `--id` 恢复会话）；
+  内置聊天工作区没有项目路径，直接执行 `cline --id <session_id>`。
 - 未知 `agent_kind`：Cline App 运行中优先激活 App，否则检测到 Cline CLI 进程时走终端。
 
 **已知限制**

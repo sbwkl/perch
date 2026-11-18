@@ -13,5 +13,6 @@
     "strict": true,
     "types": ["svelte"]
   },
-  "include": ["src/**/*.ts", "src/**/*.svelte"]
+  "include": ["src/**/*.ts", "src/**/*.svelte", "demo/**/*.ts"],
+  "exclude": ["**/vite.config.ts"]
 }

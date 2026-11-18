@@ -88,12 +88,18 @@ export async function invoke<T>(
           .map(({ task_key, score, fields }) => ({ task_key, score, fields })),
       } as T;
     }
-    case "continue_task":
+    case "continue_task": {
+      const taskKey = String(args?.taskKey ?? "");
+      const payload = demoPayload();
+      const task = payload.workspaces
+        .flatMap((group) => group.tasks)
+        .find((item) => item.key === taskKey);
       return {
         channel: "app",
-        target: String(args?.taskKey ?? ""),
-        message: "已打开 Codex（演示数据，不会启动任何应用）",
+        target: taskKey,
+        message: `已打开 ${task?.source_label ?? taskKey}（演示数据，不会启动任何应用）`,
       } as T;
+    }
     default:
       throw new Error(`demo 未实现命令：${command}`);
   }

@@ -7,6 +7,8 @@ use crate::error::Result;
 use crate::models::{ScanRun, SourceResult, SourceSyncState, TaskSnapshot, TodoSnapshot};
 use crate::paths::ensure_parent;
 
+const SCAN_RUNS_KEPT_PER_SOURCE: i64 = 200;
+
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS task (
   key             TEXT PRIMARY KEY,
@@ -189,6 +191,15 @@ impl CacheStore {
                 error
             ],
         )?;
+        // The run log is diagnostic only; cap it per source so long-lived
+        // installations do not grow the cache without bound.
+        self.conn.execute(
+            "DELETE FROM scan_run WHERE source = (SELECT source FROM scan_run WHERE id = ?1) \
+             AND id NOT IN (SELECT id FROM scan_run \
+                            WHERE source = (SELECT source FROM scan_run WHERE id = ?1) \
+                            ORDER BY id DESC LIMIT ?2)",
+            params![scan_id, SCAN_RUNS_KEPT_PER_SOURCE],
+        )?;
         Ok(())
     }
 
@@ -352,42 +363,28 @@ impl CacheStore {
                     resume_cmd, fingerprint, seen_at, last_seen_run \
              FROM task ORDER BY COALESCE(updated_at, seen_at) DESC",
         )?;
-        let rows = statement.query_map([], |row| {
-            Ok(TaskSnapshot {
-                key: row.get(0)?,
-                source: row.get(1)?,
-                source_id: row.get(2)?,
-                parent_key: row.get(3)?,
-                title: row.get(4)?,
-                title_source: row.get(5)?,
-                project_path: row.get(6)?,
-                project_name: row.get(7)?,
-                created_at: row.get(8)?,
-                updated_at: row.get(9)?,
-                status_source: row.get(10)?,
-                status_raw: row.get(11)?,
-                source_archived: row_bool(row, 12)?,
-                source_unread: row_bool(row, 13)?,
-                source_pinned: row_bool(row, 14)?,
-                source_missing: row_bool(row, 15)?,
-                model: row.get(16)?,
-                git_branch: row.get(17)?,
-                agent_kind: row.get(18)?,
-                message_count: row.get(19)?,
-                todo_total: row.get(20)?,
-                todo_done: row.get(21)?,
-                deeplink: row.get(22)?,
-                resume_cmd: row.get(23)?,
-                fingerprint: row.get(24)?,
-                seen_at: row.get(25)?,
-                last_seen_run: row.get(26)?,
-            })
-        })?;
+        let rows = statement.query_map([], task_from_row)?;
         let mut tasks = Vec::new();
         for row in rows {
             tasks.push(row?);
         }
         Ok(tasks)
+    }
+
+    pub fn load_task(&self, key: &str) -> Result<Option<TaskSnapshot>> {
+        let mut statement = self.conn.prepare(
+            "SELECT key, source, source_id, parent_key, title, title_source, project_path, \
+                    project_name, created_at, updated_at, status_source, status_raw, \
+                    source_archived, source_unread, source_pinned, source_missing, model, \
+                    git_branch, agent_kind, message_count, todo_total, todo_done, deeplink, \
+                    resume_cmd, fingerprint, seen_at, last_seen_run \
+             FROM task WHERE key = ?1",
+        )?;
+        let mut rows = statement.query_map([key], task_from_row)?;
+        match rows.next() {
+            Some(row) => Ok(Some(row?)),
+            None => Ok(None),
+        }
     }
 
     pub fn load_todos(&self) -> Result<Vec<TodoSnapshot>> {
@@ -469,4 +466,36 @@ impl CacheStore {
 
 fn row_bool(row: &Row<'_>, index: usize) -> rusqlite::Result<bool> {
     Ok(row.get::<_, i64>(index)? != 0)
+}
+
+fn task_from_row(row: &Row<'_>) -> rusqlite::Result<TaskSnapshot> {
+    Ok(TaskSnapshot {
+        key: row.get(0)?,
+        source: row.get(1)?,
+        source_id: row.get(2)?,
+        parent_key: row.get(3)?,
+        title: row.get(4)?,
+        title_source: row.get(5)?,
+        project_path: row.get(6)?,
+        project_name: row.get(7)?,
+        created_at: row.get(8)?,
+        updated_at: row.get(9)?,
+        status_source: row.get(10)?,
+        status_raw: row.get(11)?,
+        source_archived: row_bool(row, 12)?,
+        source_unread: row_bool(row, 13)?,
+        source_pinned: row_bool(row, 14)?,
+        source_missing: row_bool(row, 15)?,
+        model: row.get(16)?,
+        git_branch: row.get(17)?,
+        agent_kind: row.get(18)?,
+        message_count: row.get(19)?,
+        todo_total: row.get(20)?,
+        todo_done: row.get(21)?,
+        deeplink: row.get(22)?,
+        resume_cmd: row.get(23)?,
+        fingerprint: row.get(24)?,
+        seen_at: row.get(25)?,
+        last_seen_run: row.get(26)?,
+    })
 }

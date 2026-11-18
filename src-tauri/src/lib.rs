@@ -44,16 +44,6 @@ fn bootstrap(state: State<'_, AppState>) -> Result<BootstrapPayload, String> {
         .map_err(|error| error.to_string())
 }
 
-/// Watches the usage archive without reading it. A missing database yields
-/// `None`, so the UI only refreshes once usage-ledger creates or updates it.
-fn usage_mtime(path: &std::path::Path) -> Option<std::time::SystemTime> {
-    let wal = PathBuf::from(format!("{}-wal", path.display()));
-    [path.to_path_buf(), wal]
-        .iter()
-        .filter_map(|candidate| std::fs::metadata(candidate).ok()?.modified().ok())
-        .max()
-}
-
 #[tauri::command]
 async fn refresh_sources(
     app: tauri::AppHandle,
@@ -98,10 +88,8 @@ fn continue_task(state: State<'_, AppState>, task_key: String) -> Result<Continu
         let engine = state.engine.lock().map_err(|error| error.to_string())?;
         engine
             .store()
-            .load_tasks()
+            .load_task(&task_key)
             .map_err(|error| error.to_string())?
-            .into_iter()
-            .find(|task| task.key == task_key)
             .ok_or_else(|| format!("任务不存在：{task_key}"))?
     };
     let probe = SystemProbe::new();
@@ -270,7 +258,7 @@ pub fn run() {
             let handle = app.handle().clone();
             std::thread::spawn(move || {
                 let mut probe = SourceProbe::new(&paths);
-                let mut usage_stamp = usage_mtime(&usage_db);
+                let mut usage_stamp = perch_core::usage::newest_mtime(&usage_db);
                 loop {
                     std::thread::sleep(Duration::from_secs(3));
                     if let Some(window) = handle.get_webview_window("main") {
@@ -281,7 +269,7 @@ pub fn run() {
                         }
                     }
                     let changed = probe.poll();
-                    let next_usage_stamp = usage_mtime(&usage_db);
+                    let next_usage_stamp = perch_core::usage::newest_mtime(&usage_db);
                     let usage_changed = next_usage_stamp != usage_stamp;
                     if changed.is_empty() && !usage_changed {
                         continue;

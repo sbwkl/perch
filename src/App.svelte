@@ -1043,7 +1043,7 @@
             {#if searching}
               搜索中…
             {:else if searchTotal > 0}
-              {searchTotal} 个结果{#if searchTotal > searchResults.length} · 仅显示前 {searchResults.length} 条{/if}
+              {searchTotal} 个结果{#if searchTotal > searchResults.length} · 显示 {searchResults.length} 条{/if}
             {:else}
               无结果
             {/if}

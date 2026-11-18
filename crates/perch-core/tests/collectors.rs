@@ -1126,6 +1126,11 @@ fn cline_collector_maps_sessions_and_keeps_source_read_only() {
     assert_eq!(chat.project_path, None, "Cline chat workspace is internal");
     assert_eq!(chat.project_name, None);
     assert_eq!(chat.status_source.as_deref(), Some("idle"));
+    assert_eq!(
+        chat.resume_cmd.as_deref(),
+        Some("cline --id chat1"),
+        "internal chat workspaces must not appear as a cd target"
+    );
 
     let sub = result
         .tasks

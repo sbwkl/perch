@@ -119,3 +119,24 @@ fn probe_detects_cline_session_changes() {
     assert_eq!(probe.poll(), vec!["cline"]);
     assert!(probe.poll().is_empty(), "no further changes expected");
 }
+
+#[test]
+fn probe_opens_sqlite_sources_that_appear_after_startup() {
+    let temp = TempDir::new().unwrap();
+    let paths = paths_under(temp.path());
+    let mut probe = SourceProbe::new(&paths);
+    assert!(probe.poll().is_empty(), "missing databases stay quiet");
+
+    let qoder = rusqlite::Connection::open(&paths.qoder_db).unwrap();
+    qoder.execute_batch("CREATE TABLE t (x INTEGER);").unwrap();
+
+    assert_eq!(
+        probe.poll(),
+        vec!["qoder"],
+        "a database appearing after startup must trigger a scan"
+    );
+    assert!(probe.poll().is_empty(), "no further changes expected");
+
+    qoder.execute_batch("INSERT INTO t VALUES (1);").unwrap();
+    assert_eq!(probe.poll(), vec!["qoder"]);
+}
