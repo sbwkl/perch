@@ -1,6 +1,10 @@
 import type { SyncReport } from "../src/lib/types";
 import { demoPayload } from "./fixture";
 
+export function convertFileSrc(filePath: string): string {
+  return filePath;
+}
+
 export async function invoke<T>(
   command: string,
   args?: Record<string, unknown>,
@@ -11,7 +15,7 @@ export async function invoke<T>(
     case "bootstrap":
       return demoPayload() as T;
     case "open_usage_report":
-      return { path: "/tmp/demo-usage-report.html" } as T;
+      return { path: "/demo-usage-report.html" } as T;
     case "refresh_sources": {
       const started = Date.now() / 1000;
       const payload = demoPayload();

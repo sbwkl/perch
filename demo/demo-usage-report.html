@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>用量报告（demo）</title>
+<style>
+  :root { color-scheme: light; --bg:#f6f7f9; --card:#ffffff; --text:#1c1e21; --muted:#6b7280; --border:#e3e6ea; --accent:#b96a35; }
+  :root[data-theme="dark"] { color-scheme: dark; --bg:#15171a; --card:#1f2226; --text:#e6e8eb; --muted:#9aa1a9; --border:#31353b; --accent:#e0965c; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:28px; font:14px/1.6 -apple-system,"PingFang SC",sans-serif; background:var(--bg); color:var(--text); }
+  header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:18px; }
+  h1 { font-size:18px; margin:0; }
+  .sub { color:var(--muted); font-size:12px; margin:4px 0 0; }
+  button { border:1px solid var(--border); background:var(--card); color:var(--text); border-radius:6px; padding:5px 10px; cursor:pointer; font-size:12px; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:18px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px; }
+  .card strong { display:block; font-size:22px; }
+  .card span { color:var(--muted); font-size:12px; }
+  table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+  th,td { text-align:left; padding:8px 14px; border-bottom:1px solid var(--border); font-size:13px; }
+  th { color:var(--muted); font-weight:500; font-size:12px; }
+  tr:last-child td { border-bottom:none; }
+  .note { color:var(--muted); font-size:12px; margin-top:14px; }
+  .accent { color:var(--accent); }
+</style>
+<script>
+try {
+  var savedTheme = localStorage.getItem("usage-ledger-theme");
+  document.documentElement.dataset.theme = savedTheme ||
+    (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+} catch (e) {}
+</script>
+</head>
+<body>
+<header>
+  <div>
+    <h1>usage-ledger 用量报告 <span class="accent">· demo</span></h1>
+    <p class="sub">示例数据 · 页面生成于 <span id="generated">（脚本未执行）</span></p>
+  </div>
+  <button id="theme-toggle" type="button">切换主题</button>
+</header>
+<div class="cards">
+  <div class="card"><strong>12.4M</strong><span>token 真值 · 近 7 天</span></div>
+  <div class="card"><strong>3,208</strong><span>credits · 近 7 天</span></div>
+  <div class="card"><strong>86.1M</strong><span>est 估算 · 全量</span></div>
+</div>
+<table>
+  <thead><tr><th>来源</th><th>token 真值</th><th>credits</th><th>est</th></tr></thead>
+  <tbody>
+    <tr><td>Qoder</td><td>—</td><td>3,208</td><td>41.2M</td></tr>
+    <tr><td>Claude Code</td><td>8.9M</td><td>—</td><td>—</td></tr>
+    <tr><td>Codex</td><td>3.5M</td><td>—</td><td>—</td></tr>
+    <tr><td>Trae CN</td><td>—</td><td>—</td><td>44.9M</td></tr>
+  </tbody>
+</table>
+<p class="note">四轨口径不同：token / credits / est 永不相加。本页为 Perch demo 模式的示例报告，非真实用量。</p>
+<script>
+document.getElementById("generated").textContent = new Date().toLocaleString("zh-CN");
+document.getElementById("theme-toggle").addEventListener("click", function () {
+  var next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem("usage-ledger-theme", next); } catch (e) {}
+});
+</script>
+</body>
+</html>
