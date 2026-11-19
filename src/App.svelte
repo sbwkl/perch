@@ -754,7 +754,7 @@
     </footer>
   </aside>
 
-  <main class="list-pane">
+  <main class="list-pane" class:report-wide={view === "report"}>
     <header class="list-head">
       <div class="head-text">
         <h2>{heading}</h2>
@@ -884,6 +884,7 @@
     {/if}
   </main>
 
+  {#if view !== "report"}
   <aside class="inspector">
     {#if selected}
       <div class="inspector-content">
@@ -1029,6 +1030,7 @@
       </div>
     {/if}
   </aside>
+  {/if}
 </div>
 
 {#if searchOpen}

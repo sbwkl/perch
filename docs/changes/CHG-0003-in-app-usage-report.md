@@ -1,7 +1,7 @@
 # CHG-0003 用量报告应用内嵌展示（方案 A）
 
 类型：CHG
-状态：已验证
+状态：开发中
 Owner：wayne
 所属模块/入口：src-tauri（lib.rs、tauri.conf.json、capabilities）、前端（App.svelte）、demo
 功能卡：[REQ-0001](../requirements/REQ-0001-usage-report.md)
@@ -20,6 +20,7 @@ Owner：wayne
 ## 3. 行为 / AC delta
 
 - 新增：REQ-0001 R1–R5（应用内展示、手动刷新、usage 变化自动刷新、失败提示、demo 示例页）。
+- 补充（2026-11-19 用户反馈）：R1 布局细化——报表视图铺满第 2、3 列（隐藏 inspector），避免报表被限制在列表栏宽度内过窄。
 - 修改：`open_usage_report` 不再调用 `run_open` 打开浏览器，仅渲染并返回文件路径（命令名与返回结构不变）。
 - 删除：无。
 - 边界：报告生成期间按钮禁用并显示加载态；asset 协议经 tauri Cargo feature `protocol-asset` + `app.security.assetProtocol.scope` 启用，scope 仅限 `$APPCACHE/**`，不开放其他目录（tauri 2.12.5 的 asset 协议由配置 scope 管控，core ACL 无 asset 权限项，capabilities 不变）。
@@ -46,6 +47,7 @@ Owner：wayne
   - R5：demo iframe 加载 /demo-usage-report.html，内联脚本执行（#generated 时间戳写入、主题切换按钮在 DOM 中可用）。
   - localStorage 结论：asset:// origin 下进程内可用（深色主题跨 iframe 重建保持，t6/t7.png），进程重启后不持久（LocalStorage 目录为空，t8.png 回浅色）→ 预期优雅降级，主题/面板状态为会话级。
   - 门控修复：初版以 `as_of`（db mtime）门控自动重生成，实测 `usage html` 每次运行自身写 db（store.py 读写连接 + schema 维护、关闭时 WAL checkpoint）导致 mtime 自激、约每 9s 循环重生成。改为 usage 汇总内容指纹（source、token_total、token_7d、credits_billable_7d、est_total、last_day；排除随任务匹配变化的 matched_tasks 与 mtime 派生的 as_of），基线在生成开始时取自当前 payload，生成期间落入的真实写入会在下一次 probe 触发补生成。
+  - 布局细化复验（2026-11-19 晚）：demo 525px 视口 DOM 测量——report 视图 main 横跨 214→526（铺满 sidebar 右侧）、inspector 未挂载；切回任务视图 inspector 恢复（312px）。实机 1200×780——report 视图铺满第 2、3 列，筛选行与三列 KPI 卡完整、无横向溢出；切回"最近"恢复三栏（截图 /tmp/perch-smoke/full-now.png、back-now.png，本地留存不入库）。`npm run check` 0 告警、`npm run build` 成功、cargo fmt/clippy/test 复跑全绿。
 
 ## 6. 回滚方案
 

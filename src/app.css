@@ -324,6 +324,11 @@ button:focus-visible {
   border-right: 1px solid var(--border);
 }
 
+.list-pane.report-wide {
+  grid-column: 2 / -1;
+  border-right: 0;
+}
+
 .list-head {
   display: flex;
   flex-wrap: wrap;

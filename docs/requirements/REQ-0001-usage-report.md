@@ -29,7 +29,7 @@ Perch 侧边栏提供 usage-ledger 用量报告入口。报告由 usage-ledger C
 
 ## 5. 当前需求与验收（EARS）
 
-- R1：When 用户点击侧边栏报告按钮, the system shall 在应用内报表视图展示最新生成的 usage-ledger HTML 报告，不启动外部浏览器。
+- R1：When 用户点击侧边栏报告按钮, the system shall 在应用内报表视图展示最新生成的 usage-ledger HTML 报告，不启动外部浏览器；报表视图铺满列表与详情两列（报表无详情面板，不显示详情栏）。
 - R2：When 用户在报表视图触发刷新（按钮或 ⌘R）, the system shall 重新生成报告并更新展示。
 - R3：While 报表视图打开且 usage 数据发生变化, the system shall 自动重新生成并更新报告。
 - R4：If 报告生成失败, then the system shall 在应用内展示错误信息，不打开浏览器。
