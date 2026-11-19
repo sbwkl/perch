@@ -1,7 +1,7 @@
 # CHG-0003 用量报告应用内嵌展示（方案 A）
 
 类型：CHG
-状态：开发中
+状态：已验证
 Owner：wayne
 所属模块/入口：src-tauri（lib.rs、tauri.conf.json、capabilities）、前端（App.svelte）、demo
 功能卡：[REQ-0001](../requirements/REQ-0001-usage-report.md)
@@ -61,9 +61,9 @@ Owner：wayne
 
 ## 8. 关联与证据
 
-- commit：8bd04bb（feat/in-app-usage-report）；本文档证据回写为后续 docs-only 提交
+- commit：8bd04bb（feat/in-app-usage-report）；布局细化 40313d6；本文档证据回写为后续 docs-only 提交
 - PR：https://github.com/sbwkl/perch/pull/5（待人工审核；合并 main 需用户明确同意）
-- 集成测试：tmp/integration-in-app-usage-report（merge commit 543e1b4，基于 main 1b3d50c）合入 8bd04bb 后 `cargo test --workspace` 10 套件全 ok、`npm run check` 0 告警；测毕分支已删
+- 集成测试：tmp/integration-in-app-usage-report 两轮（merge 543e1b4 含 8bd04bb；merge 559b1ab 含 40313d6，均基于 main 1b3d50c）合入后 `cargo test --workspace` 10 套件全 ok、`npm run check` 0 告警；测毕分支已删
 - 测试/截图：/tmp/perch-smoke/（win2、gate-a、gate-b、err9、t6–t8.png；含真实用量数据，仅本地留存不入库）；demo 证据为 DOM 结构检查
 
 ## 9. 变更记录
@@ -73,3 +73,4 @@ Owner：wayne
 | 提议 → 就绪 | wayne + agent | 2026-11-19 会话方案比较，用户批准方案 A |
 | 开发中 | agent | 本文档建立，worktree feat/in-app-usage-report |
 | 开发中 → 已验证 | agent | 2026-11-19 §5 证据：自动化全绿 + 实机 R1–R4 + demo R5 + 集成测试；PR #5 |
+| 已验证 → 开发中 → 已验证 | agent | 2026-11-19 晚用户反馈布局过窄：R1 细化铺满 2、3 列（40313d6），demo DOM 测量 + 实机截图复验，集成复跑 559b1ab 通过 |
