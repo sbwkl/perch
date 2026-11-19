@@ -41,7 +41,7 @@ Perch 侧边栏提供 usage-ledger 用量报告入口。报告由 usage-ledger C
 
 | CHG ID | 标题 | 状态 | 链接 |
 |---|---|---|---|
-| CHG-0003 | 用量报告应用内嵌展示（方案 A） | 开发中 | [../changes/CHG-0003-in-app-usage-report.md](../changes/CHG-0003-in-app-usage-report.md) |
+| CHG-0003 | 用量报告应用内嵌展示（方案 A） | 已验证 | [../changes/CHG-0003-in-app-usage-report.md](../changes/CHG-0003-in-app-usage-report.md) |
 
 ## 7. 链接
 
