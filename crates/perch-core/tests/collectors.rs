@@ -1224,6 +1224,44 @@ fn codearts_collector_reports_missing_database() {
     assert!(result.tasks.is_empty());
 }
 
+#[test]
+fn codearts_collector_tolerates_session_schema_drift() {
+    // CodeArts 的 session 表没有 model/parent_id 列（PR #6 修复前整库报
+    // "no such column: model"），缺失列应补 NULL 而不是让整个来源报错。
+    let temp = TempDir::new().unwrap();
+    let db_path = temp.path().join("opencode.db");
+    let conn = Connection::open(&db_path).unwrap();
+    conn.execute_batch(
+        r#"
+        CREATE TABLE session (
+          id TEXT PRIMARY KEY,
+          directory TEXT,
+          title TEXT,
+          time_created INTEGER,
+          time_updated INTEGER,
+          time_archived INTEGER
+        );
+        INSERT INTO session VALUES
+          ('s1', '/tmp/x/drift-proj', '漂移会话', 1700000000000, 1700000100000, NULL);
+        CREATE TABLE todo (session_id TEXT, content TEXT, status TEXT, position INTEGER);
+        INSERT INTO todo VALUES ('s1', '修复列漂移', 'completed', 0);
+        "#,
+    )
+    .unwrap();
+    drop(conn);
+
+    let result = CodeArtsCollector::new(db_path).scan();
+
+    assert_eq!(result.status, SourceScanStatus::Ok, "{:?}", result.error);
+    assert_eq!(result.tasks.len(), 1);
+    let task = &result.tasks[0];
+    assert_eq!(task.title, "漂移会话");
+    assert_eq!(task.model, None, "missing model column maps to None");
+    assert_eq!(task.project_name.as_deref(), Some("drift-proj"));
+    assert_eq!(task.todo_total, Some(1));
+    assert_eq!(task.todo_done, Some(1));
+}
+
 fn write_antigravity_fixture(root: &Path) {
     // IDE 会话：conversation_summaries 提供标题与项目。
     let ide_logs = root.join("ide").join("brain/conv-a/.system_generated/logs");

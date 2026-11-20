@@ -42,14 +42,37 @@ fn scan_inner(
 
     let has_todo = table_exists(&conn, "todo")?;
 
-    let query = if has_v2 {
-        "SELECT id, parent_id, title, directory, model, time_created, time_updated, time_archived, \
-                time_busy, time_idle FROM session_v2"
-    } else {
-        "SELECT id, parent_id, title, directory, model, time_created, time_updated, time_archived, \
-                NULL, NULL FROM session"
+    // 复用 OpenCode schema 的来源列集会有漂移（如 CodeArts 的 session 表没有
+    // model 列），按 PRAGMA table_info 动态拼 SELECT，缺失列补 NULL。
+    let table = if has_v2 { "session_v2" } else { "session" };
+    let columns = table_columns(&conn, table)?;
+    if !columns.contains("id") {
+        return Err(crate::PerchError::message(format!(
+            "{} 的 {table} 表缺少 id 列",
+            db_path.display()
+        )));
+    }
+    let column = |name: &str| {
+        if columns.contains(name) {
+            name.to_owned()
+        } else {
+            "NULL".to_owned()
+        }
     };
-    let mut stmt = conn.prepare(query)?;
+    let query = format!(
+        "SELECT {}, {}, {}, {}, {}, {}, {}, {}, {}, {} FROM {table}",
+        column("id"),
+        column("parent_id"),
+        column("title"),
+        column("directory"),
+        column("model"),
+        column("time_created"),
+        column("time_updated"),
+        column("time_archived"),
+        column("time_busy"),
+        column("time_idle"),
+    );
+    let mut stmt = conn.prepare(query.as_str())?;
     let rows = stmt.query_map([], |row| {
         Ok(SessionRow {
             id: row.get(0)?,
@@ -98,6 +121,16 @@ fn scan_inner(
     result.files_seen = 1;
     result.probe_kind = "sqlite";
     Ok(result)
+}
+
+fn table_columns(conn: &rusqlite::Connection, table: &str) -> crate::Result<HashSet<String>> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
+    let mut names = HashSet::new();
+    for name in rows {
+        names.insert(name?);
+    }
+    Ok(names)
 }
 
 fn build_task(source: &str, row: SessionRow, resume_builder: ResumeBuilder) -> TaskSnapshot {

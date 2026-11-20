@@ -73,4 +73,5 @@ Owner：wayne
 | 开发中 | agent | 本文档建立，分支 feat/usage-ledger-agents |
 | 开发中（自动化验证完成） | agent | 2026-11-20 §5 证据：cargo test 83 通过 / clippy / fmt / npm check / npm build 全绿；§8：d7b6a0c、PR #6、临时分支集成合并无冲突 |
 | 开发中（图标/命名修正） | agent | 2026-11-20 用户反馈四个新来源图标不正确：改为官方品牌图标（Antigravity 官方 favicon.svg、CodeBuddy 官方 logo.svg、MiniMax Code 官方 App 图标重绘、CodeArts 用户指定官方 logo `res-static.hc-cdn.cn/cloudbu-site/intl/zh-cn/codearts/logo.svg` 原样内联，ID 加 cda- 前缀防冲突）；CodeArts 显示名去掉"（码道）"后缀（models.rs / App.svelte / demo / SOURCES.md）。复验：svelte-check 0 错误、npm build 成功（此前该轮 fmt / clippy 0 告警） |
+| 开发中（修复 CodeArts 列漂移报错） | agent | 2026-11-20 用户报告"CodeArts SQLite error: no such column: model"：CodeArts 的 session 表无 model 列，而 scan_session_db 旧版查询硬编码该列。修复：按 PRAGMA table_info 动态拼 SELECT，缺失列（parent_id/title/directory/model/时间列，含 v2 的 time_busy/time_idle）补 NULL，缺 id 列才报错。新增回归测试 codearts_collector_tolerates_session_schema_drift（真实 schema：无 model/parent_id，含 todo 表）。定向验证：cargo test -p perch-core --test collectors codearts 3 通过 0 失败；fmt/clippy 0 告警 |
 | 待办 | agent | 实机冒烟（R1/R2/R4 真实数据）待人工执行；未标"已验证"前不合并 main |
