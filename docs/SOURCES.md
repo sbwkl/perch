@@ -29,7 +29,7 @@
 | Cline | SQLite | `~/.cline/data/db/sessions.db` | 无 | 激活 App 或终端 |
 | Antigravity | JSONL 转录 + SQLite | `brain/**/logs/transcript_full.jsonl`、`conversation_summaries.db` | 无 | 激活 App |
 | MiniMax Code | JSONL + SQLite | `v2/sessions/**/messages.jsonl`、`runtime-state.sqlite` | 无 | 激活 App |
-| CodeArts（码道） | SQLite | `~/.codeartsdoer/codearts-data/opencode.db` | 有 | 激活 App |
+| CodeArts | SQLite | `~/.codeartsdoer/codearts-data/opencode.db` | 有 | 激活 App |
 | CodeBuddy | 日志文本 | `logs/**/Tencent-Cloud.coding-copilot/*.log` 等 | 无 | 激活 App |
 | ChatGPT 桌面 | — | 普通聊天无本地数据；Codex 会话经 Codex 采集 | — | 未支持 |
 
@@ -468,7 +468,7 @@ IDE 与 agy CLI 各写一个 app data dir，格式一致、互不复用，Perch 
 
 ---
 
-## CodeArts（码道）
+## CodeArts
 
 **路径**
 
@@ -588,7 +588,7 @@ cargo test -p perch-core
 | `PERCH_ANTIGRAVITY_IDE_DIR` | Antigravity IDE 数据根目录 |
 | `PERCH_ANTIGRAVITY_CLI_DIR` | Antigravity CLI（agy）数据根目录 |
 | `PERCH_MINIMAX_DIR` | MiniMax Code 数据根目录（默认 `~/.minimax`） |
-| `PERCH_CODEARTS_DB` | CodeArts（码道）会话数据库 |
+| `PERCH_CODEARTS_DB` | CodeArts 会话数据库 |
 | `PERCH_CODEBUDDY_CN_LOGS_DIR` | CodeBuddy CN 日志根目录 |
 | `PERCH_CODEBUDDY_IDE_LOGS_DIR` | CodeBuddyIDE 日志根目录 |
 | `PERCH_CODEBUDDY_GENIE_DIR` | CodeBuddy genie-history 目录 |

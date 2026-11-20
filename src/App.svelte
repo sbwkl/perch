@@ -57,7 +57,7 @@
     cline: "Cline",
     antigravity: "Antigravity",
     minimax: "MiniMax Code",
-    codearts: "CodeArts（码道）",
+    codearts: "CodeArts",
     codebuddy: "CodeBuddy",
   };
 

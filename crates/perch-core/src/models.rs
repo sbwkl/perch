@@ -42,7 +42,7 @@ pub fn source_label(source: &str) -> &'static str {
         SOURCE_CLINE => "Cline",
         SOURCE_ANTIGRAVITY => "Antigravity",
         SOURCE_MINIMAX => "MiniMax Code",
-        SOURCE_CODEARTS => "CodeArts（码道）",
+        SOURCE_CODEARTS => "CodeArts",
         SOURCE_CODEBUDDY => "CodeBuddy",
         _ => "未知来源",
     }
