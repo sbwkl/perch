@@ -137,7 +137,12 @@ fn make_task(source: &str, id: &str) -> TaskSnapshot {
 
 fn seed_tasks(store: &CacheStore) {
     let scan = store.begin_scan("all", "full", "source", "test").unwrap();
-    for (source, id) in [("claude", "s1"), ("codex", "s2"), ("qoder", "s1")] {
+    for (source, id) in [
+        ("claude", "s1"),
+        ("codex", "s2"),
+        ("qoder", "s1"),
+        ("trae-cn", "t1"),
+    ] {
         store
             .save_result(
                 &SourceResult::ok(source, vec![make_task(source, id)], Vec::new()),
@@ -177,13 +182,12 @@ fn usage_maps_sessions_and_keeps_tracks_separate() {
     assert_eq!(qoder_summary.est_total, 1_200);
     assert_eq!(qoder_summary.last_day.as_deref(), Some("2026-01-06"));
 
-    // `trae-cn.est` has no Perch tasks, so it never becomes a source summary.
-    assert!(snapshot
-        .overview
-        .sources
-        .iter()
-        .all(|item| item.source != "trae-cn"));
-    assert_eq!(snapshot.overview.sources.len(), 3);
+    // `trae-cn.est` belongs to the Trae CN source now that Perch collects it.
+    let trae_summary = source(&snapshot.overview, "trae-cn");
+    assert_eq!(trae_summary.token_total, 0);
+    assert_eq!(trae_summary.est_total, 300);
+    assert_eq!(trae_summary.last_day.as_deref(), Some("2026-01-07"));
+    assert_eq!(snapshot.overview.sources.len(), 4);
 
     let claude = snapshot.task_usage("claude", "s1").unwrap();
     let token = claude.token.unwrap();
@@ -218,7 +222,12 @@ fn usage_maps_sessions_and_keeps_tracks_separate() {
     assert_eq!(est.source, "qoder.est");
     assert_eq!(est.total, 1_200);
     assert_eq!(est.requests, 1);
-    assert!(snapshot.task_usage("trae-cn", "t1").is_none());
+    let trae = snapshot.task_usage("trae-cn", "t1").unwrap();
+    assert!(trae.token.is_none());
+    assert!(trae.credits.is_none());
+    let trae_est = trae.est.unwrap();
+    assert_eq!(trae_est.source, "trae-cn.est");
+    assert_eq!(trae_est.total, 300);
 }
 
 #[test]
@@ -241,13 +250,15 @@ fn bootstrap_attaches_usage_and_reports_matches() {
 
     let payload = build_bootstrap_with_usage(&store, now, Some(&snapshot)).unwrap();
     let overview = payload.usage.unwrap();
-    assert_eq!(overview.sources.len(), 3);
+    assert_eq!(overview.sources.len(), 4);
     assert_eq!(source(&overview, "claude").matched_tasks, 1);
     assert_eq!(source(&overview, "claude").token_7d, 190);
     assert_eq!(source(&overview, "codex").matched_tasks, 1);
     assert_eq!(source(&overview, "qoder").matched_tasks, 1);
     assert_eq!(source(&overview, "qoder").credits_billable_7d, 2.5);
     assert_eq!(source(&overview, "qoder").token_7d, 0);
+    assert_eq!(source(&overview, "trae-cn").matched_tasks, 1);
+    assert_eq!(source(&overview, "trae-cn").est_total, 300);
 
     let mut found = 0;
     for group in &payload.workspaces {
@@ -262,12 +273,65 @@ fn bootstrap_attaches_usage_and_reports_matches() {
                         assert!(usage.credits.is_some());
                         assert!(usage.est.is_some());
                     }
+                    "trae-cn" => {
+                        assert!(usage.token.is_none());
+                        assert!(usage.credits.is_none());
+                        assert_eq!(usage.est.as_ref().unwrap().total, 300);
+                    }
                     other => panic!("unexpected source {other}"),
                 }
             }
         }
     }
-    assert_eq!(found, 3);
+    assert_eq!(found, 4);
+}
+
+#[test]
+fn credits_follow_the_source_column() {
+    let temp = TempDir::new().unwrap();
+    let db = temp.path().join("credits.db");
+    let conn = Connection::open(&db).unwrap();
+    conn.execute_batch(
+        r#"
+        CREATE TABLE usage_turn (
+          source TEXT NOT NULL, day TEXT NOT NULL, session_id TEXT,
+          model TEXT NOT NULL, input_tokens INTEGER NOT NULL DEFAULT 0,
+          output_tokens INTEGER NOT NULL DEFAULT 0, cache_read INTEGER NOT NULL DEFAULT 0,
+          cache_write INTEGER NOT NULL DEFAULT 0, reasoning INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE usage_credit (
+          request_id TEXT PRIMARY KEY, source TEXT NOT NULL DEFAULT 'qoder',
+          ts REAL NOT NULL, day TEXT NOT NULL, project TEXT NOT NULL DEFAULT '',
+          model TEXT NOT NULL, session_id TEXT,
+          credits REAL NOT NULL DEFAULT 0, billable INTEGER NOT NULL DEFAULT 0
+        );
+        INSERT INTO usage_credit (request_id, source, ts, day, model, session_id, credits, billable)
+        VALUES ('c1', 'qoder', 0, '2026-01-06', 'qwen3.5', 's1', 2.0, 1);
+        INSERT INTO usage_credit (request_id, source, ts, day, model, session_id, credits, billable)
+        VALUES ('c2', 'unknown-src', 0, '2026-01-06', 'm', 's9', 9.0, 1);
+        "#,
+    )
+    .unwrap();
+
+    let now = ts("2026-01-08T12:00:00Z");
+    let snapshot = UsageSnapshot::try_load(&db, now).unwrap().unwrap();
+    let qoder = source(&snapshot.overview, "qoder");
+    assert_eq!(qoder.credits_billable_7d, 2.0);
+    assert_eq!(
+        snapshot
+            .task_usage("qoder", "s1")
+            .unwrap()
+            .credits
+            .unwrap()
+            .billable,
+        2.0
+    );
+    assert!(snapshot.task_usage("unknown-src", "s9").is_none());
+    assert!(snapshot
+        .overview
+        .sources
+        .iter()
+        .all(|item| item.source != "unknown-src"));
 }
 
 #[test]

@@ -150,10 +150,11 @@ fn build_task(row: SessionRow) -> TaskSnapshot {
         .filter(|value| !value.is_empty())
         .map(|value| truncate_chars(value, 80));
     task.agent_kind = Some(agent_kind.to_owned());
-    task.resume_cmd = shell_cd_command(
-        Some(raw_directory),
-        &format!("cline --id {}", row.session_id),
-    );
+    // Mirror what continue_task executes: cwd comes from the filtered
+    // project_path, so internal chat workspaces get a bare command.
+    let command = format!("cline --id {}", row.session_id);
+    task.resume_cmd =
+        Some(shell_cd_command(task.project_path.as_deref(), &command).unwrap_or(command));
     task.refresh_fingerprint();
     task
 }
