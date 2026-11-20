@@ -4,7 +4,7 @@ use std::path::Path;
 use rusqlite::{params, Connection, Row};
 
 use crate::error::Result;
-use crate::models::{ScanRun, SourceResult, SourceSyncState, TaskSnapshot, TodoSnapshot};
+use crate::models::{SourceResult, SourceSyncState, TaskSnapshot, TodoSnapshot};
 use crate::paths::ensure_parent;
 
 const SCAN_RUNS_KEPT_PER_SOURCE: i64 = 200;
@@ -213,6 +213,7 @@ impl CacheStore {
         }
 
         let now = crate::collectors::common::now_seconds();
+        let tx = self.conn.unchecked_transaction()?;
         for task in &result.tasks {
             let task_todos = todos_by_task
                 .get(task.key.as_str())
@@ -235,6 +236,7 @@ impl CacheStore {
             self.upsert_row(&snapshot)?;
             self.replace_todos(&snapshot.key, task_todos)?;
         }
+        tx.commit()?;
         Ok(())
     }
 
@@ -433,34 +435,6 @@ impl CacheStore {
             states.push(row?);
         }
         Ok(states)
-    }
-
-    pub fn recent_scan_runs(&self, limit: usize) -> Result<Vec<ScanRun>> {
-        let mut statement = self.conn.prepare(
-            "SELECT id, source, mode, scope, trigger, started_at, finished_at, status, \
-                    task_count, missing_count, error \
-             FROM scan_run ORDER BY id DESC LIMIT ?1",
-        )?;
-        let rows = statement.query_map(params![limit as i64], |row| {
-            Ok(ScanRun {
-                id: row.get(0)?,
-                source: row.get(1)?,
-                mode: row.get(2)?,
-                scope: row.get(3)?,
-                trigger: row.get(4)?,
-                started_at: row.get(5)?,
-                finished_at: row.get(6)?,
-                status: row.get(7)?,
-                task_count: row.get(8)?,
-                missing_count: row.get(9)?,
-                error: row.get(10)?,
-            })
-        })?;
-        let mut runs = Vec::new();
-        for row in rows {
-            runs.push(row?);
-        }
-        Ok(runs)
     }
 }
 

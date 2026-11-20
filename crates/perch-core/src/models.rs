@@ -56,14 +56,6 @@ impl SourceScanStatus {
             Self::Error => "error",
         }
     }
-
-    pub fn is_success(self) -> bool {
-        matches!(self, Self::Ok)
-    }
-
-    pub fn keeps_snapshot(self) -> bool {
-        matches!(self, Self::Unavailable | Self::Error)
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -368,20 +360,5 @@ pub struct SourceSyncState {
     pub files_seen: Option<i64>,
     pub task_count: Option<i64>,
     pub schema_version: Option<String>,
-    pub error: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ScanRun {
-    pub id: i64,
-    pub source: String,
-    pub mode: String,
-    pub scope: Option<String>,
-    pub trigger: Option<String>,
-    pub started_at: f64,
-    pub finished_at: Option<f64>,
-    pub status: String,
-    pub task_count: i64,
-    pub missing_count: i64,
     pub error: Option<String>,
 }

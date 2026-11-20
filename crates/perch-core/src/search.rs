@@ -443,6 +443,7 @@ fn status_label(status: &str) -> &'static str {
         "limited" => "受限",
         "complete" => "已完成",
         "archived" => "已归档",
+        "failed" => "失败",
         "idle" => "空闲",
         _ => "",
     }
@@ -571,6 +572,18 @@ mod tests {
         let response = search(&store, "匹配");
         assert_eq!(response.total, 12);
         assert_eq!(response.hits.len(), MAX_RESULTS);
+    }
+
+    #[test]
+    fn matches_failed_status_label() {
+        let mut failed = task("a", "构建任务");
+        failed.status_source = Some("failed".to_owned());
+        failed.refresh_fingerprint();
+        let store = store_with(vec![failed]);
+
+        let hits = search(&store, "失败");
+        assert_eq!(hits.total, 1);
+        assert!(hits.hits[0].fields.contains(&"状态".to_owned()));
     }
 
     #[test]
