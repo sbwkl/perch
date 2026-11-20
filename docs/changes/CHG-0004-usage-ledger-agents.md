@@ -72,5 +72,5 @@ Owner：wayne
 | 提议 → 就绪 | wayne + agent | 2026-11-20 会话，用户批准范围与流程（单分支单 CHG、四 Agent 一次接入、全部计入 PERCH_SOURCES） |
 | 开发中 | agent | 本文档建立，分支 feat/usage-ledger-agents |
 | 开发中（自动化验证完成） | agent | 2026-11-20 §5 证据：cargo test 83 通过 / clippy / fmt / npm check / npm build 全绿；§8：d7b6a0c、PR #6、临时分支集成合并无冲突 |
-| 开发中（图标/命名修正） | agent | 2026-11-20 用户反馈四个新来源图标不正确：改为官方品牌图标（Antigravity 官方 favicon.svg、CodeBuddy 官方 logo.svg、MiniMax Code 官方 App 图标重绘、CodeArts 官方渐变 X 标志重绘）；CodeArts 显示名去掉"（码道）"后缀（models.rs / App.svelte / demo / SOURCES.md）。复验：fmt / clippy 0 告警、svelte-check 0 错误、npm build 成功 |
+| 开发中（图标/命名修正） | agent | 2026-11-20 用户反馈四个新来源图标不正确：改为官方品牌图标（Antigravity 官方 favicon.svg、CodeBuddy 官方 logo.svg、MiniMax Code 官方 App 图标重绘、CodeArts 用户指定官方 logo `res-static.hc-cdn.cn/cloudbu-site/intl/zh-cn/codearts/logo.svg` 原样内联，ID 加 cda- 前缀防冲突）；CodeArts 显示名去掉"（码道）"后缀（models.rs / App.svelte / demo / SOURCES.md）。复验：svelte-check 0 错误、npm build 成功（此前该轮 fmt / clippy 0 告警） |
 | 待办 | agent | 实机冒烟（R1/R2/R4 真实数据）待人工执行；未标"已验证"前不合并 main |
