@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::io::BufRead;
 use std::path::{Path, PathBuf};
 
 use chrono::{NaiveDateTime, TimeZone, Timelike};
@@ -85,26 +86,20 @@ impl CodeBuddyCollector {
         let mut order: Vec<String> = Vec::new();
         let mut trace_map: HashMap<String, String> = HashMap::new();
 
-        let mut texts = Vec::new();
-        for path in &files {
-            match std::fs::read_to_string(path) {
-                Ok(text) => texts.push(text),
-                Err(error) => {
-                    warnings.push(format!("读取 {} 失败：{error}", path.display()));
-                }
-            }
-        }
-
         // 第一遍：trace → conversationId（onAgentStart 可能晚于同 trace 的
         // Preparing model / metrics 行，必须先建好映射再归组）。
-        for text in &texts {
-            for line in text.lines() {
-                if let Some((trace, conversation)) = parse_agent_start(line) {
+        for path in &files {
+            let file = match open_log(path, &mut warnings) {
+                Some(file) => file,
+                None => continue,
+            };
+            for line in file.lines().map_while(Result::ok) {
+                if let Some((trace, conversation)) = parse_agent_start(&line) {
                     let key = sanitize_session_id(&conversation);
                     trace_map.insert(trace, key.clone());
                     let entry = entry_for(&mut sessions, &mut order, key);
                     if entry.first_user.is_none() {
-                        if let Some(user_input) = parse_user_input(line) {
+                        if let Some(user_input) = parse_user_input(&line) {
                             entry.first_user = Some(user_input);
                         }
                     }
@@ -113,23 +108,27 @@ impl CodeBuddyCollector {
         }
 
         // 第二遍：模型与 step 活动时间。
-        for text in &texts {
-            for line in text.lines() {
-                if let Some((trace, model)) = parse_preparing_model(line) {
-                    let key = resolve_key(&trace_map, &trace);
+        for path in &files {
+            let file = match open_log(path, &mut warnings) {
+                Some(file) => file,
+                None => continue,
+            };
+            for line in file.lines().map_while(Result::ok) {
+                if let Some((trace, model)) = parse_preparing_model(&line) {
+                    let key = resolve_trace(&trace_map, &trace);
                     let entry = entry_for(&mut sessions, &mut order, key);
                     if entry.model.is_none() {
                         entry.model = Some(model);
                     }
                 }
                 if line.contains("Step execution metrics:") && line.contains("[AgentReporter]") {
-                    let Some(trace) = bracket_trace_after(line, "[AgentReporter]") else {
+                    let Some(trace) = bracket_trace_after(&line, "[AgentReporter]") else {
                         continue;
                     };
-                    let Some(ts) = line_timestamp(line) else {
+                    let Some(ts) = line_timestamp(&line) else {
                         continue;
                     };
-                    let key = resolve_key(&trace_map, &trace);
+                    let key = resolve_trace(&trace_map, &trace);
                     let entry = entry_for(&mut sessions, &mut order, key);
                     entry.created_at = Some(entry.created_at.map_or(ts, |value| value.min(ts)));
                     entry.updated_at = Some(entry.updated_at.map_or(ts, |value| value.max(ts)));
@@ -188,6 +187,17 @@ impl Collector for CodeBuddyCollector {
     }
 }
 
+/// 流式逐行读取日志，避免把整份可能很大的日志一次性驻留内存。
+fn open_log(path: &Path, warnings: &mut Vec<String>) -> Option<std::io::BufReader<std::fs::File>> {
+    match std::fs::File::open(path) {
+        Ok(file) => Some(std::io::BufReader::new(file)),
+        Err(error) => {
+            warnings.push(format!("读取 {} 失败：{error}", path.display()));
+            None
+        }
+    }
+}
+
 struct SessionEntry {
     first_user: Option<String>,
     model: Option<String>,
@@ -217,12 +227,27 @@ fn entry_for<'a>(
     sessions.entry(key).or_insert_with(SessionEntry::new)
 }
 
-/// 已知 trace 映射到 conversationId；未知 trace 按自身归组。
-fn resolve_key(trace_map: &HashMap<String, String>, trace: &str) -> String {
+/// 已知 trace 映射到 conversationId；未知 trace 只有形如合法 ID 时才按自身
+/// 归组。这可避免把日志正文中包含 `Preparing model` 的行当成模型元数据，
+/// 导致 `IDEReplace` / `StreamParser` 等组件名被当作会话 ID。
+fn resolve_trace(trace_map: &HashMap<String, String>, trace: &str) -> String {
     trace_map
         .get(trace)
         .cloned()
-        .unwrap_or_else(|| sanitize_session_id(trace))
+        .unwrap_or_else(|| sanitize_trace_id(trace))
+}
+
+fn sanitize_trace_id(value: &str) -> String {
+    if is_trace_id(value) {
+        sanitize_session_id(value)
+    } else {
+        "unknown".to_owned()
+    }
+}
+
+/// 只接受实测 trace 形态：8 位短 trace 或 32 位 hex 会话级 trace。
+fn is_trace_id(value: &str) -> bool {
+    value.len() == 8 || (value.len() == 32 && value.chars().all(|ch| ch.is_ascii_hexdigit()))
 }
 
 fn sanitize_session_id(value: &str) -> String {

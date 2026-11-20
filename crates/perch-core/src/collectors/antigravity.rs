@@ -14,8 +14,10 @@ const DEFAULT_PROJECT: &str = "default-cli-project";
 
 /// Antigravity：IDE 与独立 agy CLI 各写一个 app data dir，格式一致，
 /// 彼此不复用会话。会话索引来自 `brain/<conv>/.system_generated/logs/`
-/// 下的 transcript_full.jsonl；标题/项目来自 conversation_summaries.db，
-/// 缺失时回退到转录里的首条用户输入。
+/// 下的 transcript_full.jsonl；标题/项目来自 conversation_summaries.db。
+/// transcript 属于消息正文：为满足 Perch 的只读元数据边界，只有 summaries
+/// 没有标题时才做一次流式元数据探测，并把可从 summaries 恢复标题的会话数
+/// 记录在 `schema_version = summary-titles:<n>`，便于实机审计。
 pub struct AntigravityCollector {
     ide_root: PathBuf,
     cli_root: PathBuf,
@@ -57,6 +59,7 @@ impl AntigravityCollector {
         let mut summaries: HashMap<PathBuf, HashMap<String, SummaryEntry>> = HashMap::new();
         let mut sessions: HashMap<String, SessionEntry> = HashMap::new();
         let mut files_seen = 0i64;
+        let mut summary_titles = 0i64;
 
         for (path, agent) in &transcripts {
             files_seen += 1;
@@ -74,6 +77,7 @@ impl AntigravityCollector {
             if let Some(item) = summary.get(&conv) {
                 // summaries 的标题/项目是权威来源，覆盖转录推导值。
                 if item.title.is_some() {
+                    summary_titles += 1;
                     entry.title = item.title.clone();
                 }
                 if let Some(project) = item.project.clone() {
@@ -133,6 +137,7 @@ impl AntigravityCollector {
             SourceResult::partial(SOURCE_ANTIGRAVITY, tasks, Vec::new(), warnings.join("；"))
         };
         result.files_seen = files_seen;
+        result.schema_version = Some(format!("summary-titles:{summary_titles}"));
         result.probe_kind = "file_tree";
         Ok(result)
     }
@@ -297,7 +302,8 @@ fn user_input_title(step: &Value) -> Option<String> {
 }
 
 /// 转录不是严格 JSONL：写入中断会留下独立成行的片段（形如 `}]}`），
-/// 这里按 JSON 流扫描，失败时从下一个 `{` 重新同步（与 usage-ledger 一致）。
+/// 这里按 JSON 流扫描，失败时从下一个 `{` 重新同步。Antigravity 的
+/// `USER_EXPLICIT.content` 是用户 prompt，只读标题所需行，不保留正文。
 fn read_json_stream(text: &str) -> (Vec<Value>, usize) {
     let mut items = Vec::new();
     let mut fragments = 0usize;
