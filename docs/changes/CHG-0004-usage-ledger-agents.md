@@ -61,12 +61,15 @@ Owner：wayne
 ## 8. 关联与证据
 
 - 对齐基准：usage-ledger `src/usage_ledger/collectors.py`（scan_antigravity / scan_minimax / scan_sqlite_agent codearts 分支 / scan_codebuddy）及其 CHG-0016..0019
-- commit：（开发中）
-- PR：（待创建）
+- commit：d7b6a0c（feat/usage-ledger-agents，2026-11-20）
+- PR：https://github.com/sbwkl/perch/pull/6（待人工审核；合并 main 需用户明确同意）
+- 集成测试：tmp/integration-usage-ledger-agents 基于 main b4c2ee3 合入 d7b6a0c（--no-ff，无冲突），合并树与已验证的特性分支树逐字节一致（`git diff` 为空）；main 自切点未移动，故集成树等价于已跑全量验证的树；测毕分支已删
 
 ## 9. 变更记录
 
 | 状态 | 操作人 | 证据/链接 |
 |---|---|---|
-| 提议 → 就绪 | wayne + agent | 2026-11-20 会话，用户批准范围与流程 |
+| 提议 → 就绪 | wayne + agent | 2026-11-20 会话，用户批准范围与流程（单分支单 CHG、四 Agent 一次接入、全部计入 PERCH_SOURCES） |
 | 开发中 | agent | 本文档建立，分支 feat/usage-ledger-agents |
+| 开发中（自动化验证完成） | agent | 2026-11-20 §5 证据：cargo test 83 通过 / clippy / fmt / npm check / npm build 全绿；§8：d7b6a0c、PR #6、临时分支集成合并无冲突 |
+| 待办 | agent | 实机冒烟（R1/R2/R4 真实数据）待人工执行；未标"已验证"前不合并 main |
