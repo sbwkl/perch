@@ -27,6 +27,10 @@
 | Kilo | SQLite | `kilo.db` | 旧表有 | 激活 App 或终端 |
 | Trae CN | usage-ledger hooks JSONL | `trae-cn/events-*.jsonl` | 无 | 激活 App |
 | Cline | SQLite | `~/.cline/data/db/sessions.db` | 无 | 激活 App 或终端 |
+| Antigravity | JSONL 转录 + SQLite | `brain/**/logs/transcript_full.jsonl`、`conversation_summaries.db` | 无 | 激活 App |
+| MiniMax Code | JSONL + SQLite | `v2/sessions/**/messages.jsonl`、`runtime-state.sqlite` | 无 | 激活 App |
+| CodeArts（码道） | SQLite | `~/.codeartsdoer/codearts-data/opencode.db` | 有 | 激活 App |
+| CodeBuddy | 日志文本 | `logs/**/Tencent-Cloud.coding-copilot/*.log` 等 | 无 | 激活 App |
 | ChatGPT 桌面 | — | 普通聊天无本地数据；Codex 会话经 Codex 采集 | — | 未支持 |
 
 ---
@@ -382,6 +386,161 @@ Trae CN 没有确认的会话级深链，只能 `open -b cn.trae.app` 激活窗�
 
 ---
 
+## Antigravity
+
+**路径**
+
+```
+~/.gemini/antigravity/          # IDE（App 内对话）
+~/.gemini/antigravity-cli/      # agy CLI
+```
+
+覆盖变量：`PERCH_ANTIGRAVITY_IDE_DIR`、`PERCH_ANTIGRAVITY_CLI_DIR`。
+IDE 与 agy CLI 各写一个 app data dir，格式一致、互不复用，Perch 同时扫描两处并按会话合并。
+
+**读取内容**
+
+- `brain/<conv>/.system_generated/logs/transcript_full.jsonl`：按 JSON 流扫描
+  （写入中断留下的游离片段会被跳过并从下一个 `{` 重新同步，不计为降级）。
+  取 `created_at` 的最小/最大值作为创建/更新时间；`source=MODEL` 的步骤提供模型；
+  `source=USER_EXPLICIT` 的首条输入在 summaries 缺失时充当标题（剥掉
+  `<USER_REQUEST>` 包裹后取首个非空行）。
+- `conversation_summaries.db` 的 `conversation_summaries` 表：`title` 与
+  `workspace_uris`（JSON 数组，取首个 URI 的路径末段作项目名）为权威来源，
+  覆盖转录推导值。
+
+**标题 / 状态 / 项目**
+
+- 标题：summaries `title` 非空 → 原样（截断 240 字符）；否则首条用户输入；
+  都没有时 `新会话`（`title_source = fallback`）。
+- 状态恒为 `idle`（转录不含运行态信号）。
+- 项目名取 summaries `workspace_uris`；两个 app data dir 均无映射时归入
+  `default-cli-project`。
+- `agent_kind`：IDE 根目录 → `ide`，CLI 根目录 → `cli`。
+
+**继续工作**：激活 `com.google.antigravity`（IDE 与 CLI 均无已验证的会话级恢复方式）。
+
+**已知限制**
+
+- 不读 `chunks/transcript_full/` 镜像（内容与主转录一致，只用于用量统计）。
+- conversation_summaries.db 的变化不触发增量重扫（仅转录变化触发）。
+
+**变化探测**：转录文件的 JSONL 签名（文件数 + 最新 mtime）。
+
+---
+
+## MiniMax Code
+
+**路径**
+
+```
+~/.minimax/v2/sessions/YYYY/MM/DD/<dir>/messages.jsonl
+~/.minimax/v2/sqlite/runtime-state.sqlite
+```
+
+覆盖变量：`PERCH_MINIMAX_DIR`（以上路径均相对该目录）。
+
+**读取内容**
+
+- 会话目录按日期分层，递归找 `messages.jsonl`。
+- 会话 ID：`manifest.json` 的 `sessionId` 为权威；缺失时回退目录名尾段
+  （`-session_<base64url>`）解码；目录名解码也失败时用目录名本身（记 partial）。
+- 时间：`manifest.json` 的 `createdAtMs` / `updatedAtMs`（毫秒转秒）。
+- 模型：最后一条 assistant 消息的 `model`。
+- 项目：`runtime-state.sqlite` 的 `local_runtime_sessions` 表
+  （`session_id → workspace_dir`，回退 `project_workspace_dir`），
+  存完整路径，`project_name` 取末段。运行库缺失/读取失败只影响项目维度。
+
+**标题**
+
+首条用户消息的第一个 `text` 内容，剥掉 `<system-reminder>` / `<media-output-reminder>` /
+`<async-audit>` / `<agent-context>` 包裹块后取首个非空行（截断 240 字符）；
+没有可用文本时 `新会话`。
+
+**继续工作**：激活 `com.minimax.agent.cn`（无已验证的会话级恢复方式）。
+
+**已知限制**
+
+- 状态恒为 `idle`；无待办数据。
+- `agent_kind` 记为 `cli`。
+
+**变化探测**：`v2/sessions` 的 JSONL 签名。
+
+---
+
+## CodeArts（码道）
+
+**路径**
+
+```
+~/.codeartsdoer/codearts-data/opencode.db
+```
+
+覆盖变量：`PERCH_CODEARTS_DB`。
+
+**读取内容**
+
+- CodeArts Agent 桌面端复用 OpenCode 旧版 schema（`session` 表 + `todo` 表），
+  与 OpenCode/Kilo 共享同一 `scan_session_db` 采集器；`session_v2` 存在时优先读 v2。
+- 恢复命令为空（`resume_cmd = None`）：码道没有已验证的 CLI 恢复命令。
+
+**继续工作**：激活 `com.huawei.codearts.agent`。
+
+**已知限制**
+
+- 会话状态沿用 OpenCode schema 推断（archived / busy / idle）。
+- `agent_kind` 记为 `unknown`。
+
+**变化探测**：`PRAGMA data_version`。
+
+---
+
+## CodeBuddy
+
+**路径**
+
+```
+~/Library/Application Support/CodeBuddy CN/logs/**/Tencent-Cloud.coding-copilot/*.log
+~/Library/Application Support/CodeBuddyExtension/Logs/CodeBuddyIDE/**/*.log
+~/Library/Application Support/CodeBuddy CN/User/globalStorage/tencent-cloud.coding-copilot/genie-history/
+```
+
+覆盖变量：`PERCH_CODEBUDDY_CN_LOGS_DIR`、`PERCH_CODEBUDDY_IDE_LOGS_DIR`、
+`PERCH_CODEBUDDY_GENIE_DIR`。
+
+**读取内容**
+
+- 两处镜像日志逐行解析：`onAgentStart:` 行提供 trace → `conversationId` 映射与
+  `userInput`（标题）；`Preparing model:` 行提供模型（括号内的模型 ID）；
+  `Step execution metrics:` 行的时间戳累计为会话活动时间。
+  CN 日志目录下只统计 `Tencent-Cloud.coding-copilot/` 内的 `.log` 文件。
+- 时间戳兼容两种本地格式：`2026-11-20 15:28:04.660` 与
+  `[11/20/2026, 3:28:08 PM.672]`（小数部分为毫秒），按本地时区换算。
+- 会话按 `conversationId` 归组（缺失该行的 trace 按自身归组）；
+  映射先于模型/指标解析建立（两遍扫描），避免同 trace 的早期行提前归组。
+
+**项目维度**
+
+`genie-history/<base64url(workspace)>/current.json` 的 `conversationId` 指向会话；
+目录名解码（厂商把 padding 写成 `_`，先剥尾部下划线再补回）得到工作区完整路径，
+`project_name` 取末段。genie 目录缺失只影响项目维度。
+
+**标题 / 状态**
+
+- 标题：`userInput` 文本（截断 240 字符）；缺失时 `新会话`。
+- 状态恒为 `idle`；`agent_kind` 记为 `desktop`。
+
+**继续工作**：激活 `com.tencent.codebuddycn`（无会话级深链）。
+
+**已知限制**
+
+- 日志格式由腾讯侧控制，解析失败的行被跳过；两处日志目录都不存在时来源不可用。
+- genie 解码出的工作区可能是 CodeBuddy 沙箱目录（如 `~/CodeBuddy/<时间戳>`），原样展示。
+
+**变化探测**：两处日志目录的 `.log` 签名。
+
+---
+
 ## 未支持的来源
 
 | 来源 | 原因 |
@@ -426,4 +585,11 @@ cargo test -p perch-core
 | `PERCH_TRAE_CN_EVENTS_DIR` | Trae CN hook 事件目录 |
 | `PERCH_TRAE_CN_MEMORY_DIR` | Trae CN 会话记忆目录（`memory/projects`） |
 | `PERCH_CLINE_DB` | Cline 会话数据库 |
+| `PERCH_ANTIGRAVITY_IDE_DIR` | Antigravity IDE 数据根目录 |
+| `PERCH_ANTIGRAVITY_CLI_DIR` | Antigravity CLI（agy）数据根目录 |
+| `PERCH_MINIMAX_DIR` | MiniMax Code 数据根目录（默认 `~/.minimax`） |
+| `PERCH_CODEARTS_DB` | CodeArts（码道）会话数据库 |
+| `PERCH_CODEBUDDY_CN_LOGS_DIR` | CodeBuddy CN 日志根目录 |
+| `PERCH_CODEBUDDY_IDE_LOGS_DIR` | CodeBuddyIDE 日志根目录 |
+| `PERCH_CODEBUDDY_GENIE_DIR` | CodeBuddy genie-history 目录 |
 | `PERCH_CACHE_DB` | Perch 快照缓存 |

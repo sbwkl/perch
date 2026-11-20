@@ -1,15 +1,22 @@
 use std::fs;
 use std::path::Path;
 
+use perch_core::collectors::antigravity::AntigravityCollector;
 use perch_core::collectors::claude::ClaudeCollector;
 use perch_core::collectors::cline::ClineCollector;
+use perch_core::collectors::codearts::CodeArtsCollector;
+use perch_core::collectors::codebuddy::CodeBuddyCollector;
 use perch_core::collectors::codex::CodexCollector;
 use perch_core::collectors::kilocode::KiloCollector;
+use perch_core::collectors::minimax::MiniMaxCollector;
 use perch_core::collectors::opencode::OpenCodeCollector;
 use perch_core::collectors::qoder::QoderCollector;
 use perch_core::collectors::trae_cn::TraeCnCollector;
 use perch_core::collectors::Collector;
-use perch_core::models::{SourceScanStatus, SOURCE_CLINE, SOURCE_TRAE_CN};
+use perch_core::models::{
+    SourceScanStatus, SOURCE_ANTIGRAVITY, SOURCE_CLINE, SOURCE_CODEARTS, SOURCE_CODEBUDDY,
+    SOURCE_MINIMAX, SOURCE_TRAE_CN,
+};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
@@ -1175,4 +1182,404 @@ fn cline_collector_reports_missing_database() {
         .error
         .as_deref()
         .is_some_and(|error| error.contains("未找到 Cline 数据库")));
+}
+#[test]
+fn codearts_collector_shares_session_schema_and_keeps_source_read_only() {
+    let temp = TempDir::new().unwrap();
+    let db_path = temp.path().join("opencode.db");
+    create_session_db(&db_path);
+    let before = fs::read(&db_path).unwrap();
+
+    let result = CodeArtsCollector::new(db_path.clone()).scan();
+
+    assert_eq!(result.status, SourceScanStatus::Ok, "{:?}", result.error);
+    assert_eq!(result.source, SOURCE_CODEARTS);
+    assert_eq!(result.tasks.len(), 2);
+    let top = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "s1")
+        .unwrap();
+    assert_eq!(top.title, "Gamma 任务");
+    assert_eq!(top.project_name.as_deref(), Some("gamma"));
+    assert_eq!(top.todo_total, Some(3));
+    assert_eq!(top.todo_done, Some(1));
+    assert_eq!(
+        top.resume_cmd, None,
+        "CodeArts resume goes through app activation, not a CLI command"
+    );
+
+    let after = fs::read(&db_path).unwrap();
+    assert_eq!(
+        before, after,
+        "collector must not write the source database"
+    );
+}
+
+#[test]
+fn codearts_collector_reports_missing_database() {
+    let temp = TempDir::new().unwrap();
+    let result = CodeArtsCollector::new(temp.path().join("missing.db")).scan();
+    assert_eq!(result.status, SourceScanStatus::Unavailable);
+    assert!(result.tasks.is_empty());
+}
+
+fn write_antigravity_fixture(root: &Path) {
+    // IDE 会话：conversation_summaries 提供标题与项目。
+    let ide_logs = root.join("ide").join("brain/conv-a/.system_generated/logs");
+    fs::create_dir_all(&ide_logs).unwrap();
+    fs::write(
+        ide_logs.join("transcript_full.jsonl"),
+        concat!(
+            "{\"step_index\":0,\"source\":\"USER_EXPLICIT\",\"type\":\"USER_INPUT\",\
+             \"status\":\"DONE\",\"created_at\":\"2026-10-01T06:11:34Z\",\
+             \"content\":\"<USER_REQUEST>\\nIDE 首条输入\\n</USER_REQUEST>\"}\n",
+            "{\"step_index\":2,\"source\":\"MODEL\",\"type\":\"RESPONSE\",\"status\":\"DONE\",\
+             \"created_at\":\"2026-10-01T06:12:00Z\",\"model\":\"gemini-3-pro\",\"content\":\"ok\"}\n",
+            "}]}\n",
+            "{\"step_index\":3,\"source\":\"MODEL\",\"type\":\"RESPONSE\",\"status\":\"DONE\",\
+             \"created_at\":\"2026-10-02T08:00:00Z\",\"model\":\"gemini-3-pro\",\"content\":\"done\"}\n"
+        ),
+    )
+    .unwrap();
+
+    let conn = Connection::open(root.join("ide/conversation_summaries.db")).unwrap();
+    conn.execute_batch(
+        r#"
+        CREATE TABLE conversation_summaries (
+          conversation_id TEXT PRIMARY KEY,
+          title TEXT,
+          workspace_uris TEXT
+        );
+        "#,
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO conversation_summaries VALUES ('conv-a', 'IDE 会话标题', \
+         '[\"file:///Users/x/work/alpha\"]')",
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    // CLI 会话：无 summaries 库，标题回退转录首条用户输入。
+    let cli_logs = root.join("cli").join("brain/conv-b/.system_generated/logs");
+    fs::create_dir_all(&cli_logs).unwrap();
+    fs::write(
+        cli_logs.join("transcript_full.jsonl"),
+        "{\"step_index\":0,\"source\":\"USER_EXPLICIT\",\"type\":\"USER_INPUT\",\
+         \"status\":\"DONE\",\"created_at\":\"2026-10-03T09:00:00Z\",\
+         \"content\":\"<USER_REQUEST>\\nCLI 首条输入\\n</USER_REQUEST>\"}\n",
+    )
+    .unwrap();
+}
+
+#[test]
+fn antigravity_collector_merges_ide_and_cli_roots() {
+    let temp = TempDir::new().unwrap();
+    write_antigravity_fixture(temp.path());
+    let ide_file = temp
+        .path()
+        .join("ide/brain/conv-a/.system_generated/logs/transcript_full.jsonl");
+    let before = fs::read(&ide_file).unwrap();
+
+    let result = AntigravityCollector::new(temp.path().join("ide"), temp.path().join("cli")).scan();
+
+    assert_eq!(result.status, SourceScanStatus::Ok, "{:?}", result.error);
+    assert_eq!(result.source, SOURCE_ANTIGRAVITY);
+    assert_eq!(result.tasks.len(), 2);
+    assert_eq!(result.files_seen, 2);
+    assert_eq!(result.probe_kind, "file_tree");
+
+    let ide = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "conv-a")
+        .unwrap();
+    assert_eq!(ide.title, "IDE 会话标题");
+    assert_eq!(ide.title_source, "source");
+    assert_eq!(ide.project_name.as_deref(), Some("alpha"));
+    assert_eq!(ide.agent_kind.as_deref(), Some("ide"));
+    assert_eq!(ide.model.as_deref(), Some("gemini-3-pro"));
+    assert_eq!(
+        ide.created_at,
+        Some(
+            chrono::DateTime::parse_from_rfc3339("2026-10-01T06:11:34Z")
+                .unwrap()
+                .timestamp() as f64
+        )
+    );
+    assert_eq!(
+        ide.updated_at,
+        Some(
+            chrono::DateTime::parse_from_rfc3339("2026-10-02T08:00:00Z")
+                .unwrap()
+                .timestamp() as f64
+        ),
+        "游离片段之后的时间戳仍要被读到"
+    );
+
+    let cli = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "conv-b")
+        .unwrap();
+    assert_eq!(cli.title, "CLI 首条输入");
+    assert_eq!(cli.project_name.as_deref(), Some("default-cli-project"));
+    assert_eq!(cli.agent_kind.as_deref(), Some("cli"));
+
+    let after = fs::read(&ide_file).unwrap();
+    assert_eq!(before, after, "collector must not modify the transcript");
+}
+
+#[test]
+fn antigravity_collector_reports_missing_roots() {
+    let temp = TempDir::new().unwrap();
+    let result = AntigravityCollector::new(temp.path().join("ide"), temp.path().join("cli")).scan();
+    assert_eq!(result.status, SourceScanStatus::Unavailable);
+    assert!(result.tasks.is_empty());
+}
+
+const MINIMAX_SESSION_ID: &str = "mvs_312b6b55e9c143949b13cbdfa4a50f44";
+const MINIMAX_SESSION_B64: &str = "bXZzXzMxMmI2YjU1ZTljMTQzOTQ5YjEzY2JkZmE0YTUwZjQ0";
+
+fn write_minimax_fixture(root: &Path) {
+    let session_dir = root.join(format!(
+        "v2/sessions/2026/11/20/05-47-46-783-session_{MINIMAX_SESSION_B64}"
+    ));
+    fs::create_dir_all(&session_dir).unwrap();
+    fs::write(
+        session_dir.join("manifest.json"),
+        format!(
+            "{{\"schemaVersion\":1,\"sessionId\":\"{MINIMAX_SESSION_ID}\",\
+             \"createdAtMs\":1795153666783,\"updatedAtMs\":1795153670000,\
+             \"source\":\"local-runtime\",\"layout\":\"v2-final-dated-session\"}}"
+        ),
+    )
+    .unwrap();
+    fs::write(
+        session_dir.join("messages.jsonl"),
+        concat!(
+            "{\"message_id\":\"m1\",\"message\":{\"role\":\"user\",\"content\":[\
+             {\"type\":\"text\",\"text\":\"<system-reminder>\\n<agent-context>\\n  ignored\\n</agent-context>\\n</system-reminder>\\n\\n修复构建脚本\\n\"}]}}\n",
+            "{\"message_id\":\"m2\",\"message\":{\"role\":\"assistant\",\
+             \"content\":[{\"type\":\"text\",\"text\":\"好的\"}],\
+             \"model\":\"MiniMax-M2.5\",\"timestamp\":1795153670000,\
+             \"usage\":{\"input\":100,\"output\":10}}}\n"
+        ),
+    )
+    .unwrap();
+
+    // 无 manifest 的会话：ID 回退目录名 base64url 解码。
+    let legacy_dir = root.join("v2/sessions/2026/11/19/10-00-00-000-session_aGVsbG8");
+    fs::create_dir_all(&legacy_dir).unwrap();
+    fs::write(
+        legacy_dir.join("messages.jsonl"),
+        "{\"message_id\":\"m1\",\"message\":{\"role\":\"user\",\
+         \"content\":[{\"type\":\"text\",\"text\":\"裸会话输入\"}]}}\n",
+    )
+    .unwrap();
+
+    let sqlite_dir = root.join("v2/sqlite");
+    fs::create_dir_all(&sqlite_dir).unwrap();
+    let conn = Connection::open(sqlite_dir.join("runtime-state.sqlite")).unwrap();
+    conn.execute_batch(
+        r#"
+        CREATE TABLE local_runtime_sessions (
+          session_id TEXT,
+          workspace_dir TEXT,
+          project_workspace_dir TEXT
+        );
+        "#,
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO local_runtime_sessions VALUES (?, '/Users/x/work/minimax-proj/', NULL)",
+        [MINIMAX_SESSION_ID],
+    )
+    .unwrap();
+    drop(conn);
+}
+
+#[test]
+fn minimax_collector_maps_manifest_sessions_and_projects() {
+    let temp = TempDir::new().unwrap();
+    write_minimax_fixture(temp.path());
+    let messages = temp.path().join(format!(
+        "v2/sessions/2026/11/20/05-47-46-783-session_{MINIMAX_SESSION_B64}/messages.jsonl"
+    ));
+    let before = fs::read(&messages).unwrap();
+
+    let result = MiniMaxCollector::new(temp.path().to_path_buf()).scan();
+
+    // 无 manifest 的会话目录名可成功解码出会话 ID（hello），属预期回退，不降级。
+    assert_eq!(result.status, SourceScanStatus::Ok, "{:?}", result.error);
+    assert_eq!(result.source, SOURCE_MINIMAX);
+    assert_eq!(result.tasks.len(), 2);
+    assert_eq!(result.files_seen, 2);
+    assert_eq!(result.probe_kind, "file_tree");
+
+    let session = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == MINIMAX_SESSION_ID)
+        .unwrap();
+    assert_eq!(session.title, "修复构建脚本");
+    assert_eq!(session.title_source, "source");
+    assert_eq!(
+        session.project_path.as_deref(),
+        Some("/Users/x/work/minimax-proj")
+    );
+    assert_eq!(session.project_name.as_deref(), Some("minimax-proj"));
+    assert_eq!(session.model.as_deref(), Some("MiniMax-M2.5"));
+    assert_eq!(session.created_at, Some(1795153666.783));
+    assert_eq!(session.updated_at, Some(1795153670.0));
+    assert_eq!(session.agent_kind.as_deref(), Some("cli"));
+
+    let legacy = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "hello")
+        .unwrap();
+    assert_eq!(legacy.title, "裸会话输入");
+    assert_eq!(legacy.project_name, None);
+
+    let after = fs::read(&messages).unwrap();
+    assert_eq!(before, after, "collector must not modify the messages file");
+}
+
+#[test]
+fn minimax_collector_reports_missing_sessions_root() {
+    let temp = TempDir::new().unwrap();
+    let result = MiniMaxCollector::new(temp.path().to_path_buf()).scan();
+    assert_eq!(result.status, SourceScanStatus::Unavailable);
+    assert!(result.tasks.is_empty());
+}
+
+const CODEBUDDY_CONVERSATION: &str = "2fc5374e3cfc49958bae3fc026b30d98";
+const CODEBUDDY_GENIE_B64: &str = "L1VzZXJzL3dheW5lL0NvZGVCdWRkeS8yMDI2MTEyMDE1MDk0Nw__";
+
+fn write_codebuddy_fixture(root: &Path) {
+    let cn_log = root
+        .join("cn/20261120T151025/window7/exthost/Tencent-Cloud.coding-copilot/腾讯云代码助手.log");
+    fs::create_dir_all(cn_log.parent().unwrap()).unwrap();
+    fs::write(
+        &cn_log,
+        concat!(
+            "2026-11-20 15:28:04.652 [info] [CraftInvokableAgent] [a8e5acce] \
+             Preparing model: Hy4 flash (hy4flash-free)\n",
+            "2026-11-20 15:28:04.660 [info] [AgentReporter] [a8e5acce] onAgentStart: \
+             userInput=修复登录页 agent=craft mode=craft \
+             conversationId=2fc5374e3cfc49958bae3fc026b30d98 requestId=409\n",
+            "2026-11-20 15:28:09.000 [info] [AgentReporter] [a8e5acce]  \
+             Step execution metrics: step=1, duration=3997ms, \
+             usage={\"inputTokens\":15142,\"outputTokens\":292}\n"
+        ),
+    )
+    .unwrap();
+
+    let ide_log = root.join("ide/2026-11-20/ide-session.log");
+    fs::create_dir_all(ide_log.parent().unwrap()).unwrap();
+    fs::write(
+        &ide_log,
+        "[11/21/2026, 10:00:00 AM.500] [Info] [AgentReporter] [a8e5acce]  \
+         Step execution metrics: step=2, duration=10ms, usage={\"outputTokens\":10}\n",
+    )
+    .unwrap();
+
+    // CN 日志根下不在 copilot 目录里的日志必须被排除。
+    fs::write(root.join("cn/main.log"), "noise\n").unwrap();
+
+    let genie = root.join(format!("genie/{CODEBUDDY_GENIE_B64}"));
+    fs::create_dir_all(&genie).unwrap();
+    fs::write(
+        genie.join("current.json"),
+        format!(
+            "{{\"conversationId\":\"{CODEBUDDY_CONVERSATION}\",\
+             \"lastUpdated\":\"2026-11-20T07:09:49.346Z\"}}"
+        ),
+    )
+    .unwrap();
+}
+
+fn local_epoch_seconds(naive_text: &str, format: &str, micros: u32) -> f64 {
+    use chrono::{TimeZone, Timelike};
+    let naive = chrono::NaiveDateTime::parse_from_str(naive_text, format).unwrap();
+    chrono::Local
+        .from_local_datetime(&naive.with_nanosecond(micros * 1_000).unwrap())
+        .single()
+        .unwrap()
+        .timestamp() as f64
+        + micros as f64 / 1e6
+}
+
+#[test]
+fn codebuddy_collector_scans_both_mirrors_and_genie_projects() {
+    let temp = TempDir::new().unwrap();
+    write_codebuddy_fixture(temp.path());
+    let cn_log = temp
+        .path()
+        .join("cn/20261120T151025/window7/exthost/Tencent-Cloud.coding-copilot/腾讯云代码助手.log");
+    let before = fs::read(&cn_log).unwrap();
+
+    let result = CodeBuddyCollector::new(
+        temp.path().join("cn"),
+        temp.path().join("ide"),
+        temp.path().join("genie"),
+    )
+    .scan();
+
+    assert_eq!(result.status, SourceScanStatus::Ok, "{:?}", result.error);
+    assert_eq!(result.source, SOURCE_CODEBUDDY);
+    assert_eq!(result.tasks.len(), 1);
+    assert_eq!(
+        result.files_seen, 2,
+        "logs outside the copilot dir are excluded"
+    );
+    assert_eq!(result.probe_kind, "file_tree");
+
+    let task = &result.tasks[0];
+    assert_eq!(task.source_id, CODEBUDDY_CONVERSATION);
+    assert_eq!(task.title, "修复登录页");
+    assert_eq!(task.title_source, "source");
+    assert_eq!(
+        task.project_path.as_deref(),
+        Some("/Users/wayne/CodeBuddy/20261120150947")
+    );
+    assert_eq!(task.project_name.as_deref(), Some("20261120150947"));
+    assert_eq!(task.model.as_deref(), Some("hy4flash-free"));
+    assert_eq!(task.agent_kind.as_deref(), Some("desktop"));
+    assert_eq!(
+        task.created_at,
+        Some(local_epoch_seconds(
+            "2026-11-20 15:28:09.000",
+            "%Y-%m-%d %H:%M:%S%.f",
+            0
+        ))
+    );
+    assert_eq!(
+        task.updated_at,
+        Some(local_epoch_seconds(
+            "11/21/2026, 10:00:00 AM",
+            "%m/%d/%Y, %I:%M:%S %p",
+            500_000
+        )),
+        "IDE 镜像日志的时间戳也要计入"
+    );
+
+    let after = fs::read(&cn_log).unwrap();
+    assert_eq!(before, after, "collector must not modify the logs");
+}
+
+#[test]
+fn codebuddy_collector_reports_missing_log_dirs() {
+    let temp = TempDir::new().unwrap();
+    let result = CodeBuddyCollector::new(
+        temp.path().join("cn"),
+        temp.path().join("ide"),
+        temp.path().join("genie"),
+    )
+    .scan();
+    assert_eq!(result.status, SourceScanStatus::Unavailable);
+    assert!(result.tasks.is_empty());
 }

@@ -26,6 +26,13 @@ pub struct SourcePaths {
     pub trae_cn_events_dir: PathBuf,
     pub trae_cn_memory_dir: PathBuf,
     pub cline_db: PathBuf,
+    pub antigravity_ide_root: PathBuf,
+    pub antigravity_cli_root: PathBuf,
+    pub minimax_dir: PathBuf,
+    pub codearts_db: PathBuf,
+    pub codebuddy_cn_logs_dir: PathBuf,
+    pub codebuddy_ide_logs_dir: PathBuf,
+    pub codebuddy_genie_dir: PathBuf,
 }
 
 impl SourcePaths {
@@ -50,6 +57,24 @@ impl SourcePaths {
                 .unwrap_or_else(|| home.join(".trae-cn/memory/projects")),
             cline_db: env_path("PERCH_CLINE_DB")
                 .unwrap_or_else(|| home.join(".cline/data/db/sessions.db")),
+            antigravity_ide_root: env_path("PERCH_ANTIGRAVITY_IDE_DIR")
+                .unwrap_or_else(|| home.join(".gemini/antigravity")),
+            antigravity_cli_root: env_path("PERCH_ANTIGRAVITY_CLI_DIR")
+                .unwrap_or_else(|| home.join(".gemini/antigravity-cli")),
+            minimax_dir: env_path("PERCH_MINIMAX_DIR").unwrap_or_else(|| home.join(".minimax")),
+            codearts_db: env_path("PERCH_CODEARTS_DB")
+                .unwrap_or_else(|| home.join(".codeartsdoer/codearts-data/opencode.db")),
+            codebuddy_cn_logs_dir: env_path("PERCH_CODEBUDDY_CN_LOGS_DIR")
+                .unwrap_or_else(|| home.join("Library/Application Support/CodeBuddy CN/logs")),
+            codebuddy_ide_logs_dir: env_path("PERCH_CODEBUDDY_IDE_LOGS_DIR").unwrap_or_else(|| {
+                home.join("Library/Application Support/CodeBuddyExtension/Logs/CodeBuddyIDE")
+            }),
+            codebuddy_genie_dir: env_path("PERCH_CODEBUDDY_GENIE_DIR").unwrap_or_else(|| {
+                home.join(
+                    "Library/Application Support/CodeBuddy CN/User/globalStorage/\
+                     tencent-cloud.coding-copilot/genie-history",
+                )
+            }),
             home,
         }
     }

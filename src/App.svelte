@@ -41,6 +41,10 @@
     kilo: "#ffdd00",
     "trae-cn": "#32f08c",
     cline: "#e7e5e7",
+    antigravity: "#0891b2",
+    minimax: "#c026d3",
+    codearts: "#d946ef",
+    codebuddy: "#f97316",
   };
 
   const SOURCE_LABELS: Record<string, string> = {
@@ -51,6 +55,10 @@
     kilo: "Kilo",
     "trae-cn": "Trae CN",
     cline: "Cline",
+    antigravity: "Antigravity",
+    minimax: "MiniMax Code",
+    codearts: "CodeArts（码道）",
+    codebuddy: "CodeBuddy",
   };
 
   const STATUS_LABELS: Record<string, string> = {
