@@ -225,8 +225,9 @@ fn render_usage_report(bin: &Path, dir: &Path) -> Result<PathBuf, String> {
 }
 
 /// Renders usage-ledger's own standalone HTML report into Perch's cache
-/// directory and opens it in the default browser, mirroring `usage html --open`.
-/// The usage database is only read by usage-ledger itself.
+/// directory and returns its path; the frontend embeds it via the asset
+/// protocol instead of opening a browser. The usage database is only read by
+/// usage-ledger itself.
 #[tauri::command]
 async fn open_usage_report(app: tauri::AppHandle) -> Result<UsageReportOutcome, String> {
     let bin = usage_bin()?;
@@ -239,7 +240,6 @@ async fn open_usage_report(app: tauri::AppHandle) -> Result<UsageReportOutcome, 
         .map_err(|error| error.to_string())??;
 
     let path = file.to_string_lossy().to_string();
-    run_open(&[path.as_str()])?;
     Ok(UsageReportOutcome { path })
 }
 

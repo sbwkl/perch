@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { invoke } from "@tauri-apps/api/core";
+  import { convertFileSrc, invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { onMount, tick } from "svelte";
   import type {
@@ -9,11 +9,12 @@
     SearchResponse,
     SyncReport,
     TaskView,
+    UsageOverview,
     UsageReportOutcome,
   } from "./lib/types";
   import { sourceIconMarkup } from "./lib/source-icons";
 
-  type ViewMode = "recent" | "older" | "archived";
+  type ViewMode = "recent" | "older" | "archived" | "report";
 
   interface ScanNotice {
     label: string;
@@ -81,6 +82,9 @@
   let reportOpen = $state(false);
   let reportNotice = $state("");
   let reportFailed = $state(false);
+  let reportUrl = $state("");
+  let reportGeneration = $state(0);
+  let reportUsageKey = $state("");
   let query = $state("");
   let searchOpen = $state(false);
   let searchIndex = $state(0);
@@ -248,6 +252,7 @@
   );
 
   const heading = $derived.by(() => {
+    if (view === "report") return "用量报告";
     if (workspaceFilter) {
       return (
         workspaceItems.find((item) => item.key === workspaceFilter)?.name ??
@@ -260,6 +265,7 @@
   });
 
   const subheading = $derived.by(() => {
+    if (view === "report") return "usage-ledger 生成 · 应用内嵌展示";
     const generated = payload ? fullTime(payload.generated_at) : "—";
     const summary = lastScanSummary ? ` · ${lastScanSummary}` : "";
     return `${totalVisible} 个任务 · 快照 ${generated}${summary}`;
@@ -321,20 +327,49 @@
     }
   }
 
-  async function openUsageReport() {
+  function usageContentKey(usage: UsageOverview | undefined): string {
+    if (!usage) return "";
+    // matched_tasks follows task matching, as_of follows file mtimes; neither
+    // reflects usage content, so both are excluded from the change gate.
+    return JSON.stringify(
+      usage.sources.map((item) => [
+        item.source,
+        item.token_total,
+        item.token_7d,
+        item.credits_billable_7d,
+        item.est_total,
+        item.last_day,
+      ]),
+    );
+  }
+
+  async function generateUsageReport(silent: boolean) {
     if (reportOpen) return;
     reportOpen = true;
-    reportNotice = "";
-    reportFailed = false;
+    const usageKey = usageContentKey(payload?.usage);
     try {
-      await invoke<UsageReportOutcome>("open_usage_report");
-      reportNotice = "已生成用量报告并在浏览器打开";
+      const outcome = await invoke<UsageReportOutcome>("open_usage_report");
+      reportUrl = convertFileSrc(outcome.path);
+      reportGeneration += 1;
+      reportUsageKey = usageKey;
+      reportNotice = "";
+      reportFailed = false;
     } catch (error) {
-      reportFailed = true;
-      reportNotice = error instanceof Error ? error.message : String(error);
+      if (!silent) {
+        reportFailed = true;
+        reportNotice = error instanceof Error ? error.message : String(error);
+      }
     } finally {
       reportOpen = false;
     }
+  }
+
+  function openUsageReport() {
+    view = "report";
+    workspaceFilter = null;
+    sourceFilter = null;
+    closeSearch();
+    void generateUsageReport(false);
   }
 
   function selectView(next: ViewMode) {
@@ -490,7 +525,8 @@
     }
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "r") {
       event.preventDefault();
-      void refresh();
+      if (view === "report") void generateUsageReport(false);
+      else void refresh();
     }
     if (searchOpen) {
       if (event.key === "Escape") {
@@ -525,7 +561,20 @@
     })();
 
     void listen("sources-updated", () => {
-      if (!disposed) void loadBootstrap();
+      if (disposed) return;
+      void (async () => {
+        try {
+          await loadBootstrap();
+        } catch {
+          return;
+        }
+        if (disposed || view !== "report") return;
+        // `usage html` rewrites db mtimes on every run, so as_of cannot gate
+        // regeneration; only a change in usage totals reloads the iframe.
+        if (usageContentKey(payload?.usage) !== reportUsageKey) {
+          void generateUsageReport(true);
+        }
+      })();
     }).then((stop) => {
       if (disposed) stop();
       else unlisten = stop;
@@ -674,10 +723,19 @@
       {#if payload?.usage}
         <button
           class="sidebar-report"
-          onclick={() => void openUsageReport()}
+          class:active={view === "report"}
+          onclick={openUsageReport}
           disabled={reportOpen}
-          title={reportOpen ? "正在生成用量报告" : "打开 usage-ledger 用量报告"}
-          aria-label={reportOpen ? "正在生成用量报告" : "打开 usage-ledger 用量报告"}
+          title={reportOpen
+            ? "正在生成用量报告"
+            : view === "report"
+              ? "重新生成用量报告"
+              : "在应用内查看 usage-ledger 用量报告"}
+          aria-label={reportOpen
+            ? "正在生成用量报告"
+            : view === "report"
+              ? "重新生成用量报告"
+              : "在应用内查看 usage-ledger 用量报告"}
         >
           <svg
             class="report-icon"
@@ -696,28 +754,51 @@
     </footer>
   </aside>
 
-  <main class="list-pane">
+  <main class="list-pane" class:report-wide={view === "report"}>
     <header class="list-head">
       <div class="head-text">
         <h2>{heading}</h2>
         <p>{subheading}</p>
       </div>
-      <button class="refresh-button" onclick={() => refresh()} disabled={refreshing}>
-        <svg
-          class="refresh-icon"
-          class:spinning={refreshing}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.8"
-          stroke-linecap="round"
-          stroke-linejoin="round"
+      {#if view === "report"}
+        <button
+          class="refresh-button"
+          onclick={() => void generateUsageReport(false)}
+          disabled={reportOpen}
         >
-          <path d={ICONS.refresh} />
-        </svg>
-        <span>{refreshing ? "扫描中" : "刷新"}</span>
-        <kbd>⌘R</kbd>
-      </button>
+          <svg
+            class="refresh-icon"
+            class:spinning={reportOpen}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d={ICONS.refresh} />
+          </svg>
+          <span>{reportOpen ? "生成中" : "重新生成"}</span>
+          <kbd>⌘R</kbd>
+        </button>
+      {:else}
+        <button class="refresh-button" onclick={() => refresh()} disabled={refreshing}>
+          <svg
+            class="refresh-icon"
+            class:spinning={refreshing}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d={ICONS.refresh} />
+          </svg>
+          <span>{refreshing ? "扫描中" : "刷新"}</span>
+          <kbd>⌘R</kbd>
+        </button>
+      {/if}
 
       {#if sourceUsage}
         <div class="usage-strip">
@@ -773,7 +854,19 @@
       </details>
     {/if}
 
-    {#if busy && !payload}
+    {#if view === "report"}
+      <div class="report-pane">
+        {#if reportUrl}
+          {#key reportGeneration}
+            <iframe class="report-frame" src={reportUrl} title="usage-ledger 用量报告"></iframe>
+          {/key}
+        {:else}
+          <div class="empty-state">
+            <p>{reportOpen ? "正在生成用量报告…" : "报告尚未生成。"}</p>
+          </div>
+        {/if}
+      </div>
+    {:else if busy && !payload}
       <div class="empty-state">正在读取本地任务…</div>
     {:else if !hasVisibleTasks}
       <div class="empty-state">
@@ -791,6 +884,7 @@
     {/if}
   </main>
 
+  {#if view !== "report"}
   <aside class="inspector">
     {#if selected}
       <div class="inspector-content">
@@ -936,6 +1030,7 @@
       </div>
     {/if}
   </aside>
+  {/if}
 </div>
 
 {#if searchOpen}
