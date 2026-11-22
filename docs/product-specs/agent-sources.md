@@ -6,7 +6,7 @@
 | 文档类型 | 产品规格 |
 | 当前版本 | v0.1.0 |
 | 适用范围 | 当前来源覆盖行为与验收规格 |
-| 关联 | [CHG-0004](../exec-plans/completed/CHG-0004-usage-ledger-agents.md) |
+| 关联 | [CHG-0004](../exec-plans/completed/CHG-0004-usage-ledger-agents.md)、[侧栏来源溢出修复](../exec-plans/completed/2026-11-22-sidebar-source-overflow.md) |
 
 ## 1. 摘要
 
@@ -37,12 +37,17 @@ Perch 侧边栏与任务列表应覆盖用户实际在用的全部 AI 编码 Age
 - R3：When 用户对某来源的会话触发"继续/打开", the system shall 按该 Agent 的方式恢复会话（deeplink、命令行或目录激活）。
 - R4：When usage-ledger 报告包含某来源的用量, the system shall 将该来源计入 `PERCH_SOURCES` 用量子集。
 - R5：When 数据变化（文件 mtime 变化）, the system shall 通过对应探测类型（SQLite/JSONL/日志）触发增量重扫。
+- R6：When 来源数量增加使侧栏导航内容超过可用高度, the system shall 在导航内容区内部滚动并保持侧栏页脚固定，不得压缩、覆盖或裁切来源项。
+- R7：When 窗口缩小到最小尺寸 `900×560`, the system shall 允许用户通过滚动与键盘到达全部来源、来源说明和固定页脚。
+
+验证位置：R1–R5 见来源采集器/探测测试与实机冒烟；R6–R7 见侧栏布局实机验证（`900×560` 与 `1200×780`）。
 
 ## 6. 变更索引
 
 | CHG ID | 标题 | 状态 | 链接 |
 |---|---|---|---|
 | CHG-0004 | 接入 Antigravity / MiniMax / CodeArts / CodeBuddy 四个来源 | 已验证 | [../exec-plans/completed/CHG-0004-usage-ledger-agents.md](../exec-plans/completed/CHG-0004-usage-ledger-agents.md) |
+| 2026-11-22 | 侧边栏来源增多后的重叠与裁切 | 已验证 | [../exec-plans/completed/2026-11-22-sidebar-source-overflow.md](../exec-plans/completed/2026-11-22-sidebar-source-overflow.md) |
 
 ## 7. 链接
 

@@ -651,80 +651,82 @@
       </span>
     </header>
 
-    <nav class="nav-section">
-      <p class="section-title">任务</p>
-      {#each smartLists as item (item.id)}
+    <div class="sidebar-scroll">
+      <nav class="nav-section">
+        <p class="section-title">任务</p>
+        {#each smartLists as item (item.id)}
+          <button
+            class="nav-item"
+            class:active={view === item.id}
+            onclick={() => selectView(item.id)}
+          >
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d={item.icon} />
+            </svg>
+            <span class="nav-label">{item.label}</span>
+            <span class="nav-count">{item.count}</span>
+          </button>
+        {/each}
         <button
-          class="nav-item"
-          class:active={view === item.id}
-          onclick={() => selectView(item.id)}
+          class="nav-item search-entry"
+          class:active={searchOpen}
+          title="搜索任务（⌘F）"
+          onclick={openSearch}
         >
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-            <path d={item.icon} />
+            <path d={ICONS.search} />
           </svg>
-          <span class="nav-label">{item.label}</span>
-          <span class="nav-count">{item.count}</span>
+          <span class="nav-label">搜索</span>
+          <kbd>⌘F</kbd>
         </button>
-      {/each}
-      <button
-        class="nav-item search-entry"
-        class:active={searchOpen}
-        title="搜索任务（⌘F）"
-        onclick={openSearch}
-      >
-        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-          <path d={ICONS.search} />
-        </svg>
-        <span class="nav-label">搜索</span>
-        <kbd>⌘F</kbd>
-      </button>
-    </nav>
+      </nav>
 
-    <nav class="nav-section scroll-section">
-      <p class="section-title">Workspaces</p>
-      {#each visibleWorkspaces as workspace (workspace.key)}
-        <button
-          class="nav-item"
-          class:active={workspaceFilter === workspace.key}
-          title={workspace.path ?? workspace.name}
-          onclick={() => selectWorkspace(workspace.key)}
-        >
-          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-            <path d={ICONS.folder} />
-          </svg>
-          <span class="nav-label">{workspace.name}</span>
-          <span class="nav-count">{workspace.count}</span>
-        </button>
-      {/each}
-      {#if canToggleWorkspaces}
-        <button class="nav-more" onclick={() => (showAllWorkspaces = !showAllWorkspaces)}>
-          {showAllWorkspaces ? "收起" : `显示更多（${hiddenWorkspaceCount}）`}
-        </button>
-      {/if}
-      {#if workspaceItems.length === 0}
-        <p class="nav-empty">暂无 workspace</p>
-      {/if}
-    </nav>
+      <nav class="nav-section">
+        <p class="section-title">Workspaces</p>
+        {#each visibleWorkspaces as workspace (workspace.key)}
+          <button
+            class="nav-item"
+            class:active={workspaceFilter === workspace.key}
+            title={workspace.path ?? workspace.name}
+            onclick={() => selectWorkspace(workspace.key)}
+          >
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d={ICONS.folder} />
+            </svg>
+            <span class="nav-label">{workspace.name}</span>
+            <span class="nav-count">{workspace.count}</span>
+          </button>
+        {/each}
+        {#if canToggleWorkspaces}
+          <button class="nav-more" onclick={() => (showAllWorkspaces = !showAllWorkspaces)}>
+            {showAllWorkspaces ? "收起" : `显示更多（${hiddenWorkspaceCount}）`}
+          </button>
+        {/if}
+        {#if workspaceItems.length === 0}
+          <p class="nav-empty">暂无 workspace</p>
+        {/if}
+      </nav>
 
-    <nav class="nav-section sources">
-      <p class="section-title">来源</p>
-      {#each payload?.sources ?? [] as source (source.source)}
-        <button
-          class="nav-item source-item"
-          class:active={sourceFilter === source.source}
-          title={source.error ?? source.label}
-          onclick={() => selectSource(source.source)}
-        >
-          <span class="source-icon">{@html sourceIconMarkup(source.source)}</span>
-          <span class="nav-label">{source.label}</span>
-          <span class="nav-count">{source.task_count}</span>
-          {#if source.error && source.status !== "unavailable"}
-            <span class="source-warning">!</span>
-          {/if}
-        </button>
-      {/each}
-      <p class="nav-note">Trae CN 需安装 usage-ledger hook 后显示会话；ChatGPT 桌面仅 Codex 会话可见。</p>
-    </nav>
+      <nav class="nav-section sources">
+        <p class="section-title">来源</p>
+        {#each payload?.sources ?? [] as source (source.source)}
+          <button
+            class="nav-item source-item"
+            class:active={sourceFilter === source.source}
+            title={source.error ?? source.label}
+            onclick={() => selectSource(source.source)}
+          >
+            <span class="source-icon">{@html sourceIconMarkup(source.source)}</span>
+            <span class="nav-label">{source.label}</span>
+            <span class="nav-count">{source.task_count}</span>
+            {#if source.error && source.status !== "unavailable"}
+              <span class="source-warning">!</span>
+            {/if}
+          </button>
+        {/each}
+        <p class="nav-note">Trae CN 需安装 usage-ledger hook 后显示会话；ChatGPT 桌面仅 Codex 会话可见。</p>
+      </nav>
+    </div>
 
     <footer class="sidebar-foot">
       <span>只读采集 · 不改动源数据</span>
