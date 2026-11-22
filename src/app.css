@@ -1297,3 +1297,127 @@ kbd {
     grid-template-columns: 214px minmax(0, 1fr) 312px;
   }
 }
+
+.section-hint {
+  margin-left: 6px;
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-tertiary);
+}
+
+.workspace-search {
+  width: calc(100% - 16px);
+  margin: 4px 8px 6px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 11px;
+  outline: none;
+}
+
+.workspace-search:focus-visible {
+  border-color: var(--accent);
+}
+
+.source-freshness {
+  flex: none;
+  max-width: 86px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-tertiary);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.source-item.degraded .source-freshness,
+.source-item.stale .source-freshness {
+  color: var(--warn);
+}
+
+.filter-chips {
+  display: flex;
+  flex: 1 0 100%;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10.5px;
+  cursor: pointer;
+}
+
+.filter-chip:hover {
+  filter: brightness(1.05);
+}
+
+.scan-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 22px 0;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--text-secondary);
+  font-size: 10.5px;
+}
+
+.scan-status.paused {
+  border-color: rgba(164, 106, 18, 0.3);
+  color: var(--warn);
+}
+
+.scan-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+}
+
+.scan-dot.busy {
+  background: var(--ok);
+  box-shadow: 0 0 0 3px rgba(15, 159, 110, 0.14);
+}
+
+.scan-toggle,
+.list-more,
+.search-more {
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 10.5px;
+  cursor: pointer;
+}
+
+.scan-toggle {
+  margin-left: auto;
+}
+
+.list-more {
+  display: block;
+  width: calc(100% - 16px);
+  margin: 8px 8px 16px;
+}
+
+.search-more {
+  display: block;
+  width: calc(100% - 20px);
+  margin: 6px 10px 10px;
+}

@@ -206,6 +206,15 @@ fn workspace_of(task: &TaskSnapshot) -> (String, String, Option<String>) {
 const NO_PROJECT_KEY: &str = "__no_project__";
 const NO_PROJECT_NAME: &str = "未关联项目";
 
+pub fn task_needs_attention(task: &TaskView) -> bool {
+    task.source_unread
+        || task.source_missing
+        || matches!(
+            task.status.as_str(),
+            "failed" | "blocked" | "limited" | "waiting" | "paused" | "running"
+        )
+}
+
 fn count_tasks(workspaces: &[WorkspaceGroup]) -> Counts {
     let mut counts = Counts::default();
     for group in workspaces {
@@ -215,6 +224,9 @@ fn count_tasks(workspaces: &[WorkspaceGroup]) -> Counts {
             }
             if task.source_archived {
                 counts.archived += 1;
+                if task_needs_attention(task) {
+                    counts.attention += 1;
+                }
                 continue;
             }
             counts.total += 1;
@@ -223,10 +235,7 @@ fn count_tasks(workspaces: &[WorkspaceGroup]) -> Counts {
             } else {
                 counts.older += 1;
             }
-            if task.source_unread
-                || task.source_missing
-                || matches!(task.status.as_str(), "blocked" | "limited")
-            {
+            if task_needs_attention(task) {
                 counts.attention += 1;
             }
         }

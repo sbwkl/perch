@@ -20,7 +20,7 @@ Perch 是一个 macOS 桌面应用：Tauri 2 壳 + 纯 Rust core + Svelte 5 前�
 │  · bootstrap / refresh_sources / search_tasks / continue_task /             │
 │    open_usage_report                                                        │
 │  · AppState = Arc<Mutex<ScanEngine>>                                        │
-│  · 每 3 秒 SourceProbe（窗口可见时），变化后重扫并 emit "sources-updated"    │
+│  · 3 秒 SourceProbe + live 去抖 / 冷却 / 暂停、scan-status 事件                │
 └───────────────────────────────────┬─────────────────────────────────────────┘
                                     │
 ┌───────────────────────────────────▼─────────────────────────────────────────┐
@@ -47,7 +47,7 @@ Perch 是一个 macOS 桌面应用：Tauri 2 壳 + 纯 Rust core + Svelte 5 前�
 | 扫描引擎 | `src/sync.rs` | 逐个执行采集器，捕获 panic，写快照，判定缺失，记录同步状态 |
 | 快照存储 | `src/store.rs` | `cache.db` schema、upsert、缺失标记、sync_state / scan_run |
 | 查询 | `src/query.rs` | 把快照组装为 `BootstrapPayload`（workspaces、sources、counts、可选 usage） |
-| 搜索 | `src/search.rs` | 只读 `task` / `task_todo`，NFKC 归一 + 拼音 + 模糊匹配 + 字段加权，按 workspace / 来源筛选后返回前 10 条与总数 |
+| 搜索 | `src/search.rs` | 只读 `task` / `task_todo`，NFKC 归一 + 拼音 + 模糊匹配 + 字段加权，按 workspace / 来源筛选后返回全部命中与总数 |
 | 用量桥接 | `src/usage.rs` | 只读打开 usage-ledger 的 `usage.db`，按 `session_id` 聚合 token / credits / est |
 | 探测 | `src/probe.rs` | 轻量判断源是否变化：SQLite `PRAGMA data_version`、JSONL 文件数与最新 mtime |
 | 继续工作 | `src/continue_work.rs` | 按来源和进程探测决定打开 App / URL / 终端，并校验 session id |
@@ -74,12 +74,11 @@ Perch 是一个 macOS 桌面应用：Tauri 2 壳 + 纯 Rust core + Svelte 5 前�
 
 `src-tauri` 启动一个后台线程，每 3 秒执行一次：
 
-- 窗口最小化或不可见时跳过。
-- Qoder / OpenCode / Kilo / Cline / CodeArts：`PRAGMA data_version` 是否变化。
-- Claude / Codex / Trae CN / Antigravity / MiniMax Code：JSONL 文件数 + 最新 mtime；
-  CodeBuddy：日志文件数 + 最新 mtime（Trae CN 同时覆盖 hook 事件与 memory 会话文件两个目录）。
-- 有变化时只重扫对应来源（`trigger = "live"`），完成后再 emit `sources-updated`，
-  前端收到事件后重新 `bootstrap`。
+- 窗口最小化或不可见时跳过；实时刷新可经 `set_live_refresh` 暂停。
+- SQLite 来源每轮检查 `PRAGMA data_version`；JSONL / 日志目录签名最多每 15 秒计算一次。
+- 变化按源记录，6 秒静默去抖、30 秒冷却、60 秒最长等待；只重扫到期的来源（`trigger = "live"`）。
+- 手动刷新期间后台不争用 `ScanEngine` 锁；扫描开始 / 结束通过 `scan-status` 发射来源、触发方式与耗时。
+- 完成后 emit `sources-updated`，前端重新 `bootstrap`；完成后推迟该 JSONL / 日志源的签名检查。
 
 探测只做轻量读取，不解析内容；不会常驻 daemon，应用退出即停止。
 
@@ -163,8 +162,8 @@ usage-ledger 不可用时完全不出现。
 `src/App.svelte` 使用 Svelte 5 runes：
 
 - `payload` 保存最近一次 `bootstrap` 结果。
-- `flatTasks` 派生当前任务视图，按状态 / 置顶 / `updated_at` 排序，过滤子会话、自动化与归档。
-- 视图：`recent`（近 7 天）、`older`、`archived`、`report`；workspace 与来源筛选叠加在三种任务视图上。
+- `flatTasks` 派生当前任务视图，按状态 / 置顶 / `updated_at` 排序，过滤子会话、自动化与归档；`renderedTasks` 每页最多 60 条。
+- 视图：`recent`（近 7 天）、`older`、`archived`、`attention`、`report`；workspace / 来源筛选可组合，侧栏计数联动当前口径。
 - `selected` 从当前 `flatTasks` 派生，切换视图 / 筛选后不会显示列表外的任务。
 - Inspector 显示元数据、todo、继续工作通道提示、resume 命令与动作按钮。
 - 来源图标内联在 `src/lib/source-icons.ts`，不加载远程资源或图标库。

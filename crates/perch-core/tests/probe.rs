@@ -147,3 +147,81 @@ fn probe_opens_sqlite_sources_that_appear_after_startup() {
     qoder.execute_batch("INSERT INTO t VALUES (1);").unwrap();
     assert_eq!(probe.poll(), vec!["qoder"]);
 }
+
+#[test]
+fn jsonl_probe_throttles_signature_walks_and_defers_after_scan() {
+    use std::time::{Duration, Instant};
+
+    let temp = TempDir::new().unwrap();
+    let paths = paths_under(temp.path());
+    let projects = paths.claude_dir.join("projects/-tmp-alpha");
+    fs::create_dir_all(&projects).unwrap();
+    let session = projects.join("s.jsonl");
+    fs::write(&session, "{\"type\":\"user\"}\n").unwrap();
+
+    let base = Instant::now();
+    let mut probe = SourceProbe::new(&paths);
+    probe.reset_baseline(base);
+    assert!(probe.changed_sources(base).is_empty());
+
+    // A file changes before the next 15s directory-signature window.
+    sleep(Duration::from_millis(20));
+    let mut handle = fs::OpenOptions::new().append(true).open(&session).unwrap();
+    writeln!(handle, "{{\"type\":\"assistant\"}}").unwrap();
+    drop(handle);
+    assert!(probe
+        .changed_sources(base + Duration::from_secs(3))
+        .is_empty());
+
+    // The next signature window records the change; live scan waits for debounce.
+    assert!(probe
+        .changed_sources(base + Duration::from_secs(15))
+        .is_empty());
+    let changed = probe.changed_sources(base + Duration::from_secs(21));
+    assert_eq!(changed, vec!["claude"]);
+
+    // After a scan, directory signature checks are deferred for the cooldown.
+    probe.defer_jsonl("claude", base + Duration::from_secs(21));
+    let mut later = fs::OpenOptions::new().append(true).open(&session).unwrap();
+    writeln!(later, "{{\"type\":\"assistant\"}}").unwrap();
+    drop(later);
+    assert!(probe
+        .changed_sources(base + Duration::from_secs(36))
+        .is_empty());
+    assert!(probe
+        .changed_sources(base + Duration::from_secs(57))
+        .is_empty());
+    assert_eq!(
+        probe.changed_sources(base + Duration::from_secs(66)),
+        vec!["claude"]
+    );
+}
+
+#[test]
+fn live_scan_scheduler_coalesces_and_respects_cooldown() {
+    use perch_core::probe::{LiveScanScheduler, LIVE_COOLDOWN, LIVE_DEBOUNCE, LIVE_MAX_WAIT};
+    use std::time::{Duration, Instant};
+
+    let base = Instant::now();
+    let mut scheduler = LiveScanScheduler::new();
+    scheduler.note_changes(&["codebuddy"], base);
+    assert!(scheduler.due_sources(base).is_empty());
+    scheduler.note_changes(&["codebuddy"], base + Duration::from_secs(3));
+    assert!(scheduler
+        .due_sources(base + Duration::from_secs(3))
+        .is_empty());
+    assert_eq!(
+        scheduler.due_sources(base + LIVE_DEBOUNCE),
+        vec!["codebuddy"]
+    );
+
+    scheduler.note_changes(
+        &["codebuddy"],
+        base + LIVE_DEBOUNCE + Duration::from_secs(1),
+    );
+    assert!(scheduler.due_sources(base + LIVE_COOLDOWN).is_empty());
+    assert_eq!(
+        scheduler.due_sources(base + LIVE_DEBOUNCE + LIVE_MAX_WAIT),
+        vec!["codebuddy"]
+    );
+}

@@ -87,11 +87,15 @@ export async function invoke<T>(
       );
       return {
         total: matches.length,
-        hits: matches
-          .slice(0, 10)
-          .map(({ task_key, score, fields }) => ({ task_key, score, fields })),
+        hits: matches.map(({ task_key, score, fields }) => ({
+          task_key,
+          score,
+          fields,
+        })),
       } as T;
     }
+    case "set_live_refresh":
+      return { paused: Boolean(args?.paused) } as T;
     case "continue_task": {
       const taskKey = String(args?.taskKey ?? "");
       const payload = demoPayload();

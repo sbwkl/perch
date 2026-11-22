@@ -45,6 +45,8 @@ const WORKSPACES = [
   { name: "docs-portal", path: "/Users/demo/code/docs-portal" },
   { name: "data-pipeline", path: "/Users/demo/code/data-pipeline" },
   { name: "scratchpad", path: "/Users/demo/code/scratchpad" },
+  { name: "docs-portal", path: "/Users/demo/archive/docs-portal" },
+  { name: "tmp", path: "/private/tmp/perch-demo" },
 ];
 
 interface TaskSeed {
@@ -388,6 +390,23 @@ const TASKS: TaskView[] = [
     messages: 12,
   }),
 ];
+const STRESS_COUNT = Number(new URLSearchParams(location.search).get("stress") ?? 0);
+if (STRESS_COUNT > 0) {
+  for (let index = 0; index < STRESS_COUNT; index += 1) {
+    TASKS.push(
+      makeTask({
+        source: SOURCES[index % SOURCES.length],
+        title: `合成历史任务 ${String(index + 1).padStart(3, "0")}`,
+        workspace: index % WORKSPACES.length,
+        status: index % 11 === 0 ? "blocked" : "idle",
+        updated_minutes_ago: 8 * 1_440 + index * 30,
+        created_days_ago: 20 + (index % 40),
+        archived: index % 17 === 0,
+        unread: index % 29 === 0,
+      }),
+    );
+  }
+}
 
 function buildWorkspaces(): WorkspaceGroup[] {
   return WORKSPACES.map((workspace) => {
@@ -461,11 +480,16 @@ export function demoPayload(): BootstrapPayload {
       recent: visible.filter((task) => task.is_recent).length,
       older: visible.filter((task) => !task.is_recent).length,
       archived: TASKS.filter((task) => task.source_archived).length,
-      attention: visible.filter(
+      attention: TASKS.filter(
         (task) =>
           task.source_unread ||
+          task.source_missing ||
+          task.status === "failed" ||
           task.status === "blocked" ||
-          task.status === "limited",
+          task.status === "limited" ||
+          task.status === "waiting" ||
+          task.status === "paused" ||
+          task.status === "running",
       ).length,
     },
     usage: {
