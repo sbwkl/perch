@@ -163,7 +163,7 @@ usage-ledger 不可用时完全不出现。
 
 - `payload` 保存最近一次 `bootstrap` 结果。
 - `flatTasks` 派生当前任务视图，按状态 / 置顶 / `updated_at` 排序，过滤子会话、自动化与归档；`renderedTasks` 每页最多 60 条。
-- 视图：`recent`（近 7 天）、`older`、`archived`、`report`；任务分组只显示三个视图与搜索，报告由页脚图标进入；workspace / 来源筛选可组合，侧栏计数联动当前口径。Workspaces / 来源列表按全局近 7 天主会话数倒序，超过 8 项折叠；workspace 名称只显示源数据名称，不追加路径父目录、临时目录或分组标记。
+- 视图：`recent`（近 7 天）、`older`、`archived`、`report`；任务分组只显示三个视图与搜索，报告由页脚图标进入；workspace / 来源筛选可组合，侧栏计数联动当前口径，第二栏不显示筛选 chip。Workspaces / 来源列表按全局近 7 天主会话数倒序，超过 8 项折叠；workspace 名称只显示源数据名称，不追加路径父目录、临时目录或分组标记。
 - `selected` 从当前 `flatTasks` 派生，切换视图 / 筛选后不会显示列表外的任务。
 - Inspector 显示元数据、todo、继续工作通道提示、resume 命令与动作按钮。
 - 来源图标内联在 `src/lib/source-icons.ts`，不加载远程资源或图标库。

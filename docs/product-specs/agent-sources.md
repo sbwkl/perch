@@ -6,7 +6,7 @@
 | 文档类型 | 产品规格 |
 | 当前版本 | v0.1.0 |
 | 适用范围 | 当前来源覆盖行为与验收规格 |
-| 关联 | [CHG-0004](../exec-plans/completed/CHG-0004-usage-ledger-agents.md)、[侧栏来源溢出修复](../exec-plans/completed/2026-11-22-sidebar-source-overflow.md)、[真实体验确定性缺陷修复](../exec-plans/completed/2026-11-22-real-ux-clarity-fixes.md)、[P0/P1 全量修复](../exec-plans/completed/2026-11-22-real-ux-p0-p1.md)、[侧边栏界面收敛](../exec-plans/completed/2026-11-22-sidebar-simplification.md)、[近 7 天侧栏排序](../exec-plans/completed/2026-11-22-sidebar-recent-activity-order.md)、[删除临时目录后缀](../exec-plans/completed/2026-11-22-remove-temporary-workspace-suffix.md)、[删除 workspace 名称后缀](../exec-plans/completed/2026-11-22-remove-workspace-name-suffix.md) |
+| 关联 | [CHG-0004](../exec-plans/completed/CHG-0004-usage-ledger-agents.md)、[侧栏来源溢出修复](../exec-plans/completed/2026-11-22-sidebar-source-overflow.md)、[真实体验确定性缺陷修复](../exec-plans/completed/2026-11-22-real-ux-clarity-fixes.md)、[P0/P1 全量修复](../exec-plans/completed/2026-11-22-real-ux-p0-p1.md)、[侧边栏界面收敛](../exec-plans/completed/2026-11-22-sidebar-simplification.md)、[近 7 天侧栏排序](../exec-plans/completed/2026-11-22-sidebar-recent-activity-order.md)、[删除临时目录后缀](../exec-plans/completed/2026-11-22-remove-temporary-workspace-suffix.md)、[删除 workspace 名称后缀](../exec-plans/completed/2026-11-22-remove-workspace-name-suffix.md)、[删除筛选 chip](../exec-plans/active/2026-11-22-remove-filter-chips.md) |
 
 ## 1. 摘要
 
@@ -18,7 +18,7 @@ Perch 当前覆盖 11 个本地 AI 编码 Agent 来源，与 usage-ledger 的来
 - 每个来源有采集器、默认路径与环境变量覆盖、probe、continue 决策、前端名称 / 颜色 / 图标，以及 fixture 测试。
 - 用量报告由 usage-ledger 的 `usage html` 生成并在 Perch 应用内 iframe 展示；报告仅由侧边栏页脚图标进入，任务分组不显示报告导航项。
 - 任务导航为「最近 / 更早 / 已归档 / 搜索」；内部视图仍包含 `report`，由页脚图标触发；workspace / 来源筛选叠加在三种任务视图上。侧边栏不显示 workspace 搜索框、来源触发方式 / 更新时间、来源说明和只读采集脚注。
-- 来源侧栏数字、smart list 数字与 workspace 数字均按当前视图和其它筛选联动；筛选 chip 明示组合条件，列表副标题展示当前视图数量。Workspaces / 来源列表按全局近 7 天会话数倒序，排序键不显示为可见文字；workspace 名称只显示源数据名称，不追加路径父目录、临时目录、未关联项目或分组后缀。
+- 来源侧栏数字、smart list 数字与 workspace 数字均按当前视图和其它筛选联动；第二栏不显示筛选 chip，侧栏选中态表达当前筛选，列表副标题展示当前视图数量。Workspaces / 来源列表按全局近 7 天会话数倒序，排序键不显示为可见文字；workspace 名称只显示源数据名称，不追加路径父目录、临时目录、未关联项目或分组后缀。
 
 ## 3. 成功指标
 
@@ -37,18 +37,19 @@ Perch 当前覆盖 11 个本地 AI 编码 Agent 来源，与 usage-ledger 的来
 - R12：When 扫描开始 / 结束, the system shall 在应用内显示来源、触发方式与耗时；后台更新与手动刷新可区分。
 - R13：When 任意任务视图超过 60 条, the system shall 分页渲染并提供“显示更多”；「待关注」不作为用户可见导航项，`Counts.attention` 仅保留在 payload 供后续诊断。
 - R14：When 搜索有 N 个命中, the system shall 返回全部 N 条，并在弹层按 50 条分页展开；When 打开命中结果, the system shall 自动展开到该任务所在页并定位。
-- R15：When 视图 / workspace / 来源筛选组合变化, the system shall 让侧栏计数联动当前口径并显示可清除 chip；When workspace 名称重复或来自临时 / 无项目路径, the system shall 用文字区分并归组；Workspaces 分组不显示搜索框。
+- R15：When 视图 / workspace / 来源筛选组合变化, the system shall 让侧栏计数联动当前口径；第二栏不显示可清除筛选 chip；When workspace 名称重复或来自临时 / 无项目路径, the system shall 用文字区分并归组；Workspaces 分组不显示搜索框。
 - R16：While 侧栏 Workspaces / 来源列表渲染, the system shall 按近 7 天非归档、非缺失、主会话数倒序；同数时按最近活动时间倒序，最后按名称 / 特殊目录稳定排序；排序不受当前视图 / 筛选影响，且不显示排序计数文字。
 - R17：When Workspaces 或来源列表超过 8 项, the system shall 折叠排序后的后续项并提供「显示更多 / 收起」；When 当前选中项排在折叠区, the system shall 仍显示该选中项。
 - R18：When Workspaces 列表渲染, the system shall 不显示 `[临时目录]`、`[未关联项目]` 或任何 workspace 分组后缀；When 排序时, the system shall 不按路径类型把 workspace 后置。
 - R19：When Workspaces 列表渲染, the system shall 对每个 workspace 只显示源数据名称，不追加路径父目录或点号后缀；When 名称重复, the system shall 保持两个同名按钮，不做可见消歧。
+- R20：When workspace / 来源筛选生效, the system shall 通过侧栏选中态表达筛选，不在第二栏顶部显示 `Workspace：… ×` / `来源：… ×` 或任何筛选 chip；搜索弹层内部作用域提示不受影响。
 - R6：When 来源数量增加使侧栏导航内容超过可用高度, the system shall 在导航内容区内部滚动并保持侧栏页脚固定，不得压缩、覆盖或裁切来源项。
 - R7：When 窗口缩小到最小尺寸 `900×560`, the system shall 允许用户通过滚动与键盘到达全部来源、来源说明和固定页脚。
 - R8：When 用户切换任务视图、workspace 或来源筛选, the system shall 不保留不属于当前列表的 Inspector 选中任务；When 搜索结果打开对应任务, the system shall 仍定位并选中该任务。
 - R9：When 用量报告打开, the system shall 标识当前报告视图为全局报告、提供返回任务路径，且不启动外部浏览器；任务分组不显示报告导航项。
 - R10：While 当前 workspace / 来源筛选生效, the system shall 在搜索弹层明示搜索作用域；When 无筛选时, the system shall 明示忽略任务视图并搜索全部会话（含归档）。
 
-验证位置：R1–R5 见来源采集器 / probe / continue 测试与当前代码核对；R6–R7 见侧栏布局实机验证；R8–R19 见本次变更文档的 core / Tauri 测试、demo UI 验收与 `npm run check`。
+验证位置：R1–R5 见来源采集器 / probe / continue 测试与当前代码核对；R6–R7 见侧栏布局实机验证；R8–R20 见本次变更文档的 core / Tauri 测试、demo UI 验收与 `npm run check`。
 
 ## 5. 变更索引
 
@@ -62,6 +63,7 @@ Perch 当前覆盖 11 个本地 AI 编码 Agent 来源，与 usage-ledger 的来
 | 2026-11-22 | 侧栏 Workspaces / 来源按近 7 天会话数排序 | 已验证 | [../exec-plans/completed/2026-11-22-sidebar-recent-activity-order.md](../exec-plans/completed/2026-11-22-sidebar-recent-activity-order.md) |
 | 2026-11-22 | 删除 workspace 的「[临时目录]」后缀 | 已验证 | [../exec-plans/completed/2026-11-22-remove-temporary-workspace-suffix.md](../exec-plans/completed/2026-11-22-remove-temporary-workspace-suffix.md) |
 | 2026-11-22 | 删除 workspace 名称的路径父目录后缀 | 已验证 | [../exec-plans/completed/2026-11-22-remove-workspace-name-suffix.md](../exec-plans/completed/2026-11-22-remove-workspace-name-suffix.md) |
+| 2026-11-22 | 删除第二栏筛选 chip | 开发中 | [../exec-plans/active/2026-11-22-remove-filter-chips.md](../exec-plans/active/2026-11-22-remove-filter-chips.md) |
 
 ## 6. 链接
 
