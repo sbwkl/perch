@@ -59,7 +59,7 @@
 
 ## 7. 验证结果
 
-- 自动化：`npm run check` 0 errors / 0 warnings；`npm run build` 成功；`cargo fmt --all --check` 通过；`cargo clippy -p perch-core --all-targets -- -D warnings` 零告警；`cargo test -p perch-core` 与 `cargo test -p perch --lib` 全部通过。
+- 自动化：`npm run check` 0 errors / 0 warnings；`npm run build` 成功；`cargo fmt --all --check` 通过；`cargo clippy -p perch-core --all-targets -- -D warnings` 零告警；`cargo test -p perch-core` 与 `cargo test -p perch --lib` 全部通过；`tmp/integration-remove-temporary-suffix` 从最新 `origin/main` 合入无冲突、`cargo test --workspace` 与全量门禁通过并删除；PR https://github.com/sbwkl/perch/pull/9 的 Frontend / Rust core CI 均通过。
 - demo / CDP 合成数据验收（`?stress=520`）：折叠与展开状态下所有 workspace 标签均不含 `[临时目录]`、`[未关联项目]` 或 `&#x20;`；路径名含 `tmp` 的合成 workspace 只显示 `tmp`，不再带分组后缀或路径类型后置；`data-recent-count` 非递增且同数按活动时间倒排；近 7 天排序、折叠 / 展开、900×560 无横向溢出与页脚报告图标均保持。
 - 边界：默认 demo 数据、无项目路径、重名 workspace、报告 / 搜索 / 筛选 / 分页组合保持既有路径；未读取真实 SQLite / JSONL。
 
@@ -79,3 +79,4 @@
 |---|---|---|
 | 提议 → 就绪 | wayne + agent | 2026-11-22 用户明确要求删除 `[临时目录]` 后缀；本变更文档先于代码 |
 | 开发中 → 已验证 | agent | 2026-11-22 本文件 §7：全量门禁与 demo / CDP 合成数据验收通过 |
+| 已验证（集成 / PR） | agent | 临时集成分支从最新 main 全量验证通过并删除；PR #9 CI 两项检查通过 |
