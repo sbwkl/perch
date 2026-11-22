@@ -56,7 +56,7 @@
 
 ## 7. 验证结果
 
-- 自动化：`npm run check` 0 errors / 0 warnings；`npm run build` 成功；`cargo fmt --all --check` 通过；`cargo clippy -p perch-core --all-targets -- -D warnings` 零告警；`cargo test -p perch-core` 与 `cargo test -p perch --lib` 全部通过。
+- 自动化：`npm run check` 0 errors / 0 warnings；`npm run build` 成功；`cargo fmt --all --check` 通过；`cargo clippy -p perch-core --all-targets -- -D warnings` 零告警；`cargo test -p perch-core` 与 `cargo test -p perch --lib` 全部通过；`tmp/integration-remove-filter-chips` 从最新 `origin/main` 合入无冲突、`cargo test --workspace` 与全量门禁通过并删除；PR https://github.com/sbwkl/perch/pull/9 的 Frontend / Rust core CI 均通过。
 - demo / CDP 合成数据验收：初始与同时选中 workspace / 来源后，`.filter-chips` / `.filter-chip` 数量均为 0；第二栏文本不含 `Workspace：` / `来源：` tag；侧栏 workspace / 来源各有 1 个 `aria-pressed=true`，任务数缩小到 2、smart list 联动为最近 2 / 更早 0 / 已归档 0；搜索弹层仍显示自己的作用域说明；900×560 无横向溢出、页脚报告图标保留且无页脚文字。
 - 边界：无筛选、单筛选、双筛选、报告视图、空列表、任务分页 / 搜索分页保持既有行为；未读取真实 SQLite / JSONL。
 
@@ -76,3 +76,4 @@
 |---|---|---|
 | 提议 → 就绪 | wayne + agent | 2026-11-22 用户明确要求删除第二栏筛选 tag；本变更文档先于代码 |
 | 开发中 → 已验证 | agent | 2026-11-22 本文件 §7：全量门禁与 demo / CDP 合成数据验收通过 |
+| 已验证（集成 / PR） | agent | 临时集成分支从最新 main 全量验证通过并删除；PR #9 CI 两项检查通过 |
