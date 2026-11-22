@@ -270,16 +270,6 @@
 
   const canToggleSources = $derived(sourceItems.length > NAV_VISIBLE_LIMIT);
 
-  function clearWorkspaceFilter() {
-    workspaceFilter = null;
-    clearSelection();
-  }
-
-  function clearSourceFilter() {
-    sourceFilter = null;
-    clearSelection();
-  }
-
   function compareTaskOrder(left: TaskView, right: TaskView): number {
     const leftRunning = left.status === "running";
     const rightRunning = right.status === "running";
@@ -322,18 +312,6 @@
         ? `${continueHint.label} ${selected?.source_label ?? ""}`.trim()
         : `打开 ${selected?.source_label ?? ""}`.trim(),
   );
-
-  const filterChips = $derived.by(() => {
-    const chips: Array<{ label: string; clear: () => void }> = [];
-    if (workspaceFilter) {
-      const name = workspaceItems.find((item) => item.key === workspaceFilter)?.label ?? workspaceFilter;
-      chips.push({ label: `Workspace：${name}`, clear: clearWorkspaceFilter });
-    }
-    if (sourceFilter) {
-      chips.push({ label: `来源：${SOURCE_LABELS[sourceFilter] ?? sourceFilter}`, clear: clearSourceFilter });
-    }
-    return chips;
-  });
 
   const searchScope = $derived.by(() => {
     const parts: string[] = [];
@@ -1165,15 +1143,6 @@
           {#if sourceUsage.matched_tasks > 0}
             <span class="usage-pill muted">匹配 {sourceUsage.matched_tasks} 个会话</span>
           {/if}
-        </div>
-      {/if}
-      {#if filterChips.length > 0}
-        <div class="filter-chips">
-          {#each filterChips as chip}
-            <button class="filter-chip" onclick={chip.clear} title="清除此筛选">
-              {chip.label}<span aria-hidden="true">×</span>
-            </button>
-          {/each}
         </div>
       {/if}
     </header>

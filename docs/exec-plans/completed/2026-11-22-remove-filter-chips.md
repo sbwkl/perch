@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 状态 | 开发中 |
+| 状态 | 已验证 |
 | Owner | wayne + agent |
 | 所属模块 / 入口 | `src/App.svelte`、`src/app.css`、产品规格与当前状态文档 |
 | 关联 | [agent-sources.md](../../product-specs/agent-sources.md) R15 / R20；[P0/P1 全量修复](../completed/2026-11-22-real-ux-p0-p1.md)；[侧边栏界面收敛](../completed/2026-11-22-sidebar-simplification.md) |
@@ -54,18 +54,25 @@
 - demo / CDP 合成数据验收：点击 workspace + 来源筛选后，第二栏 `.filter-chips` / `.filter-chip` 数量为 0，页面文本不含 `Workspace：`、`来源：` tag；侧栏对应两按钮仍 `aria-pressed=true`，列表数量与 smart list 联动；再次点击侧栏项可清除；搜索弹层作用域与清除入口仍可用；900×560 无横向溢出。
 - 边界：无筛选、单筛选、双筛选、报告视图、空列表、任务分页 / 搜索分页；只使用合成数据。
 
-## 7. 回滚
+## 7. 验证结果
+
+- 自动化：`npm run check` 0 errors / 0 warnings；`npm run build` 成功；`cargo fmt --all --check` 通过；`cargo clippy -p perch-core --all-targets -- -D warnings` 零告警；`cargo test -p perch-core` 与 `cargo test -p perch --lib` 全部通过。
+- demo / CDP 合成数据验收：初始与同时选中 workspace / 来源后，`.filter-chips` / `.filter-chip` 数量均为 0；第二栏文本不含 `Workspace：` / `来源：` tag；侧栏 workspace / 来源各有 1 个 `aria-pressed=true`，任务数缩小到 2、smart list 联动为最近 2 / 更早 0 / 已归档 0；搜索弹层仍显示自己的作用域说明；900×560 无横向溢出、页脚报告图标保留且无页脚文字。
+- 边界：无筛选、单筛选、双筛选、报告视图、空列表、任务分页 / 搜索分页保持既有行为；未读取真实 SQLite / JSONL。
+
+## 8. 回滚
 
 单分支 revert；纯前端展示 / 文档变更，无 IPC、schema 或源数据改动。恢复 `filterChips` 派生与渲染块即恢复历史 chip。
 
-## 8. 风险与未决边界
+## 9. 风险与未决边界
 
 - 删除 chip 后，当前筛选仅在侧栏选中态体现；这是用户明确要求。
 - 搜索作用域提示仍会显示 `Workspace：…` / `来源：…`，因为那是搜索弹层内部说明，不是第二栏筛选 tag。
 - overlay、手动命名 / 隐藏 workspace 仍属于 P2，不在本轮范围。
 
-## 9. 变更记录
+## 10. 变更记录
 
 | 状态 | 操作人 | 证据 / 链接 |
 |---|---|---|
 | 提议 → 就绪 | wayne + agent | 2026-11-22 用户明确要求删除第二栏筛选 tag；本变更文档先于代码 |
+| 开发中 → 已验证 | agent | 2026-11-22 本文件 §7：全量门禁与 demo / CDP 合成数据验收通过 |

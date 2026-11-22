@@ -1287,30 +1287,6 @@ kbd {
   }
 }
 
-.filter-chips {
-  display: flex;
-  flex: 1 0 100%;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.filter-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 8px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 10.5px;
-  cursor: pointer;
-}
-
-.filter-chip:hover {
-  filter: brightness(1.05);
-}
-
 .scan-status {
   display: flex;
   align-items: center;
