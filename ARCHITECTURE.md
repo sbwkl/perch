@@ -47,13 +47,13 @@ Perch 是一个 macOS 桌面应用：Tauri 2 壳 + 纯 Rust core + Svelte 5 前�
 | 扫描引擎 | `src/sync.rs` | 逐个执行采集器，捕获 panic，写快照，判定缺失，记录同步状态 |
 | 快照存储 | `src/store.rs` | `cache.db` schema、upsert、缺失标记、sync_state / scan_run |
 | 查询 | `src/query.rs` | 把快照组装为 `BootstrapPayload`（workspaces、sources、counts、可选 usage） |
-| 搜索 | `src/search.rs` | 只读 `task` / `task_todo`，NFKC 归一 + 拼音 + 模糊匹配 + 字段加权，返回前 10 条与总数 |
+| 搜索 | `src/search.rs` | 只读 `task` / `task_todo`，NFKC 归一 + 拼音 + 模糊匹配 + 字段加权，按 workspace / 来源筛选后返回前 10 条与总数 |
 | 用量桥接 | `src/usage.rs` | 只读打开 usage-ledger 的 `usage.db`，按 `session_id` 聚合 token / credits / est |
 | 探测 | `src/probe.rs` | 轻量判断源是否变化：SQLite `PRAGMA data_version`、JSONL 文件数与最新 mtime |
 | 继续工作 | `src/continue_work.rs` | 按来源和进程探测决定打开 App / URL / 终端，并校验 session id |
 | 路径 | `src/paths.rs` | 默认源路径与环境变量覆盖 |
 | Tauri 壳 | `src-tauri/src/lib.rs` | IPC 命令、状态管理、3 秒探测循环、事件 |
-| 前端 | `src/App.svelte` | 三栏布局、任务筛选、元数据搜索、详情与“打开”按钮 |
+| 前端 | `src/App.svelte` | 三栏布局、任务筛选、元数据搜索、详情与“继续工作”按钮 |
 | 演示夹具 | `demo/` | 仅开发用：假数据 + Tauri API stub，用于截图与 UI 调试 |
 
 ## 数据流
@@ -61,7 +61,7 @@ Perch 是一个 macOS 桌面应用：Tauri 2 壳 + 纯 Rust core + Svelte 5 前�
 ### 启动与刷新
 
 1. 前端 `onMount` 调用 `bootstrap`，读取 `cache.db` 中的上次快照，立即渲染。
-2. 随后调用 `refresh_sources`：`ScanEngine::scan(None, "manual")` 依次执行七个采集器。
+2. 随后调用 `refresh_sources`：`ScanEngine::scan(None, "manual")` 依次执行 11 个采集器。
 3. 每个采集器独立返回 `ok / partial / unavailable / error`；单个来源失败不影响其他来源。
 4. `ok` 结果在事务中 upsert，并在扫描记录 `scan_run` 完成后把本次未出现的任务标记
    `source_missing`；`partial / error / unavailable` 保留旧快照。
@@ -75,9 +75,9 @@ Perch 是一个 macOS 桌面应用：Tauri 2 壳 + 纯 Rust core + Svelte 5 前�
 `src-tauri` 启动一个后台线程，每 3 秒执行一次：
 
 - 窗口最小化或不可见时跳过。
-- Qoder / OpenCode / Kilo / Cline：`PRAGMA data_version` 是否变化。
-- Claude / Codex / Trae CN：JSONL 文件数 + 最新 mtime 是否变化（Trae CN 同时覆盖
-  hook 事件与 memory 会话文件两个目录）。
+- Qoder / OpenCode / Kilo / Cline / CodeArts：`PRAGMA data_version` 是否变化。
+- Claude / Codex / Trae CN / Antigravity / MiniMax Code：JSONL 文件数 + 最新 mtime；
+  CodeBuddy：日志文件数 + 最新 mtime（Trae CN 同时覆盖 hook 事件与 memory 会话文件两个目录）。
 - 有变化时只重扫对应来源（`trigger = "live"`），完成后再 emit `sources-updated`，
   前端收到事件后重新 `bootstrap`。
 
@@ -96,9 +96,9 @@ Perch 是一个 macOS 桌面应用：Tauri 2 壳 + 纯 Rust core + Svelte 5 前�
    `source + day + project` 粒度，不挂到单个任务。
 5. Tauri 的 3 秒探测同时比较 `usage.db` 主文件与 `-wal` 的 mtime；usage-ledger
    单独同步后也会触发前端重新 `bootstrap`，但 Perch 不会主动写该库。
-6. 侧边栏的用量报告图标走 usage-ledger 自己的 CLI：`usage html --output <Perch 缓存目录>`，
-   完成后用系统 `open` 打开生成的文件。报告是全局的，不按来源过滤；Perch 只读该库，
-   HTML 与缓存目录属于 Perch 自身。
+6. 侧边栏 / 任务导航的用量报告入口走 usage-ledger 自己的 CLI：
+   `usage html --output <Perch 缓存目录>`，完成后通过 asset 协议在应用内 iframe 展示。
+   报告是全局的，不按来源过滤；Perch 只读该库，HTML 与缓存目录属于 Perch 自身。
 
 ### 继续工作
 
@@ -113,6 +113,13 @@ Perch 是一个 macOS 桌面应用：Tauri 2 壳 + 纯 Rust core + Svelte 5 前�
 | Kilo | App 运行 → 激活 `ai.kilo.desktop`；否则终端 `kilo` |
 | Trae CN | 激活 `cn.trae.app`（hook/memory 无项目路径，也没有确认的会话级深链） |
 | Cline | `desktop` → 激活 `bot.cline.app`；`cli` → 终端 `cline --id <id>`；未知按 App 是否运行决定 |
+| Antigravity | 激活 `com.google.antigravity`（无确认的会话级恢复方式） |
+| MiniMax Code | 激活 `com.minimax.agent.cn`（无确认的会话级恢复方式） |
+| CodeArts | 激活 `com.huawei.codearts.agent`（无确认的会话级恢复方式） |
+| CodeBuddy | 激活 `com.tencent.codebuddycn`（无确认的会话级恢复方式） |
+
+`TaskView.continue_hint` 由 `continue_work::describe_continue` 按快照元数据生成只读通道文案；
+实际动作仍由 `plan_continue` 与 Tauri 固定模板执行，前端不传命令或 URL。
 
 session id 先经过字符集校验；终端命令由固定模板拼接，前端无法传入任意命令。
 终端通过 `osascript` 在 Terminal 中执行，并在命令前加一个空格，避免 shell 启动提示吞掉首字符。
@@ -156,9 +163,10 @@ usage-ledger 不可用时完全不出现。
 `src/App.svelte` 使用 Svelte 5 runes：
 
 - `payload` 保存最近一次 `bootstrap` 结果。
-- `recentTasks` / `flatTasks` 派生当前视图，按 `updated_at` 倒序，过滤子会话、自动化与归档。
-- 视图：`recent`（近 7 天）、`all`、`archived`；workspace 与来源筛选在 `all` 中生效。
-- Inspector 显示元数据、todo、resume 命令和“打开”按钮。
+- `flatTasks` 派生当前任务视图，按状态 / 置顶 / `updated_at` 排序，过滤子会话、自动化与归档。
+- 视图：`recent`（近 7 天）、`older`、`archived`、`report`；workspace 与来源筛选叠加在三种任务视图上。
+- `selected` 从当前 `flatTasks` 派生，切换视图 / 筛选后不会显示列表外的任务。
+- Inspector 显示元数据、todo、继续工作通道提示、resume 命令与动作按钮。
 - 来源图标内联在 `src/lib/source-icons.ts`，不加载远程资源或图标库。
 
 ## 扩展点：新增一个来源

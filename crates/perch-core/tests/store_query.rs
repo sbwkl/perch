@@ -278,6 +278,48 @@ fn bootstrap_groups_by_workspace_and_splits_recent_older() {
 }
 
 #[test]
+fn bootstrap_exposes_continue_hint_and_source_trigger() {
+    let store = CacheStore::open_in_memory().unwrap();
+    let scan = store.begin_scan("qoder", "full", "source", "test").unwrap();
+    store
+        .save_result(
+            &SourceResult::ok(
+                "qoder",
+                vec![make_task("qoder", "a", "alpha", 1_000.0)],
+                Vec::new(),
+            ),
+            scan,
+        )
+        .unwrap();
+    store
+        .record_sync_state(&perch_core::models::SourceSyncState {
+            source: "qoder".to_owned(),
+            last_scan_at: Some(1_000.0),
+            last_ok_at: Some(1_000.0),
+            last_mode: Some("full".to_owned()),
+            last_trigger: Some("live".to_owned()),
+            status: "ok".to_owned(),
+            files_seen: Some(1),
+            task_count: Some(1),
+            schema_version: None,
+            error: None,
+        })
+        .unwrap();
+
+    let payload = build_bootstrap(&store, 1_000.0).unwrap();
+    let task = &payload.workspaces[0].tasks[0];
+    let hint = task.continue_hint.as_ref().expect("continue hint");
+    assert_eq!(hint.label, "仅激活 App");
+    assert!(!hint.locates_session);
+    let source = payload
+        .sources
+        .iter()
+        .find(|item| item.source == "qoder")
+        .unwrap();
+    assert_eq!(source.last_trigger.as_deref(), Some("live"));
+}
+
+#[test]
 fn load_task_returns_single_snapshot_by_key() {
     let store = CacheStore::open_in_memory().unwrap();
     let scan = store.begin_scan("qoder", "full", "source", "test").unwrap();

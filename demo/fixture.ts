@@ -1,5 +1,6 @@
 import type {
   BootstrapPayload,
+  ContinueHint,
   SourceView,
   TaskUsage,
   TaskView,
@@ -109,6 +110,7 @@ function makeTask(seed: TaskSeed): TaskView {
     resume_cmd: seed.resume_cmd ?? null,
     is_recent: updated >= NOW - 7 * DAY,
     todos,
+    continue_hint: continueHint(seed.source),
     usage: seed.usage,
   };
 }
@@ -407,6 +409,32 @@ function buildWorkspaces(): WorkspaceGroup[] {
     );
 }
 
+function continueHint(source: string): ContinueHint {
+  const label = SOURCE_LABELS[source];
+  if (source === "claude") {
+    return {
+      channel: "terminal",
+      label: "终端恢复",
+      detail: `在 Terminal 中恢复 ${label} 会话`,
+      locates_session: true,
+    };
+  }
+  if (source === "codex") {
+    return {
+      channel: "deeplink",
+      label: "深链打开",
+      detail: "通过会话深链打开 Codex App",
+      locates_session: true,
+    };
+  }
+  return {
+    channel: "app",
+    label: "仅激活 App",
+    detail: `激活 ${label}，无法定位到具体会话`,
+    locates_session: false,
+  };
+}
+
 function buildSources(): SourceView[] {
   return SOURCES.map((source) => ({
     source,
@@ -414,6 +442,7 @@ function buildSources(): SourceView[] {
     status: "ok" as const,
     last_scan_at: NOW,
     last_ok_at: NOW,
+    last_trigger: "demo",
     task_count: TASKS.filter((task) => task.source === source).length,
     files_seen: 6,
     error: null,

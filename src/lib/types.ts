@@ -36,6 +36,15 @@ export interface EstUsage {
   last_day: string | null;
 }
 
+export type ContinueHintChannel = "terminal" | "deeplink" | "app" | "dynamic";
+
+export interface ContinueHint {
+  channel: ContinueHintChannel;
+  label: string;
+  detail: string;
+  locates_session: boolean;
+}
+
 export interface TaskUsage {
   token?: TokenUsage;
   credits?: CreditUsage;
@@ -90,6 +99,7 @@ export interface TaskView {
   resume_cmd: string | null;
   is_recent: boolean;
   todos: TodoView[];
+  continue_hint?: ContinueHint;
   usage?: TaskUsage;
 }
 
@@ -107,6 +117,7 @@ export interface SourceView {
   status: SourceStatus;
   last_scan_at: number | null;
   last_ok_at: number | null;
+  last_trigger: string | null;
   task_count: number;
   files_seen: number | null;
   error: string | null;

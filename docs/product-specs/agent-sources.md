@@ -6,51 +6,51 @@
 | 文档类型 | 产品规格 |
 | 当前版本 | v0.1.0 |
 | 适用范围 | 当前来源覆盖行为与验收规格 |
-| 关联 | [CHG-0004](../exec-plans/completed/CHG-0004-usage-ledger-agents.md)、[侧栏来源溢出修复](../exec-plans/completed/2026-11-22-sidebar-source-overflow.md) |
+| 关联 | [CHG-0004](../exec-plans/completed/CHG-0004-usage-ledger-agents.md)、[侧栏来源溢出修复](../exec-plans/completed/2026-11-22-sidebar-source-overflow.md)、[真实体验确定性缺陷修复](../exec-plans/completed/2026-11-22-real-ux-clarity-fixes.md) |
 
 ## 1. 摘要
 
-Perch 侧边栏与任务列表应覆盖用户实际在用的全部 AI 编码 Agent。当前 Perch 内置 7 个来源（qoder、claude、codex、opencode、kilo、trae-cn、cline），而同机的 usage-ledger 已支持 11 个来源；Perch 需要跟进补齐缺失的来源，使"最近的会话任务"与"用量报告"覆盖一致。
+Perch 当前覆盖 11 个本地 AI 编码 Agent 来源，与 usage-ledger 的来源集合一致。来源的会话元数据以只读方式进入统一任务列表；界面需明示每个来源的扫描状态、当前选中任务的继续工作通道，并保证视图 / 筛选上下文一致。历史“补齐四个来源”的变更过程见 CHG-0004，本文只陈述当前产品行为与验收。
 
-## 2. 问题与证据
+## 2. 当前事实与边界
 
-- 谁、什么场景：用户在 Perch 查看"最近任务"，并查看 usage-ledger 用量报告。
-- 现在怎么做、代价是什么：Antigravity、MiniMax Code、CodeArts（码道）、CodeBuddy CN 四个 Agent 的会话不出现在 Perch 任务列表，但它们的用量出现在内嵌报告中，视图割裂。
-- 证据：usage-ledger `SOURCES`（11 个，`src/usage_ledger/cli.py:32`）对比 Perch `ALL_SOURCES`（7 个，`crates/perch-core/src/models.rs`）；差异为 antigravity、codearts、minimax、codebuddy（usage-ledger CHG-0016/0017/0018/0019，2026-11-20 已全部合入其 main）。
-- 不做的后果：报告里有用量、任务列表里没有会话，用户需要在另一套工具里查看这四个 Agent 的工作记录。
+- 当前 `ALL_SOURCES` 共 11 个：qoder、claude、codex、opencode、kilo、trae-cn、cline、antigravity、minimax、codearts、codebuddy。
+- 每个来源有采集器、默认路径与环境变量覆盖、probe、continue 决策、前端名称 / 颜色 / 图标，以及 fixture 测试。
+- 用量报告由 usage-ledger 的 `usage html` 生成并在 Perch 应用内 iframe 展示；报告是全局视图，不随任务筛选变化。
+- 任务视图为 `recent`（近 7 天）、`older`、`archived`、`report`；workspace / 来源筛选叠加在三种任务视图上。
+- 来源侧栏数字表示全部快照任务数（含归档 / 子会话 / 自动化），不是当前视图的可见任务数；当前视图数量在列表副标题展示。此口径为既有行为，若需联动应作为独立产品变更评审。
 
-## 3. 目标与非目标
+## 3. 成功指标
 
-- 目标：Perch 任务列表覆盖与 usage-ledger 一致的来源集合；每个来源在 UI 有正确的名称、颜色与图标；usage 报告的 `PERCH_SOURCES` 子集与之同步。
-- 非目标：复制 usage-ledger 的 token 统计逻辑到 Perch（用量仍由 usage-ledger 唯一渲染）；为未在 usage-ledger 登记的 Agent 新建来源；来源自动发现/插件化。
+- 主指标：`ALL_SOURCES` 与 usage-ledger `SOURCES` 一致（当前 11 个）；文档中当前状态描述与代码一致。
+- 护栏指标：不写源数据；单源失败不影响其他来源；失败保留旧快照；`continue_task` 仍只接受任务 key；四轨用量分轨展示。
+- 验证方式：临时目录 fixture 单元测试 + demo UI 验收 + 当前文档 / 代码核对。
 
-## 4. 成功指标
-
-- 主指标：`ALL_SOURCES` 与 usage-ledger `SOURCES` 一致（当前 11 个）。
-- 护栏指标：每个新增来源有采集器、探测（probe）、continue/resume 行为、UI 名称/颜色/图标、`docs/design-docs/source-designs/SOURCES.md` 条目；`cargo test --workspace` 全绿。
-- 验证方式：临时目录 fixture 单元测试 + 实机冒烟（见 CHG-0004 §5）。
-
-## 5. 当前需求与验收（EARS）
+## 4. 当前需求与验收（EARS）
 
 - R1：When 某来源的本地数据目录存在, the system shall 扫描其会话并在任务列表展示，字段语义与既有来源一致（标题、项目、时间、状态）。
-- R2：If 某来源的数据目录不存在, then the system shall 将该来源标记为不可用，不影响其他来源与其他功能。
-- R3：When 用户对某来源的会话触发"继续/打开", the system shall 按该 Agent 的方式恢复会话（deeplink、命令行或目录激活）。
+- R2：If 某来源的数据目录不存在或采集失败, then the system shall 标记来源状态并保留旧快照，不影响其他来源与其他功能；状态需在侧栏可读暴露，不只依赖颜色。
+- R3：When 用户对某来源的会话触发“继续工作”, the system shall 按该 Agent 的固定方式恢复会话（deeplink、命令行或目录激活）；点击前需展示通道与是否可定位会话，命令 / URL 不得来自前端。
 - R4：When usage-ledger 报告包含某来源的用量, the system shall 将该来源计入 `PERCH_SOURCES` 用量子集。
-- R5：When 数据变化（文件 mtime 变化）, the system shall 通过对应探测类型（SQLite/JSONL/日志）触发增量重扫。
+- R5：When 数据变化（文件 mtime 变化）, the system shall 通过对应探测类型（SQLite/JSONL/日志）触发变化源的增量重扫。
 - R6：When 来源数量增加使侧栏导航内容超过可用高度, the system shall 在导航内容区内部滚动并保持侧栏页脚固定，不得压缩、覆盖或裁切来源项。
 - R7：When 窗口缩小到最小尺寸 `900×560`, the system shall 允许用户通过滚动与键盘到达全部来源、来源说明和固定页脚。
+- R8：When 用户切换任务视图、workspace 或来源筛选, the system shall 不保留不属于当前列表的 Inspector 选中任务；When 搜索结果打开对应任务, the system shall 仍定位并选中该任务。
+- R9：When 用量报告打开, the system shall 标识当前报告视图为全局报告、提供返回任务路径，且不启动外部浏览器。
+- R10：While 当前 workspace / 来源筛选生效, the system shall 在搜索弹层明示搜索作用域；When 无筛选时, the system shall 明示忽略任务视图并搜索全部会话（含归档）。
 
-验证位置：R1–R5 见来源采集器/探测测试与实机冒烟；R6–R7 见侧栏布局实机验证（`900×560` 与 `1200×780`）。
+验证位置：R1–R5 见来源采集器 / probe / continue 测试与当前代码核对；R6–R7 见侧栏布局实机验证；R8–R10 见本次变更文档的 demo UI 验收与 `npm run check`。
 
-## 6. 变更索引
+## 5. 变更索引
 
-| CHG ID | 标题 | 状态 | 链接 |
+| 变更 | 标题 | 状态 | 链接 |
 |---|---|---|---|
 | CHG-0004 | 接入 Antigravity / MiniMax / CodeArts / CodeBuddy 四个来源 | 已验证 | [../exec-plans/completed/CHG-0004-usage-ledger-agents.md](../exec-plans/completed/CHG-0004-usage-ledger-agents.md) |
 | 2026-11-22 | 侧边栏来源增多后的重叠与裁切 | 已验证 | [../exec-plans/completed/2026-11-22-sidebar-source-overflow.md](../exec-plans/completed/2026-11-22-sidebar-source-overflow.md) |
+| 2026-11-22 | 真实体验反馈中的确定性缺陷修复 | 已验证 | [../exec-plans/completed/2026-11-22-real-ux-clarity-fixes.md](../exec-plans/completed/2026-11-22-real-ux-clarity-fixes.md) |
 
-## 7. 链接
+## 6. 链接
 
 - 来源定义（对齐基准）：usage-ledger `src/usage_ledger/collectors.py`、`docs/exec-plans/completed/CHG-0016..0019`
 - Perch 扩展点：`ARCHITECTURE.md` §"扩展点：新增一个来源"
-- 既有来源文档：`docs/design-docs/source-designs/SOURCES.md`
+- 逐源设计：[docs/design-docs/source-designs/SOURCES.md](../design-docs/source-designs/SOURCES.md)

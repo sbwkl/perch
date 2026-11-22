@@ -39,9 +39,10 @@ src/                     Svelte 5 + TypeScript 前端
   lib/types.ts           IPC 数据类型
   lib/source-icons.ts    各来源品牌图标（生成物）
 src-tauri/               Tauri 2 壳
-  src/lib.rs             bootstrap / refresh_sources / continue_task、3 秒 probe 循环
+  src/lib.rs             bootstrap / refresh_sources / search_tasks / continue_task /
+                         open_usage_report、3 秒 probe 循环
 crates/perch-core/       采集、缓存、查询、继续工作决策
-  src/collectors/        七个来源的只读采集器
+  src/collectors/        11 个来源的只读采集器
   src/store.rs           cache.db schema 与 upsert
   src/sync.rs            ScanEngine 扫描事务
   src/query.rs           任务视图与 BootstrapPayload
@@ -89,11 +90,18 @@ docs/                    产品规格、设计知识库、执行计划、探针�
 | `PERCH_TRAE_CN_EVENTS_DIR` | Trae CN hook 事件目录 |
 | `PERCH_TRAE_CN_MEMORY_DIR` | Trae CN 会话记忆目录（`memory/projects`） |
 | `PERCH_CLINE_DB` | Cline 会话数据库 |
+| `PERCH_ANTIGRAVITY_IDE_DIR` | Antigravity IDE 数据目录 |
+| `PERCH_ANTIGRAVITY_CLI_DIR` | agy CLI 数据目录 |
+| `PERCH_MINIMAX_DIR` | MiniMax Code 数据目录 |
+| `PERCH_CODEARTS_DB` | CodeArts 会话数据库 |
+| `PERCH_CODEBUDDY_CN_LOGS_DIR` | CodeBuddy CN 日志目录 |
+| `PERCH_CODEBUDDY_IDE_LOGS_DIR` | CodeBuddy IDE 日志目录 |
+| `PERCH_CODEBUDDY_GENIE_DIR` | CodeBuddy genie-history 目录 |
 | `PERCH_CACHE_DB` | Perch 自己的 `cache.db` 路径 |
 | `PERCH_USAGE_DB` | usage-ledger 的 `usage.db` 路径（优先于下面两个） |
 | `USAGE_LEDGER_DB` | 与 usage-ledger 自身一致的数据库覆盖变量 |
 | `USAGE_LEDGER_HOME` | usage-ledger 数据目录；默认 `~/.local/share/usage-ledger` |
-| `PERCH_USAGE_BIN` | “打开用量报表”使用的 `usage` 可执行文件路径（默认在 PATH 与 `~/.local/bin` 查找） |
+| `PERCH_USAGE_BIN` | “用量报告”使用的 `usage` 可执行文件路径（默认在 PATH 与 `~/.local/bin` 查找） |
 
 集成测试使用临时目录 + 这些变量构造最小 fixture，不会读取真实用户数据。
 

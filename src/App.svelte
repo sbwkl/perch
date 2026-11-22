@@ -4,8 +4,10 @@
   import { onMount, tick } from "svelte";
   import type {
     BootstrapPayload,
+    ContinueHint,
     ContinueOutcome,
     SearchHit,
+    SourceView,
     SearchResponse,
     SyncReport,
     TaskView,
@@ -81,6 +83,7 @@
   let scanNotices = $state<ScanNotice[]>([]);
   let lastScanSummary = $state("");
   let view = $state<ViewMode>("recent");
+  let taskReturnView = $state<Exclude<ViewMode, "report">>("recent");
   let workspaceFilter = $state<string | null>(null);
   let sourceFilter = $state<string | null>(null);
   let selectedKey = $state<string | null>(null);
@@ -174,6 +177,43 @@
 
   const hasVisibleTasks = $derived(flatTasks.length > 0);
 
+  const selected = $derived.by<TaskView | null>(() =>
+    flatTasks.find((task) => task.key === selectedKey) ?? null,
+  );
+
+  const continueHint = $derived<ContinueHint | null>(selected?.continue_hint ?? null);
+
+  const continueButtonLabel = $derived(
+    continuing
+      ? "打开中…"
+      : continueHint
+        ? `${continueHint.label} ${selected?.source_label ?? ""}`.trim()
+        : `打开 ${selected?.source_label ?? ""}`.trim(),
+  );
+
+  const searchScope = $derived.by(() => {
+    const parts: string[] = [];
+    if (workspaceFilter) {
+      parts.push(
+        `Workspace：${workspaceItems.find((item) => item.key === workspaceFilter)?.name ?? workspaceFilter}`,
+      );
+    }
+    if (sourceFilter) parts.push(`来源：${SOURCE_LABELS[sourceFilter] ?? sourceFilter}`);
+    return parts;
+  });
+
+  const searchScopeLabel = $derived(
+    searchScope.length > 0
+      ? `作用域：${searchScope.join(" · ")}`
+      : "搜索所有会话（含归档）",
+  );
+
+  function searchScopeTitle(): string {
+    return searchScope.length > 0
+      ? `当前仅搜索 ${searchScope.join("、")}；视图不影响搜索，仍包含归档 / 子会话 / 自动化`
+      : "忽略最近 / 更早 / 已归档视图，搜索全部会话（含归档 / 子会话 / 自动化）";
+  }
+
   const allTasks = $derived.by(() => {
     const map = new Map<string, TaskView>();
     for (const group of payload?.workspaces ?? []) {
@@ -236,15 +276,6 @@
     return () => clearTimeout(timer);
   });
 
-  const selected = $derived.by<TaskView | null>(() => {
-    if (!payload || !selectedKey) return null;
-    for (const group of payload.workspaces) {
-      const found = group.tasks.find((task) => task.key === selectedKey);
-      if (found) return found;
-    }
-    return null;
-  });
-
   const selectedUsage = $derived(selected?.usage ?? null);
   const selectedToken = $derived(selectedUsage?.token ?? null);
   const selectedCredits = $derived(selectedUsage?.credits ?? null);
@@ -273,7 +304,7 @@
   });
 
   const subheading = $derived.by(() => {
-    if (view === "report") return "usage-ledger 生成 · 应用内嵌展示";
+    if (view === "report") return "usage-ledger 生成 · 全局报告 · 不随任务筛选变化";
     const generated = payload ? fullTime(payload.generated_at) : "—";
     const summary = lastScanSummary ? ` · ${lastScanSummary}` : "";
     return `${totalVisible} 个任务 · 快照 ${generated}${summary}`;
@@ -300,7 +331,9 @@
         Math.round((report.finished_at - report.started_at) * 1000),
       )} ms`;
       await loadBootstrap();
-      if (selectedKey && !payloadContains(selectedKey)) selectedKey = null;
+      if (selectedKey && !flatTasks.some((task) => task.key === selectedKey)) {
+        selectedKey = null;
+      }
     } catch (error) {
       errorMessage = error instanceof Error ? error.message : String(error);
     } finally {
@@ -309,10 +342,9 @@
     }
   }
 
-  function payloadContains(key: string): boolean {
-    return Boolean(
-      payload?.workspaces.some((group) => group.tasks.some((task) => task.key === key)),
-    );
+  function clearSelection() {
+    selectedKey = null;
+    continueNotice = "";
   }
 
   function selectTask(key: string) {
@@ -374,14 +406,24 @@
 
   function openUsageReport() {
     view = "report";
+    clearSelection();
     workspaceFilter = null;
     sourceFilter = null;
     closeSearch();
     void generateUsageReport(false);
   }
 
+  function returnToTasks() {
+    view = taskReturnView;
+    clearSelection();
+    reportNotice = "";
+    reportFailed = false;
+  }
+
   function selectView(next: ViewMode) {
+    if (next !== "report") taskReturnView = next;
     view = next;
+    clearSelection();
     workspaceFilter = null;
     sourceFilter = null;
     closeSearch();
@@ -413,7 +455,9 @@
   }
 
   function revealTask(task: TaskView) {
-    view = task.source_archived ? "archived" : task.is_recent ? "recent" : "older";
+    const nextView = task.source_archived ? "archived" : task.is_recent ? "recent" : "older";
+    view = nextView;
+    taskReturnView = nextView;
     workspaceFilter = task.workspace_key;
     sourceFilter = null;
     selectTask(task.key);
@@ -442,11 +486,53 @@
   function selectWorkspace(key: string) {
     workspaceFilter = workspaceFilter === key ? null : key;
     sourceFilter = null;
+    clearSelection();
   }
 
   function selectSource(source: string) {
     sourceFilter = sourceFilter === source ? null : source;
     workspaceFilter = null;
+    clearSelection();
+  }
+
+  function clearSearchScope() {
+    workspaceFilter = null;
+    sourceFilter = null;
+    void tick().then(() => searchInput?.focus());
+  }
+
+  function sourceStatusLabel(status: string): string {
+    const labels: Record<string, string> = {
+      ok: "正常",
+      partial: "部分扫描",
+      unavailable: "不可用",
+      error: "错误",
+      unknown: "未扫描",
+    };
+    return labels[status] ?? status;
+  }
+
+  function triggerLabel(trigger: string | null): string {
+    if (trigger === "live") return "实时";
+    if (trigger === "manual") return "手动";
+    if (trigger === "startup") return "启动";
+    return trigger ?? "未知";
+  }
+
+  function sourceTitle(source: SourceView): string {
+    const parts = [
+      `${source.label}：${sourceStatusLabel(source.status)}`,
+      `${source.task_count} 个快照任务（含归档 / 子会话）`,
+    ];
+    if (source.last_scan_at) {
+      parts.push(
+        `最近扫描 ${fullTime(source.last_scan_at)} · ${triggerLabel(source.last_trigger)}`,
+      );
+    } else {
+      parts.push("尚无扫描记录");
+    }
+    if (source.error) parts.push(source.error);
+    return parts.join("；");
   }
 
   function sourceColor(source: string): string {
@@ -658,6 +744,8 @@
           <button
             class="nav-item"
             class:active={view === item.id}
+            aria-current={view === item.id ? "page" : undefined}
+            aria-pressed={view === item.id}
             onclick={() => selectView(item.id)}
           >
             <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
@@ -668,8 +756,23 @@
           </button>
         {/each}
         <button
+          class="nav-item report-entry"
+          class:active={view === "report"}
+          aria-current={view === "report" ? "page" : undefined}
+          aria-pressed={view === "report"}
+          title="查看全局用量报告"
+          onclick={openUsageReport}
+        >
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path d={ICONS.report} />
+          </svg>
+          <span class="nav-label">用量报告</span>
+          <span class="nav-count">全局</span>
+        </button>
+        <button
           class="nav-item search-entry"
           class:active={searchOpen}
+          aria-pressed={searchOpen}
           title="搜索任务（⌘F）"
           onclick={openSearch}
         >
@@ -687,6 +790,7 @@
           <button
             class="nav-item"
             class:active={workspaceFilter === workspace.key}
+            aria-pressed={workspaceFilter === workspace.key}
             title={workspace.path ?? workspace.name}
             onclick={() => selectWorkspace(workspace.key)}
           >
@@ -698,7 +802,11 @@
           </button>
         {/each}
         {#if canToggleWorkspaces}
-          <button class="nav-more" onclick={() => (showAllWorkspaces = !showAllWorkspaces)}>
+          <button
+            class="nav-more"
+            aria-expanded={showAllWorkspaces}
+            onclick={() => (showAllWorkspaces = !showAllWorkspaces)}
+          >
             {showAllWorkspaces ? "收起" : `显示更多（${hiddenWorkspaceCount}）`}
           </button>
         {/if}
@@ -713,14 +821,21 @@
           <button
             class="nav-item source-item"
             class:active={sourceFilter === source.source}
-            title={source.error ?? source.label}
+            class:degraded={source.status !== "ok"}
+            aria-pressed={sourceFilter === source.source}
+            title={sourceTitle(source)}
             onclick={() => selectSource(source.source)}
           >
             <span class="source-icon">{@html sourceIconMarkup(source.source)}</span>
             <span class="nav-label">{source.label}</span>
-            <span class="nav-count">{source.task_count}</span>
+            {#if source.status !== "ok"}
+              <span class="source-status" aria-label={`来源状态：${sourceStatusLabel(source.status)}`}>
+                {sourceStatusLabel(source.status)}
+              </span>
+            {/if}
+            <span class="nav-count" title="全部快照任务数">{source.task_count}</span>
             {#if source.error && source.status !== "unavailable"}
-              <span class="source-warning">!</span>
+              <span class="source-warning" aria-hidden="true">!</span>
             {/if}
           </button>
         {/each}
@@ -746,6 +861,8 @@
             : view === "report"
               ? "重新生成用量报告"
               : "在应用内查看 usage-ledger 用量报告"}
+          aria-current={view === "report" ? "page" : undefined}
+          aria-pressed={view === "report"}
         >
           <svg
             class="report-icon"
@@ -760,6 +877,17 @@
             <path d={reportOpen ? ICONS.refresh : ICONS.report} />
           </svg>
         </button>
+      {:else}
+        <button
+          class="sidebar-report unavailable"
+          aria-label="用量报告不可用：未检测到 usage-ledger 用量数据"
+          title="未检测到 usage-ledger 用量数据；安装并同步后可在应用内查看报告"
+          onclick={openUsageReport}
+        >
+          <svg class="report-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d={ICONS.report} />
+          </svg>
+        </button>
       {/if}
     </footer>
   </aside>
@@ -771,6 +899,9 @@
         <p>{subheading}</p>
       </div>
       {#if view === "report"}
+        <button class="refresh-button" onclick={returnToTasks} title="返回任务视图">
+          <span>返回任务</span>
+        </button>
         <button
           class="refresh-button"
           onclick={() => void generateUsageReport(false)}
@@ -915,15 +1046,30 @@
         </header>
 
         <div class="continue-row">
+          {#if continueHint}
+            <span
+              class="continue-channel {continueHint.channel}"
+              title={continueHint.detail}
+              aria-label={`继续工作通道：${continueHint.label}；${continueHint.detail}`}
+            >
+              {continueHint.label}
+            </span>
+          {/if}
           <button
             class="continue-button"
             onclick={() => void continueTask()}
             disabled={continuing}
+            title={continueHint?.detail ?? "按来源固定模板打开"}
           >
-            {continuing ? "打开中…" : `打开 ${selected.source_label}`}
+            {continueButtonLabel}
           </button>
           {#if continueNotice}<span class="continue-note">{continueNotice}</span>{/if}
         </div>
+        {#if continueHint}
+          <p class="continue-detail">
+            {continueHint.detail}{#if !continueHint.locates_session}；点击前请确认当前 App 中的会话。{/if}
+          </p>
+        {/if}
 
         <section class="detail-block">
           <h3>任务信息</h3>
@@ -1092,7 +1238,10 @@
           </div>
         {:else if !searchActive}
           <div class="search-state">
-            <p>搜索所有会话（含归档）</p>
+            <p title={searchScopeTitle()}>{searchScopeLabel}</p>
+            {#if searchScope.length > 0}
+              <button class="search-scope-clear" onclick={clearSearchScope}>清除作用域</button>
+            {/if}
             <p class="subtle">
               支持标题、项目、路径、待办、模型、分支、状态、来源、类型、会话 ID；支持拼音与模糊匹配。
             </p>
@@ -1143,6 +1292,12 @@
         <span class="search-hints">
           <kbd>↑</kbd><kbd>↓</kbd> 选择 <kbd>↵</kbd> 打开 <kbd>Esc</kbd> 关闭
         </span>
+        {#if searchScope.length > 0}
+          <span class="search-scope" title={searchScopeTitle()}>
+            {searchScopeLabel}
+            <button onclick={clearSearchScope} aria-label="清除搜索作用域">清除</button>
+          </span>
+        {/if}
         {#if searchActive && !searchError}
           <span class="search-count">
             {#if searching}

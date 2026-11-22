@@ -164,6 +164,7 @@ fn task_view(
         resume_cmd: task.resume_cmd.clone(),
         is_recent: activity >= now - RECENT_WINDOW_SECONDS,
         todos: todo_items,
+        continue_hint: crate::continue_work::describe_continue(task),
         usage: None,
     }
 }
@@ -255,6 +256,7 @@ fn build_sources(tasks: &[TaskSnapshot], states: &[SourceSyncState]) -> Vec<Sour
                     .unwrap_or_else(|| "unknown".to_owned()),
                 last_scan_at: state.and_then(|item| item.last_scan_at),
                 last_ok_at: state.and_then(|item| item.last_ok_at),
+                last_trigger: state.and_then(|item| item.last_trigger.clone()),
                 task_count: task_counts.get(*source).copied().unwrap_or(0),
                 files_seen: state.and_then(|item| item.files_seen),
                 error: state.and_then(|item| item.error.clone()),

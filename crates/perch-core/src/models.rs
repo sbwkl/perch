@@ -3,6 +3,7 @@ use std::hash::{Hash, Hasher};
 
 use serde::{Deserialize, Serialize};
 
+use crate::continue_work::ContinueHint;
 use crate::usage::{TaskUsage, UsageOverview};
 
 pub const SOURCE_QODER: &str = "qoder";
@@ -295,6 +296,9 @@ pub struct TaskView {
     pub resume_cmd: Option<String>,
     pub is_recent: bool,
     pub todos: Vec<TodoView>,
+    /// Read-only hint derived from Rust's fixed continue-work templates.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub continue_hint: Option<ContinueHint>,
     /// Optional usage-ledger projection; absent when the archive is missing or
     /// this session has no recorded usage.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -317,6 +321,7 @@ pub struct SourceView {
     pub status: String,
     pub last_scan_at: Option<f64>,
     pub last_ok_at: Option<f64>,
+    pub last_trigger: Option<String>,
     pub task_count: i64,
     pub files_seen: Option<i64>,
     pub error: Option<String>,

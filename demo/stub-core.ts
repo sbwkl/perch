@@ -98,10 +98,11 @@ export async function invoke<T>(
       const task = payload.workspaces
         .flatMap((group) => group.tasks)
         .find((item) => item.key === taskKey);
+      const hint = task?.continue_hint;
       return {
-        channel: "app",
-        target: taskKey,
-        message: `已打开 ${task?.source_label ?? taskKey}（演示数据，不会启动任何应用）`,
+        channel: hint?.channel === "terminal" ? "cli" : "app",
+        target: hint?.label ?? taskKey,
+        message: `已按「${hint?.label ?? "打开"}」演示（不会启动任何应用）`,
       } as T;
     }
     default:

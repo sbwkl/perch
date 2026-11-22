@@ -56,7 +56,7 @@
 ## 核心设计要点（已定，勿反复）
 
 - **只读聚合**：各 agent 自己落盘的元数据是真值；Perch 的 `cache.db` 是可重建的快照索引。
-- **来源事实源**：当前支持 Qoder、Claude Code、Codex、OpenCode、Kilo、Trae CN、Cline；新增来源按 `ARCHITECTURE.md` 扩展点实现 `Collector`、路径、probe、continue、前端图标与测试。
+- **来源事实源**：当前支持 Qoder、Claude Code、Codex、OpenCode、Kilo、Trae CN、Cline、Antigravity、MiniMax Code、CodeArts、CodeBuddy；新增来源按 `ARCHITECTURE.md` 扩展点实现 `Collector`、路径、probe、continue、前端图标与测试。
 - **用量可选**：只读 usage-ledger 的 `usage.db`，按 `session_id` 关联；报告仍由 usage-ledger 自己渲染。四轨分开展示，永不相加。
 - **实时性**：窗口可见时每 3 秒 probe，SQLite `data_version` / JSONL 签名变化后只重扫变化源；`⌘R` 手动刷新。
 - **搜索**：P0 元数据搜索已实现（标题、项目、路径、待办、模型、分支、状态、来源、类型、会话 ID；中文 / 拼音 / 拉丁模糊匹配）；P1 内容搜索仅为 opt-in 设计，未实现。

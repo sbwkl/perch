@@ -235,6 +235,30 @@ button:focus-visible {
   color: var(--accent);
 }
 
+.source-item.degraded .nav-label {
+  color: var(--warn);
+}
+
+.source-status {
+  flex: none;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(164, 106, 18, 0.12);
+  color: var(--warn);
+  font-size: 9px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.report-entry .nav-count {
+  font-size: 9.5px;
+}
+
+.sidebar-report.unavailable {
+  color: var(--text-tertiary);
+  opacity: 0.7;
+}
+
 .nav-empty {
   margin: 4px 8px;
   font-size: 11px;
@@ -475,6 +499,37 @@ button:focus-visible {
 .search-state p.subtle {
   margin-top: 6px;
   font-size: 11px;
+}
+
+.search-scope-clear {
+  margin-top: 8px;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text-secondary);
+  font-size: 10.5px;
+  cursor: pointer;
+}
+
+.search-scope {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 58%;
+  color: var(--text-secondary);
+}
+
+.search-scope button {
+  flex: none;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 9.5px;
+  cursor: pointer;
 }
 
 .search-state.danger {
@@ -944,6 +999,43 @@ kbd {
   font-size: 11px;
   color: var(--text-secondary);
   word-break: break-word;
+}
+
+.continue-channel {
+  flex: none;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.continue-channel.terminal {
+  color: var(--accent);
+  border-color: var(--accent-soft);
+  background: var(--accent-soft);
+}
+
+.continue-channel.deeplink {
+  color: var(--ok);
+  border-color: rgba(15, 159, 110, 0.25);
+  background: rgba(15, 159, 110, 0.1);
+}
+
+.continue-channel.app {
+  color: var(--warn);
+  border-color: rgba(164, 106, 18, 0.25);
+  background: rgba(164, 106, 18, 0.1);
+}
+
+.continue-detail {
+  margin: 7px 0 0;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text-tertiary);
 }
 
 .detail-block {
