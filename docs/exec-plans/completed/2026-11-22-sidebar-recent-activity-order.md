@@ -61,7 +61,7 @@
 
 ## 7. 验证结果
 
-- 自动化：`npm run check` 0 errors / 0 warnings；`npm run build` 成功；`cargo fmt --all --check` 通过；`cargo clippy -p perch-core --all-targets -- -D warnings` 零告警；`cargo test -p perch-core`、`cargo test -p perch --lib` 全部通过。
+- 自动化：`npm run check` 0 errors / 0 warnings；`npm run build` 成功；`cargo fmt --all --check` 通过；`cargo clippy -p perch-core --all-targets -- -D warnings` 零告警；`cargo test -p perch-core`、`cargo test -p perch --lib` 全部通过；`tmp/integration-sidebar-recent-activity` 从最新 `origin/main` 合入无冲突、`cargo test --workspace` 与全量门禁通过并删除；PR https://github.com/sbwkl/perch/pull/9 的 Frontend / Rust core CI 均通过。
 - demo / CDP 合成数据验收（`?stress=520`）：Workspaces / 来源 `data-recent-count` 均非递增，同数时 `data-last-activity` 非递增；折叠时 Workspaces 8 项 / 来源 8 项，显示更多后 Workspaces 18 项 / 来源 11 项；折叠区来源 `MiniMax Code` 被选中后仍显示（`9` 项、`显示更多（2）`）；900×560 无横向溢出、页脚报告图标保留且页脚无文字。
 - 边界：默认无 stress 数据、无近 7 天活动、筛选叠加、报告视图、搜索 / 分页路径保持既有行为；未读取真实 SQLite / JSONL。
 
@@ -81,3 +81,4 @@
 |---|---|---|
 | 提议 → 就绪 | wayne + agent | 2026-11-22 用户明确要求按近 7 天会话数倒排；本变更文档与产品规格先于代码 |
 | 开发中 → 已验证 | agent | 2026-11-22 本文件 §7：全量门禁与 demo / CDP 合成数据验收通过 |
+| 已验证（集成 / PR） | agent | 临时集成分支从最新 main 全量验证通过并删除；PR #9 CI 两项检查通过 |
