@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 状态 | 开发中 |
+| 状态 | 已验证 |
 | Owner | wayne + agent |
 | 所属模块 / 入口 | `src/App.svelte`、`demo/fixture.ts`、产品规格与当前状态文档 |
 | 关联 | [agent-sources.md](../../product-specs/agent-sources.md) R15–R17；[侧边栏界面收敛](../completed/2026-11-22-sidebar-simplification.md)；[P0/P1 全量修复](../completed/2026-11-22-real-ux-p0-p1.md) |
@@ -59,18 +59,25 @@
 - demo / CDP 合成数据验收：使用 `?stress=520`，断言 Workspaces / 来源 `data-recent-count` 非递增、同数时 `data-last-activity` 非递增；两组列表都有「显示更多」且展开后全部可见；折叠区选中项仍可见；900×560 无横向溢出、页脚报告图标可点击。
 - 边界：默认无 stress 数据、无近 7 天活动、来源 / workspace 当前视图计数为 0、报告视图、搜索 / 筛选组合；只使用合成数据。
 
-## 7. 回滚
+## 7. 验证结果
+
+- 自动化：`npm run check` 0 errors / 0 warnings；`npm run build` 成功；`cargo fmt --all --check` 通过；`cargo clippy -p perch-core --all-targets -- -D warnings` 零告警；`cargo test -p perch-core`、`cargo test -p perch --lib` 全部通过。
+- demo / CDP 合成数据验收（`?stress=520`）：Workspaces / 来源 `data-recent-count` 均非递增，同数时 `data-last-activity` 非递增；折叠时 Workspaces 8 项 / 来源 8 项，显示更多后 Workspaces 18 项 / 来源 11 项；折叠区来源 `MiniMax Code` 被选中后仍显示（`9` 项、`显示更多（2）`）；900×560 无横向溢出、页脚报告图标保留且页脚无文字。
+- 边界：默认无 stress 数据、无近 7 天活动、筛选叠加、报告视图、搜索 / 分页路径保持既有行为；未读取真实 SQLite / JSONL。
+
+## 8. 回滚
 
 单分支 revert；无 IPC / schema / 源数据改动。排序键为前端派生值，删除后侧栏恢复声明顺序；`data-*` 属性对 UI 无影响。
 
-## 8. 风险与未决边界
+## 9. 风险与未决边界
 
 - 排序键不显示为可见数字：侧栏数字仍代表当前视图 / 筛选可点击任务数，可能与排序键不同；用 `title` / `aria-label` 不新增近 7 天描述，保持界面简洁。
 - 近 7 天窗口以 `bootstrap.generated_at` 为基准，避免长时间打开窗口后前端时钟漂移；bootstrap 更新时排序同步更新。
 - 源归档 / 源已删除 / 子会话 / 自动化任务不计入活动排序，避免噪声项挤占折叠区。
 
-## 9. 变更记录
+## 10. 变更记录
 
 | 状态 | 操作人 | 证据 / 链接 |
 |---|---|---|
 | 提议 → 就绪 | wayne + agent | 2026-11-22 用户明确要求按近 7 天会话数倒排；本变更文档与产品规格先于代码 |
+| 开发中 → 已验证 | agent | 2026-11-22 本文件 §7：全量门禁与 demo / CDP 合成数据验收通过 |

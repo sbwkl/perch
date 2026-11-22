@@ -98,6 +98,7 @@
   let continuing = $state(false);
   let continueNotice = $state("");
   let showAllWorkspaces = $state(false);
+  let showAllSources = $state(false);
   let reportOpen = $state(false);
   let reportNotice = $state("");
   let reportFailed = $state(false);
@@ -119,7 +120,8 @@
   let scanStatus = $state("");
   let activeScans = $state<Record<string, string>>({});
 
-  const WORKSPACE_VISIBLE_LIMIT = 8;
+  const NAV_VISIBLE_LIMIT = 8;
+  const RECENT_WINDOW_SECONDS = 7 * 24 * 60 * 60;
   const TASK_PAGE_SIZE = 60;
   const SEARCH_PAGE_SIZE = 50;
 
@@ -140,6 +142,45 @@
   const countView = $derived<Exclude<ViewMode, "report">>(
     view === "report" ? taskReturnView : view,
   );
+  interface ActivityRank {
+    recentCount: number;
+    lastActivity: number;
+  }
+
+  const activityIndex = $derived.by(() => {
+    const workspaces = new Map<string, ActivityRank>();
+    const sources = new Map<string, ActivityRank>();
+    const now = payload?.generated_at ?? Date.now() / 1000;
+    const cutoff = now - RECENT_WINDOW_SECONDS;
+    const rank = (map: Map<string, ActivityRank>, key: string, task: TaskView) => {
+      const activity = task.updated_at ?? task.created_at ?? 0;
+      const entry = map.get(key) ?? { recentCount: 0, lastActivity: 0 };
+      if (activity >= cutoff) entry.recentCount += 1;
+      entry.lastActivity = Math.max(entry.lastActivity, activity);
+      map.set(key, entry);
+    };
+    for (const task of allPrimaryTasks) {
+      if (task.source_archived || task.source_missing) continue;
+      rank(workspaces, task.workspace_key, task);
+      rank(sources, task.source, task);
+    }
+    return { workspaces, sources };
+  });
+
+  function activityOf(
+    map: Map<string, ActivityRank>,
+    key: string,
+  ): ActivityRank {
+    return map.get(key) ?? { recentCount: 0, lastActivity: 0 };
+  }
+
+  function compareActivity(left: ActivityRank, right: ActivityRank): number {
+    return (
+      right.recentCount - left.recentCount ||
+      right.lastActivity - left.lastActivity
+    );
+  }
+
 
   function tasksMatching(
     mode: ViewMode,
@@ -167,6 +208,7 @@
         name: group.name,
         path: group.project_path,
         count: tasksMatching(countView, group.key, sourceFilter).length,
+        activity: activityOf(activityIndex.workspaces, group.key),
       }))
       .filter((item) => item.count > 0);
     const nameCounts = new Map<string, number>();
@@ -184,14 +226,19 @@
           : "";
         return { ...item, special: Boolean(group), group, label: `${item.name}${suffix}${group ? ` [${group}]` : ""}` };
       })
-      .sort((left, right) => Number(left.special) - Number(right.special) || left.name.localeCompare(right.name));
+      .sort(
+        (left, right) =>
+          compareActivity(left.activity, right.activity) ||
+          Number(left.special) - Number(right.special) ||
+          left.name.localeCompare(right.name),
+      );
   });
 
   const visibleWorkspaces = $derived.by(() => {
-    if (showAllWorkspaces || workspaceItems.length <= WORKSPACE_VISIBLE_LIMIT) {
+    if (showAllWorkspaces || workspaceItems.length <= NAV_VISIBLE_LIMIT) {
       return workspaceItems;
     }
-    const visible = workspaceItems.slice(0, WORKSPACE_VISIBLE_LIMIT);
+    const visible = workspaceItems.slice(0, NAV_VISIBLE_LIMIT);
     if (workspaceFilter && !visible.some((item) => item.key === workspaceFilter)) {
       const active = workspaceItems.find((item) => item.key === workspaceFilter);
       if (active) visible.push(active);
@@ -203,14 +250,39 @@
     Math.max(0, workspaceItems.length - visibleWorkspaces.length),
   );
 
-  const canToggleWorkspaces = $derived(workspaceItems.length > WORKSPACE_VISIBLE_LIMIT);
+  const canToggleWorkspaces = $derived(workspaceItems.length > NAV_VISIBLE_LIMIT);
 
   const sourceItems = $derived.by(() =>
-    (payload?.sources ?? []).map((source) => ({
-      ...source,
-      count: tasksMatching(countView, workspaceFilter, source.source).length,
-    })),
+    (payload?.sources ?? [])
+      .map((source) => ({
+        ...source,
+        count: tasksMatching(countView, workspaceFilter, source.source).length,
+        activity: activityOf(activityIndex.sources, source.source),
+      }))
+      .sort(
+        (left, right) =>
+          compareActivity(left.activity, right.activity) ||
+          left.label.localeCompare(right.label),
+      ),
   );
+
+  const visibleSources = $derived.by(() => {
+    if (showAllSources || sourceItems.length <= NAV_VISIBLE_LIMIT) {
+      return sourceItems;
+    }
+    const visible = sourceItems.slice(0, NAV_VISIBLE_LIMIT);
+    if (sourceFilter && !visible.some((item) => item.source === sourceFilter)) {
+      const active = sourceItems.find((item) => item.source === sourceFilter);
+      if (active) visible.push(active);
+    }
+    return visible;
+  });
+
+  const hiddenSourceCount = $derived(
+    Math.max(0, sourceItems.length - visibleSources.length),
+  );
+
+  const canToggleSources = $derived(sourceItems.length > NAV_VISIBLE_LIMIT);
 
   function clearWorkspaceFilter() {
     workspaceFilter = null;
@@ -916,6 +988,8 @@
             class="nav-item"
             class:active={workspaceFilter === workspace.key}
             aria-pressed={workspaceFilter === workspace.key}
+            data-recent-count={workspace.activity.recentCount}
+            data-last-activity={workspace.activity.lastActivity}
             title={workspace.path ?? workspace.name}
             onclick={() => selectWorkspace(workspace.key)}
           >
@@ -942,12 +1016,14 @@
 
       <nav class="nav-section sources">
         <p class="section-title">来源</p>
-        {#each sourceItems as source (source.source)}
+        {#each visibleSources as source (source.source)}
           <button
             class="nav-item source-item"
             class:active={sourceFilter === source.source}
             class:degraded={source.status !== "ok"}
             aria-pressed={sourceFilter === source.source}
+            data-recent-count={source.activity.recentCount}
+            data-last-activity={source.activity.lastActivity}
             aria-label={`${source.label}，${sourceStatusLabel(source.status)}，当前视图 ${source.count} 个任务`}
             title={sourceTitle(source)}
             onclick={() => selectSource(source.source)}
@@ -965,6 +1041,15 @@
             {/if}
           </button>
         {/each}
+        {#if canToggleSources}
+          <button
+            class="nav-more"
+            aria-expanded={showAllSources}
+            onclick={() => (showAllSources = !showAllSources)}
+          >
+            {showAllSources ? "收起" : `显示更多（${hiddenSourceCount}）`}
+          </button>
+        {/if}
       </nav>
     </div>
 

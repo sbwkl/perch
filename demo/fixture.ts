@@ -392,6 +392,12 @@ const TASKS: TaskView[] = [
 ];
 const STRESS_COUNT = Number(new URLSearchParams(location.search).get("stress") ?? 0);
 if (STRESS_COUNT > 0) {
+  for (let index = 0; index < 12; index += 1) {
+    WORKSPACES.push({
+      name: `合成工作区 ${String(index + 1).padStart(2, "0")}`,
+      path: `/Users/demo/synthetic/workspace-${index + 1}`,
+    });
+  }
   for (let index = 0; index < STRESS_COUNT; index += 1) {
     TASKS.push(
       makeTask({
@@ -405,6 +411,37 @@ if (STRESS_COUNT > 0) {
         unread: index % 29 === 0,
       }),
     );
+  }
+  // Synthetic recent sessions make the sidebar ordering deterministic under stress.
+  for (let index = 0; index < WORKSPACES.length; index += 1) {
+    const recentSessions = 1 + (index % 5);
+    for (let session = 0; session < recentSessions; session += 1) {
+      TASKS.push(
+        makeTask({
+          source: SOURCES[(index + session * 3) % SOURCES.length],
+          title: `合成近期会话 ${index + 1}-${session + 1}`,
+          workspace: index,
+          status: "idle",
+          updated_minutes_ago: 30 + index * 10 + session,
+          created_days_ago: 1,
+        }),
+      );
+    }
+  }
+  for (let index = 0; index < SOURCES.length; index += 1) {
+    const recentSessions = index % 4;
+    for (let session = 0; session < recentSessions; session += 1) {
+      TASKS.push(
+        makeTask({
+          source: SOURCES[index],
+          title: `合成来源近期会话 ${index + 1}-${session + 1}`,
+          workspace: 0,
+          status: "idle",
+          updated_minutes_ago: 15 + index * 6 + session,
+          created_days_ago: 1,
+        }),
+      );
+    }
   }
 }
 
