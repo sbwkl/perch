@@ -1,6 +1,6 @@
 # Development
 
-本文面向在本地构建、调试 Perch 的开发者。产品与数据设计见 [docs/DESIGN.md](docs/DESIGN.md)，
+本文面向在本地构建、调试 Perch 的开发者。当前实现见 [ARCHITECTURE.md](ARCHITECTURE.md)，历史设计稿见 [v0.3.3-design-review.md](docs/design-docs/history/v0.3.3-design-review.md)，
 代码结构见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
 ## 环境要求
@@ -49,7 +49,11 @@ crates/perch-core/       采集、缓存、查询、继续工作决策
   src/probe.rs           SQLite data_version / JSONL 签名探测
   src/continue_work.rs   打开 App / 终端恢复的决策
 demo/                    开发专用演示模式与截图夹具
-docs/                    设计、逐源规格、FAQ、截图
+docs/                    产品规格、设计知识库、执行计划、探针证据、FAQ、截图
+  product-specs/         产品规格与验收事实源
+  design-docs/           设计知识库（index / core-beliefs / adr / rfcs / source-designs / history）
+  exec-plans/            进行中与已完成变更记录、技术债账本
+  references/            本机只读数据探针证据
 ```
 
 ## 数据路径

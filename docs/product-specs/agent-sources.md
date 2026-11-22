@@ -1,9 +1,12 @@
-# REQ-0002 会话来源覆盖对齐 usage-ledger
+# 产品规格：Perch 会话来源覆盖
 
-类型：REQ
-状态：活跃
-Owner：wayne
-关联：CHG-0004
+| 项 | 内容 |
+|---|---|
+| 原需求卡 | REQ-0002 |
+| 文档类型 | 产品规格 |
+| 当前版本 | v0.1.0 |
+| 适用范围 | 当前来源覆盖行为与验收规格 |
+| 关联 | [CHG-0004](../exec-plans/completed/CHG-0004-usage-ledger-agents.md) |
 
 ## 1. 摘要
 
@@ -24,7 +27,7 @@ Perch 侧边栏与任务列表应覆盖用户实际在用的全部 AI 编码 Age
 ## 4. 成功指标
 
 - 主指标：`ALL_SOURCES` 与 usage-ledger `SOURCES` 一致（当前 11 个）。
-- 护栏指标：每个新增来源有采集器、探测（probe）、continue/resume 行为、UI 名称/颜色/图标、`docs/SOURCES.md` 条目；`cargo test --workspace` 全绿。
+- 护栏指标：每个新增来源有采集器、探测（probe）、continue/resume 行为、UI 名称/颜色/图标、`docs/design-docs/source-designs/SOURCES.md` 条目；`cargo test --workspace` 全绿。
 - 验证方式：临时目录 fixture 单元测试 + 实机冒烟（见 CHG-0004 §5）。
 
 ## 5. 当前需求与验收（EARS）
@@ -39,10 +42,10 @@ Perch 侧边栏与任务列表应覆盖用户实际在用的全部 AI 编码 Age
 
 | CHG ID | 标题 | 状态 | 链接 |
 |---|---|---|---|
-| CHG-0004 | 接入 Antigravity / MiniMax / CodeArts / CodeBuddy 四个来源 | 已验证 | [../changes/CHG-0004-usage-ledger-agents.md](../changes/CHG-0004-usage-ledger-agents.md) |
+| CHG-0004 | 接入 Antigravity / MiniMax / CodeArts / CodeBuddy 四个来源 | 已验证 | [../exec-plans/completed/CHG-0004-usage-ledger-agents.md](../exec-plans/completed/CHG-0004-usage-ledger-agents.md) |
 
 ## 7. 链接
 
-- 来源定义（对齐基准）：usage-ledger `src/usage_ledger/collectors.py`、`docs/changes/CHG-0016..0019`
+- 来源定义（对齐基准）：usage-ledger `src/usage_ledger/collectors.py`、`docs/exec-plans/completed/CHG-0016..0019`
 - Perch 扩展点：`ARCHITECTURE.md` §"扩展点：新增一个来源"
-- 既有来源文档：`docs/SOURCES.md`
+- 既有来源文档：`docs/design-docs/source-designs/SOURCES.md`

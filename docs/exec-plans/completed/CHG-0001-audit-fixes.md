@@ -14,8 +14,8 @@ Owner：wayne
 1. `collectors/trae_cn.rs` `memory_project_name` 的 roots 数组硬编码个人用户名 `"wayne"`，其他用户机器上 Trae memory 会话的工作区名会带上用户名前缀。
 2. `search.rs` `status_label` 缺少 `"failed"` 映射（前端 STATUS_LABELS 有 `failed: "失败"`，Cline 会产出 failed），导致按“失败”搜索不到 failed 状态任务。
 3. 死代码（全仓库 grep 零调用）：`common::is_recent`、`common::path_key`、`SourceScanStatus::is_success`、`SourceScanStatus::keeps_snapshot`、`CacheStore::recent_scan_runs`（及其唯一产物 `models::ScanRun`）。
-4. `store.rs` `save_result` 逐任务 upsert + replace_todos 无事务，与 ARCHITECTURE.md / DESIGN.md “ok 结果在事务中写入”的声明不符；中途失败会留下半写入状态。
-5. 过期文档：SOURCES.md、FAQ.md、DESIGN.md 仍称 Trae hook 会话“没有标题、统一显示新会话”，与已实现的 memory intent 标题 + 事件推导状态矛盾；DEVELOPMENT.md / SOURCES.md 环境变量表缺 `PERCH_TRAE_CN_EVENTS_DIR`、`PERCH_TRAE_CN_MEMORY_DIR`、`PERCH_CLINE_DB`、`PERCH_USAGE_BIN` 等已实现变量。
+4. `store.rs` `save_result` 逐任务 upsert + replace_todos 无事务，与 ARCHITECTURE.md / v0.3.3-design-review.md “ok 结果在事务中写入”的声明不符；中途失败会留下半写入状态。
+5. 过期文档：SOURCES.md、FAQ.md、v0.3.3-design-review.md 仍称 Trae hook 会话“没有标题、统一显示新会话”，与已实现的 memory intent 标题 + 事件推导状态矛盾；DEVELOPMENT.md / SOURCES.md 环境变量表缺 `PERCH_TRAE_CN_EVENTS_DIR`、`PERCH_TRAE_CN_MEMORY_DIR`、`PERCH_CLINE_DB`、`PERCH_USAGE_BIN` 等已实现变量。
 
 ## 改动
 
@@ -23,7 +23,7 @@ Owner：wayne
 2. `status_label` 增加 `"failed" => "失败"`。
 3. 删除上述 5 个死函数与 `ScanRun` 结构体。
 4. `save_result` 用单个事务包裹全部 upsert/replace_todos（`unchecked_transaction`，失败自动回滚），使代码与文档一致。
-5. 同步 SOURCES.md / FAQ.md / DESIGN.md 的 Trae 描述；补全 DEVELOPMENT.md / SOURCES.md 环境变量表。
+5. 同步 SOURCES.md / FAQ.md / v0.3.3-design-review.md 的 Trae 描述；补全 DEVELOPMENT.md / SOURCES.md 环境变量表。
 
 不做：审计中不确定项（trae-cn.est 被 usage 桥丢弃、probe 连接不重试、scan_run 无清理等）另列评审清单，不在本次范围。
 

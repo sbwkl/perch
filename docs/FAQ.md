@@ -8,7 +8,7 @@
 ## 数据存在哪里？怎么备份或清理？
 
 - Perch 缓存：`~/Library/Application Support/app.perch.desktop/cache.db`
-- 源数据位置见 [SOURCES.md](SOURCES.md) 或 README 的“支持的来源”。
+- 源数据位置见 [SOURCES.md](design-docs/source-designs/SOURCES.md) 或 README 的“支持的来源”。
 
 退出 Perch 后删除 `cache.db`、`cache.db-wal`、`cache.db-shm` 即可清空缓存，下次启动会重新扫描。
 不要删除源 agent 的数据。
@@ -109,4 +109,4 @@ npm run tauri build
 ## 如何新增一个来源？
 
 参考 [ARCHITECTURE.md](../ARCHITECTURE.md) 的“扩展点：新增一个来源”。新采集器必须保持只读，
-用临时 fixture 写测试，并更新 [SOURCES.md](SOURCES.md)。
+用临时 fixture 写测试，并更新 [SOURCES.md](design-docs/source-designs/SOURCES.md)。

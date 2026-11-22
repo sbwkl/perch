@@ -1,9 +1,12 @@
-# REQ-0001 用量报告
+# 产品规格：用量报告应用内嵌展示
 
-类型：REQ
-状态：活跃
-Owner：wayne
-关联：CHG-0003
+| 项 | 内容 |
+|---|---|
+| 原需求卡 | REQ-0001 |
+| 文档类型 | 产品规格 |
+| 当前版本 | v0.1.0 |
+| 适用范围 | 当前产品行为与验收规格 |
+| 关联 | [CHG-0003](../exec-plans/completed/CHG-0003-in-app-usage-report.md) |
 
 ## 1. 摘要
 
@@ -41,7 +44,7 @@ Perch 侧边栏提供 usage-ledger 用量报告入口。报告由 usage-ledger C
 
 | CHG ID | 标题 | 状态 | 链接 |
 |---|---|---|---|
-| CHG-0003 | 用量报告应用内嵌展示（方案 A） | 已验证 | [../changes/CHG-0003-in-app-usage-report.md](../changes/CHG-0003-in-app-usage-report.md) |
+| CHG-0003 | 用量报告应用内嵌展示（方案 A） | 已验证 | [../exec-plans/completed/CHG-0003-in-app-usage-report.md](../exec-plans/completed/CHG-0003-in-app-usage-report.md) |
 
 ## 7. 链接
 

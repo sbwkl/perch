@@ -1,7 +1,11 @@
+> 文档库状态：current
+> 当前事实源：`crates/perch-core/src/collectors/`；`ARCHITECTURE.md`。
+> 索引：[design-docs/index.md](../index.md)
+
 # 数据来源规格
 
 本文记录 Perch 当前版本实际读取的本地数据、字段映射、状态推断与已知限制。
-设计阶段的完整论证见 [DESIGN.md](DESIGN.md) 第 6 节。
+设计阶段的完整论证见 [v0.3.3-design-review.md](../history/v0.3.3-design-review.md) 第 6 节。
 
 ## 通用原则
 

@@ -1,8 +1,9 @@
 # Contributing
 
 感谢参与 Perch。这个项目的核心约束是**只读**：任何改动都不能写入、修改或删除 agent 的源数据。
+新特性从最新 `main` 切 `feat/<特性名>`；合并 `main` 前必须获得用户同意；完整开发流程见根 `AGENTS.md`。
 在改采集器、存储或“打开”逻辑之前，请先阅读
-[docs/DESIGN.md](docs/DESIGN.md) 与 [ARCHITECTURE.md](ARCHITECTURE.md)。
+[docs/design-docs/history/v0.3.3-design-review.md](docs/design-docs/history/v0.3.3-design-review.md) 与 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
 ## 开始之前
 
@@ -18,6 +19,10 @@
 npm install
 npm run tauri dev
 ```
+
+## 需求与变更文档
+
+产品行为变化先更新 `docs/product-specs/` 对应规格；新功能 / 跨模块行为变更先在 `docs/exec-plans/active/` 建 `YYYY-MM-DD-<主题>.md`，链接产品规格并覆盖正常 / 异常 / 边界验收，验证后移入 `docs/exec-plans/completed/`。历史 `REQ-xxxx` / `CHG-xxxx` 编号冻结；新增文档不再分配顺序编号。
 
 ## 提交前检查
 
@@ -46,7 +51,7 @@ CI 会执行同样的检查。涉及 UI 的改动请在 `npm run tauri dev` 或 
 1. 实现 `Collector`，只返回 `SourceResult`；
 2. 使用只读连接/文件句柄；
 3. 用临时 HOME + fixture 写测试，不依赖真实用户数据；
-4. 更新 [docs/SOURCES.md](docs/SOURCES.md) 与 [ROADMAP.md](ROADMAP.md)。
+4. 更新 [docs/design-docs/source-designs/SOURCES.md](docs/design-docs/source-designs/SOURCES.md) 与 [ROADMAP.md](ROADMAP.md)。
 
 ## 数据与截图
 

@@ -1,7 +1,11 @@
+> 文档库状态：partial
+> 当前事实源：P0 元数据搜索实现见 `crates/perch-core/src/search.rs`；P1 内容搜索仅为 opt-in 设计。
+> 索引：[design-docs/index.md](../index.md)
+
 # 搜索能力设计方案
 
 > 状态：P0 元数据搜索已实现（2026-11-09）；P1 内容搜索按 opt-in 方案后置。
-> 关联文档：[DESIGN.md](DESIGN.md) §10、[SOURCES.md](SOURCES.md)、[SECURITY.md](../SECURITY.md)
+> 关联文档：[v0.3.3-design-review.md](../history/v0.3.3-design-review.md) §10、[SOURCES.md](SOURCES.md)、[SECURITY.md](../../../SECURITY.md)
 
 ## 1. 目标与非目标
 

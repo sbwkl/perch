@@ -1,10 +1,10 @@
 # CHG-0004 接入 Antigravity / MiniMax / CodeArts / CodeBuddy 四个来源
 
 类型：CHG
-状态：开发中
+状态：已验证
 Owner：wayne
 所属模块/入口：perch-core（collectors、models、paths、probe、continue_work、usage）、前端（App.svelte、source-icons.ts、demo）
-功能卡：[REQ-0002](../requirements/REQ-0002-agent-sources.md)
+产品规格：[agent-sources.md](../../product-specs/agent-sources.md)
 关联：用户 2026-11-20 批准"单分支单 CHG、四个 Agent 一次接入、全部计入 PERCH_SOURCES"；分支 feat/usage-ledger-agents（基于 main b4c2ee3）
 
 ## 1. 摘要
@@ -33,7 +33,7 @@ Owner：wayne
 
 ## 4. 影响范围与非目标
 
-- 受影响：`crates/perch-core`（models.rs、paths.rs、collectors/*、probe.rs、continue_work.rs、usage.rs）、`src/App.svelte`、`src/lib/source-icons.ts`、`demo/fixture.ts`、`docs/SOURCES.md`。
+- 受影响：`crates/perch-core`（models.rs、paths.rs、collectors/*、probe.rs、continue_work.rs、usage.rs）、`src/App.svelte`、`src/lib/source-icons.ts`、`demo/fixture.ts`、`docs/design-docs/source-designs/SOURCES.md`。
 - 本次明确不做：token 用量统计复制进 Perch；来源插件化/自动发现；Windows/Linux 路径适配（保持与既有来源相同的 macOS 优先策略）。
 - 兼容性：`ALL_SOURCES` 从 7 扩到 11，数组长度变化对内部调用方无影响；无 schema/存储迁移。
 

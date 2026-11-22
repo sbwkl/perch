@@ -1,7 +1,11 @@
+> 文档库状态：historical
+> 当前事实源：命名结论仅用于追溯；当前来源标识以 `crates/perch-core/src/models.rs` 为准。
+> 索引：[design-docs/index.md](../index.md)
+
 # 命名参考：多 agent 任务总览
 
 > 结论：2026-11-02 已确认使用 **Perch**。
-> 日期：2026-11-02 ｜ 关联：[DESIGN.md](DESIGN.md)
+> 日期：2026-11-02 ｜ 关联：[v0.3.3-design-review.md](v0.3.3-design-review.md)
 > 目标：一个能表达“多个 agent 的任务汇到一处、可全局置顶”的名字；短、好念、有画面感，且不与主流 agent / 开发工具重名。
 
 ## 1. 命名约束
