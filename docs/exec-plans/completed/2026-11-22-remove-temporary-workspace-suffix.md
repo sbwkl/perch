@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 状态 | 开发中 |
+| 状态 | 已验证 |
 | Owner | wayne + agent |
 | 所属模块 / 入口 | `src/App.svelte`、产品规格与当前状态文档 |
 | 关联 | [agent-sources.md](../../product-specs/agent-sources.md) R15–R18；[P0/P1 全量修复](../completed/2026-11-22-real-ux-p0-p1.md)；[近 7 天侧栏排序](../completed/2026-11-22-sidebar-recent-activity-order.md) |
@@ -57,18 +57,25 @@
 - demo / CDP 合成数据验收：`?stress=520` 下 Workspaces 所有 `nav-label` 不含 `[临时目录]` / `[未关联项目]` / `&#x20;`；路径含 `tmp` 的合成 workspace 不因路径被后置，排序仍满足近 7 天会话数 / 活动时间非递增；折叠 / 展开、选中项可见、900×560 无横向溢出。
 - 边界：默认 demo 数据、无近 7 天活动、无项目路径、重名 workspace、报告视图、搜索 / 筛选 / 分页组合；只使用合成数据。
 
-## 7. 回滚
+## 7. 验证结果
+
+- 自动化：`npm run check` 0 errors / 0 warnings；`npm run build` 成功；`cargo fmt --all --check` 通过；`cargo clippy -p perch-core --all-targets -- -D warnings` 零告警；`cargo test -p perch-core` 与 `cargo test -p perch --lib` 全部通过。
+- demo / CDP 合成数据验收（`?stress=520`）：折叠与展开状态下所有 workspace 标签均不含 `[临时目录]`、`[未关联项目]` 或 `&#x20;`；路径名含 `tmp` 的合成 workspace 只显示 `tmp`，不再带分组后缀或路径类型后置；`data-recent-count` 非递增且同数按活动时间倒排；近 7 天排序、折叠 / 展开、900×560 无横向溢出与页脚报告图标均保持。
+- 边界：默认 demo 数据、无项目路径、重名 workspace、报告 / 搜索 / 筛选 / 分页组合保持既有路径；未读取真实 SQLite / JSONL。
+
+## 8. 回滚
 
 单分支 revert；纯前端展示 / 文档变更，无 IPC、schema 或源数据改动。恢复 `special()` 即恢复历史标签，但不建议作为当前行为。
 
-## 8. 风险与未决边界
+## 9. 风险与未决边界
 
 - 删除标签后，用户仍需靠名称、重名路径后缀与近 7 天排序区分 workspace；这是当前「简洁 + 最近活跃优先」的既定方向。
 - 近 7 天排序键仍只用 `data-*` 暴露给验收，不显示可见文字；侧栏数字仍代表当前视图 / 筛选可点击任务数。
 - P2（overlay、workspace 手动命名 / 隐藏等）仍不在本轮范围。
 
-## 9. 变更记录
+## 10. 变更记录
 
 | 状态 | 操作人 | 证据 / 链接 |
 |---|---|---|
 | 提议 → 就绪 | wayne + agent | 2026-11-22 用户明确要求删除 `[临时目录]` 后缀；本变更文档先于代码 |
+| 开发中 → 已验证 | agent | 2026-11-22 本文件 §7：全量门禁与 demo / CDP 合成数据验收通过 |

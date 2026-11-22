@@ -6,7 +6,7 @@
 | 文档类型 | 产品规格 |
 | 当前版本 | v0.1.0 |
 | 适用范围 | 当前来源覆盖行为与验收规格 |
-| 关联 | [CHG-0004](../exec-plans/completed/CHG-0004-usage-ledger-agents.md)、[侧栏来源溢出修复](../exec-plans/completed/2026-11-22-sidebar-source-overflow.md)、[真实体验确定性缺陷修复](../exec-plans/completed/2026-11-22-real-ux-clarity-fixes.md)、[P0/P1 全量修复](../exec-plans/completed/2026-11-22-real-ux-p0-p1.md)、[侧边栏界面收敛](../exec-plans/completed/2026-11-22-sidebar-simplification.md)、[近 7 天侧栏排序](../exec-plans/completed/2026-11-22-sidebar-recent-activity-order.md)、[删除临时目录后缀](../exec-plans/active/2026-11-22-remove-temporary-workspace-suffix.md) |
+| 关联 | [CHG-0004](../exec-plans/completed/CHG-0004-usage-ledger-agents.md)、[侧栏来源溢出修复](../exec-plans/completed/2026-11-22-sidebar-source-overflow.md)、[真实体验确定性缺陷修复](../exec-plans/completed/2026-11-22-real-ux-clarity-fixes.md)、[P0/P1 全量修复](../exec-plans/completed/2026-11-22-real-ux-p0-p1.md)、[侧边栏界面收敛](../exec-plans/completed/2026-11-22-sidebar-simplification.md)、[近 7 天侧栏排序](../exec-plans/completed/2026-11-22-sidebar-recent-activity-order.md)、[删除临时目录后缀](../exec-plans/completed/2026-11-22-remove-temporary-workspace-suffix.md) |
 
 ## 1. 摘要
 
@@ -59,7 +59,7 @@ Perch 当前覆盖 11 个本地 AI 编码 Agent 来源，与 usage-ledger 的来
 | 2026-11-22 | 真实体验反馈 P0 / P1 全量修复 | 已验证 | [../exec-plans/completed/2026-11-22-real-ux-p0-p1.md](../exec-plans/completed/2026-11-22-real-ux-p0-p1.md) |
 | 2026-11-22 | 侧边栏与来源区界面收敛 | 已验证 | [../exec-plans/completed/2026-11-22-sidebar-simplification.md](../exec-plans/completed/2026-11-22-sidebar-simplification.md) |
 | 2026-11-22 | 侧栏 Workspaces / 来源按近 7 天会话数排序 | 已验证 | [../exec-plans/completed/2026-11-22-sidebar-recent-activity-order.md](../exec-plans/completed/2026-11-22-sidebar-recent-activity-order.md) |
-| 2026-11-22 | 删除 workspace 的「[临时目录]」后缀 | 开发中 | [../exec-plans/active/2026-11-22-remove-temporary-workspace-suffix.md](../exec-plans/active/2026-11-22-remove-temporary-workspace-suffix.md) |
+| 2026-11-22 | 删除 workspace 的「[临时目录]」后缀 | 已验证 | [../exec-plans/completed/2026-11-22-remove-temporary-workspace-suffix.md](../exec-plans/completed/2026-11-22-remove-temporary-workspace-suffix.md) |
 
 ## 6. 链接
 

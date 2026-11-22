@@ -213,23 +213,15 @@
       .filter((item) => item.count > 0);
     const nameCounts = new Map<string, number>();
     for (const item of all) nameCounts.set(item.name, (nameCounts.get(item.name) ?? 0) + 1);
-    const special = (item: { name: string; path: string | null }) =>
-      !item.path || item.name === "未关联项目" || /(^|\/)(tmp|Temp|private\/tmp|var\/folders)(\/|$)/i.test(item.path);
     return all
       .map((item) => {
         const parent = item.path?.split("/").filter(Boolean).at(-2) ?? "";
         const suffix = (nameCounts.get(item.name) ?? 0) > 1 && parent ? ` · ${parent}` : "";
-        const group = special(item)
-          ? item.name === "未关联项目"
-            ? "未关联项目"
-            : "临时目录"
-          : "";
-        return { ...item, special: Boolean(group), group, label: `${item.name}${suffix}${group ? ` [${group}]` : ""}` };
+        return { ...item, label: `${item.name}${suffix}` };
       })
       .sort(
         (left, right) =>
           compareActivity(left.activity, right.activity) ||
-          Number(left.special) - Number(right.special) ||
           left.name.localeCompare(right.name),
       );
   });

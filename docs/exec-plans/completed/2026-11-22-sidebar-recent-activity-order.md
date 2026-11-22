@@ -23,7 +23,7 @@
 ### 目标
 
 - 定义「近 7 天会话数」：以 `bootstrap.generated_at` 为基准，统计近 7 天内 `updated_at`（缺失时 `created_at`）有活动的主任务；排除源归档、源已删除、子会话与自动化任务。
-- Workspaces 列表按近 7 天会话数倒序；同数按最近活动时间倒序；再按特殊目录 / 名称稳定排序。
+- Workspaces 列表按近 7 天会话数倒序；同数按最近活动时间倒序；再按名称稳定排序。历史方案曾按特殊目录后置，后续按用户要求删除 `[临时目录]` 后缀与路径类型优先级，见 [删除临时目录后缀](2026-11-22-remove-temporary-workspace-suffix.md)。
 - 来源列表按近 7 天会话数倒序；同数按最近活动时间倒序；再按名称稳定排序。
 - 来源列表超过 8 项时提供「显示更多 / 收起」，与 Workspaces 一致；当前选中的 workspace / 来源即使排在折叠区也保持可见。
 - 侧栏显示的数字仍为当前视图 / 其它筛选下的可点击任务数，不新增可见的「近 7 天 N 个」文字；排序键只通过 `data-*` 暴露用于验收。
@@ -38,7 +38,7 @@
 
 ## 4. 行为 / AC delta
 
-- R1：While 侧栏 Workspaces / 来源列表渲染, the system shall 按近 7 天会话数倒序排列；同数时按最近活动时间倒序，最后按名称 / 特殊目录稳定排序。
+- R1：While 侧栏 Workspaces / 来源列表渲染, the system shall 按近 7 天会话数倒序排列；同数时按最近活动时间倒序，最后按名称稳定排序。
 - R2：While 近 7 天会话数排序键计算, the system shall 使用全局任务快照，不受当前任务视图、workspace 筛选或来源筛选影响；显示数字仍按当前视图 / 筛选联动。
 - R3：When Workspaces 或来源列表超过 8 项, the system shall 折叠排序后的后续项并提供「显示更多 / 收起」；When 当前选中项排在折叠区, the system shall 仍显示该选中项。
 - R4：When 用户切换视图 / 筛选, the system shall 保持简洁侧栏：不新增近 7 天计数文字、更新时间、触发方式或说明文字。
@@ -47,7 +47,7 @@
 ## 5. 方案
 
 1. 在 `src/App.svelte` 增加只读 `activityIndex`：从 `allPrimaryTasks` 聚合 workspace / source 的 `recentCount` 与 `lastActivity`；基准时间用 `payload.generated_at`，窗口 7 天。
-2. `workspaceItems` 与 `sourceItems` 带上排序键，按 `recentCount desc → lastActivity desc → special / label` 排序；保留现有可见数字字段 `count`。
+2. `workspaceItems` 与 `sourceItems` 带上排序键，按 `recentCount desc → lastActivity desc → label` 排序；保留现有可见数字字段 `count`。
 3. 来源侧栏复用 `nav-more` 样式与 8 项阈值，新增 `showAllSources` / `visibleSources` / `hiddenSourceCount`；workspace 仍用既有折叠逻辑。
 4. nav 按钮增加 `data-recent-count` / `data-last-activity` 供合成数据 CDP 验收，不展示为可见文案。
 5. demo fixture 在 `?stress=N` 下增加合成 workspace 与近 7 天会话，验证 >8 项折叠与排序；默认截图数据保持不变。
