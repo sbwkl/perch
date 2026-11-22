@@ -22,7 +22,7 @@
 
 ### 目标
 
-- Workspace 按钮文字只保留名称；重名时保留既有的「 · 路径父目录」后缀，不追加 `[临时目录]` / `[未关联项目]` / 分组标记。
+- Workspace 按钮文字只保留名称；重名时最初保留过「 · 路径父目录」后缀，随后按用户进一步要求由 [删除 workspace 名称后缀](2026-11-22-remove-workspace-name-suffix.md) 移除；不追加 `[临时目录]` / `[未关联项目]` / 分组标记。
 - 删除 `special()` 路径启发式、`group` / `special` 字段以及按特殊目录后置的排序条件。
 - Workspaces 排序只按近 7 天会话数倒序 → 最近活动时间 → 名称稳定排序；来源排序不变。
 - 当前产品规格、README、ARCHITECTURE、CHANGELOG 与变更索引同步；历史完成文档保留作为过程证据，不冒充当前行为。
@@ -37,7 +37,7 @@
 
 ## 4. 行为 / AC delta
 
-- R1：When Workspaces 列表渲染, the system shall 不显示 `[临时目录]`、`[未关联项目]` 或任何 workspace 分组后缀；When 名称重复, the system shall 仅显示可区分的路径父目录后缀。
+- R1：When Workspaces 列表渲染, the system shall 不显示 `[临时目录]`、`[未关联项目]` 或任何 workspace 分组后缀；同名 workspace 的路径父目录后缀已在后续变更中移除。
 - R2：When Workspaces 列表排序, the system shall 不把路径中含 `tmp` / `Temp` / `/private/tmp/` / `/var/folders/` 的项作为特殊目录后置；排序仅按近 7 天会话数、最近活动时间与名称。
 - R3：When Workspaces 列表渲染, the system shall 继续按近 7 天会话数倒序、超过 8 项折叠、选中项保持可见；侧栏数字仍按当前视图 / 筛选联动。
 - R4：When 用户或 agent 阅读当前事实源, the system shall 让文档不把 `[临时目录]` 后缀描述为当前行为；历史变更文档可保留历史证据。
@@ -46,7 +46,7 @@
 ## 5. 方案
 
 1. 删除 `src/App.svelte` 中 `special()`、`group`、`special` 字段、`[临时目录]` / `[未关联项目]` 拼接及排序中的 `Number(left.special) - Number(right.special)`。
-2. `workspaceItems.label` 改为 `${item.name}${suffix}`，只保留重名路径父目录后缀。
+2. `workspaceItems.label` 当时改为 `${item.name}${suffix}`，只保留重名路径父目录后缀；后续变更进一步删除该后缀。
 3. 更新 `docs/product-specs/agent-sources.md`：当前事实增加「不显示临时目录 / 分组后缀」，R18 记录验收；变更索引登记本变更。
 4. 更新 README / ARCHITECTURE / CHANGELOG 中当前行为措辞，避免把临时目录标记写成当前能力；历史 `2026-11-22-real-ux-p0-p1.md` 等完成文档不改写成当前事实。
 5. 新建本变更文档，验证后移入 `completed/`；PR #9 描述同步。

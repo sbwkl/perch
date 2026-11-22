@@ -211,14 +211,8 @@
         activity: activityOf(activityIndex.workspaces, group.key),
       }))
       .filter((item) => item.count > 0);
-    const nameCounts = new Map<string, number>();
-    for (const item of all) nameCounts.set(item.name, (nameCounts.get(item.name) ?? 0) + 1);
     return all
-      .map((item) => {
-        const parent = item.path?.split("/").filter(Boolean).at(-2) ?? "";
-        const suffix = (nameCounts.get(item.name) ?? 0) > 1 && parent ? ` · ${parent}` : "";
-        return { ...item, label: `${item.name}${suffix}` };
-      })
+      .map((item) => ({ ...item, label: item.name }))
       .sort(
         (left, right) =>
           compareActivity(left.activity, right.activity) ||

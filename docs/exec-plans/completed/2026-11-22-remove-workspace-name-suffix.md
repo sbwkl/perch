@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 状态 | 开发中 |
+| 状态 | 已验证 |
 | Owner | wayne + agent |
 | 所属模块 / 入口 | `src/App.svelte`、产品规格与当前状态文档 |
 | 关联 | [agent-sources.md](../../product-specs/agent-sources.md) R18–R19；[删除临时目录后缀](../completed/2026-11-22-remove-temporary-workspace-suffix.md)；[近 7 天侧栏排序](../completed/2026-11-22-sidebar-recent-activity-order.md) |
@@ -57,18 +57,25 @@
 - demo / CDP 合成数据验收：`?stress=520` 下 Workspaces 所有 `nav-label` 不含 ` · `、`[临时目录]`、`[未关联项目]`；demo 中两个 `docs-portal` 均显示为 `docs-portal`；`data-recent-count` 仍非递增、同数按活动时间；折叠 / 展开、选中项可见、900×560 无横向溢出。
 - 边界：默认 demo 数据、无项目路径、同名 workspace、近 7 天排序、报告 / 搜索 / 筛选 / 分页组合；只使用合成数据。
 
-## 7. 回滚
+## 7. 验证结果
+
+- 自动化：`npm run check` 0 errors / 0 warnings；`npm run build` 成功；`cargo fmt --all --check` 通过；`cargo clippy -p perch-core --all-targets -- -D warnings` 零告警；`cargo test -p perch-core` 与 `cargo test -p perch --lib` 全部通过。
+- demo / CDP 合成数据验收（`?stress=520`）：折叠与展开状态下所有 workspace 标签均不含 ` · `、`[临时目录]`、`[未关联项目]` 或 `&#x20;`；两个 `docs-portal` 均显示原名，`title` 仍保留各自完整路径；`data-recent-count` 非递增且同数按活动时间倒排；折叠 / 展开、900×560 无横向溢出与页脚报告图标均保持。
+- 边界：默认 demo 数据、无项目路径、同名 workspace、近 7 天排序、报告 / 搜索 / 筛选 / 分页组合保持既有路径；未读取真实 SQLite / JSONL。
+
+## 8. 回滚
 
 单分支 revert；纯前端展示 / 文档变更，无 IPC、schema 或源数据改动。恢复 `nameCounts` / `suffix` 即恢复历史后缀，但不建议作为当前行为。
 
-## 8. 风险与未决边界
+## 9. 风险与未决边界
 
 - 删除后缀后，同名 workspace 会显示相同名称；用户需要靠排序位置、计数或 tooltip / 点击后的详情路径区分。这是当前「简洁 + 最近活跃优先」的既定方向。
 - path tooltip 仍作为既有可达信息存在，本次不新增也不删除 tooltip。
 - overlay、手动命名 / 隐藏 workspace 仍属于 P2，不在本轮范围。
 
-## 9. 变更记录
+## 10. 变更记录
 
 | 状态 | 操作人 | 证据 / 链接 |
 |---|---|---|
 | 提议 → 就绪 | wayne + agent | 2026-11-22 用户明确不需要 workspace 名称的点号拼接；本变更文档先于代码 |
+| 开发中 → 已验证 | agent | 2026-11-22 本文件 §7：全量门禁与 demo / CDP 合成数据验收通过 |
