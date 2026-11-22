@@ -6,11 +6,11 @@
 | 文档类型 | 产品规格 |
 | 当前版本 | v0.1.0 |
 | 适用范围 | 当前产品行为与验收规格 |
-| 关联 | [CHG-0003](../exec-plans/completed/CHG-0003-in-app-usage-report.md)、[真实体验确定性缺陷修复](../exec-plans/completed/2026-11-22-real-ux-clarity-fixes.md) |
+| 关联 | [CHG-0003](../exec-plans/completed/CHG-0003-in-app-usage-report.md)、[真实体验确定性缺陷修复](../exec-plans/completed/2026-11-22-real-ux-clarity-fixes.md)、[侧边栏界面收敛](../exec-plans/completed/2026-11-22-sidebar-simplification.md) |
 
 ## 1. 摘要
 
-Perch 侧边栏与任务导航提供 usage-ledger 用量报告入口。报告由 usage-ledger CLI（`usage html`）渲染为单文件 HTML，Perch 只负责生成并在应用内嵌视图展示，不复制报表逻辑。报告是全局视图，不按任务筛选变化；usage-ledger 保持唯一渲染源。
+Perch 侧边栏页脚提供 usage-ledger 用量报告图标入口；任务分组不显示报告导航项。报告由 usage-ledger CLI（`usage html`）渲染为单文件 HTML，Perch 只负责生成并在应用内嵌视图展示，不复制报表逻辑。报告是全局视图，不按任务筛选变化；usage-ledger 保持唯一渲染源。
 
 ## 2. 问题与证据
 
@@ -32,7 +32,7 @@ Perch 侧边栏与任务导航提供 usage-ledger 用量报告入口。报告由
 
 ## 5. 当前需求与验收（EARS）
 
-- R1：When 用户点击侧边栏或任务导航中的报告入口, the system shall 在应用内报表视图展示最新生成的 usage-ledger HTML 报告，不启动外部浏览器；报表视图铺满列表与详情两列（报表无详情面板，不显示详情栏），并用导航选中态、`aria-current` 与“全局报告 · 不随任务筛选变化”说明当前位置。
+- R1：When 用户点击侧边栏页脚的报告图标, the system shall 在应用内报表视图展示最新生成的 usage-ledger HTML 报告，不启动外部浏览器；报表视图铺满列表与详情两列（报表无详情面板，不显示详情栏），并用页脚图标激活态与“全局报告 · 不随任务筛选变化”说明当前位置。
 - R2：When 用户在报表视图触发刷新（按钮或 ⌘R）, the system shall 重新生成报告并更新展示。
 - R3：While 报表视图打开且 usage 数据发生变化, the system shall 自动重新生成并更新报告。
 - R4：If 报告生成失败, then the system shall 在应用内展示错误信息，不打开浏览器。
@@ -48,6 +48,7 @@ Perch 侧边栏与任务导航提供 usage-ledger 用量报告入口。报告由
 |---|---|---|---|
 | CHG-0003 | 用量报告应用内嵌展示（方案 A） | 已验证 | [../exec-plans/completed/CHG-0003-in-app-usage-report.md](../exec-plans/completed/CHG-0003-in-app-usage-report.md) |
 | 2026-11-22 | 真实体验反馈中的确定性缺陷修复 | 已验证 | [../exec-plans/completed/2026-11-22-real-ux-clarity-fixes.md](../exec-plans/completed/2026-11-22-real-ux-clarity-fixes.md) |
+| 2026-11-22 | 侧边栏与来源区界面收敛 | 已验证 | [../exec-plans/completed/2026-11-22-sidebar-simplification.md](../exec-plans/completed/2026-11-22-sidebar-simplification.md) |
 
 ## 7. 链接
 

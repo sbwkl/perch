@@ -68,7 +68,7 @@
 
 - 自动化门禁：`npm run check` 0 errors / 0 warnings；`npm run build` 成功；`cargo fmt --all --check` 通过；`cargo clippy -p perch-core --all-targets -- -D warnings` 零告警；`cargo test -p perch-core` 35 + 5 + 25 + 5 + 9 + 5 个测试全部通过；GitHub Actions PR #9 的 Frontend 与 Rust core 两项检查均通过。
 - 新增 core 测试：`continue_hints_expose_action_before_click` 覆盖终端 / 深链 / 仅激活 App / 动态通道与未知来源；`bootstrap_exposes_continue_hint_and_source_trigger` 覆盖 `TaskView.continue_hint` 与 `SourceView.last_trigger`。
-- demo / CDP 合成数据验收（1200×780 与 900×560）：选中任务后切到「已归档」Inspector 清空且继续按钮消失；报告视图显示全局说明 / iframe / `aria-current=page` / 返回任务；返回后无视图外选中；来源筛选下的搜索显示作用域且命中结果可定位并选中；继续工作按钮前置显示通道与无法定位提示；小窗口无横向溢出、页脚可见、侧栏可滚动。
+- demo / CDP 合成数据验收（1200×780 与 900×560）：选中任务后切到「已归档」Inspector 清空且继续按钮消失；报告视图显示全局说明 / iframe / 返回任务；返回后无视图外选中；来源筛选下的搜索显示作用域且命中结果可定位并选中；继续工作按钮前置显示通道与无法定位提示；小窗口无横向溢出、页脚可见、侧栏可滚动。任务导航中的 `aria-current` 后续按界面收敛要求移除。
 - 边界 / 异常：demo 来源 title 暴露状态、全部快照任务数、最近扫描与触发方式；`usage` 不可用时的报告入口说明已由 UI fallback 覆盖；搜索与刷新错误 banner 保持原路径。未读取真实 SQLite / JSONL，未写回真实标题 / 路径 / 用量。
 
 ## 8. 回滚

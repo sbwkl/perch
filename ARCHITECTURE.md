@@ -95,7 +95,7 @@ Perch 是一个 macOS 桌面应用：Tauri 2 壳 + 纯 Rust core + Svelte 5 前�
    `source + day + project` 粒度，不挂到单个任务。
 5. Tauri 的 3 秒探测同时比较 `usage.db` 主文件与 `-wal` 的 mtime；usage-ledger
    单独同步后也会触发前端重新 `bootstrap`，但 Perch 不会主动写该库。
-6. 侧边栏 / 任务导航的用量报告入口走 usage-ledger 自己的 CLI：
+6. 侧边栏页脚的用量报告图标走 usage-ledger 自己的 CLI：
    `usage html --output <Perch 缓存目录>`，完成后通过 asset 协议在应用内 iframe 展示。
    报告是全局的，不按来源过滤；Perch 只读该库，HTML 与缓存目录属于 Perch 自身。
 
@@ -163,7 +163,7 @@ usage-ledger 不可用时完全不出现。
 
 - `payload` 保存最近一次 `bootstrap` 结果。
 - `flatTasks` 派生当前任务视图，按状态 / 置顶 / `updated_at` 排序，过滤子会话、自动化与归档；`renderedTasks` 每页最多 60 条。
-- 视图：`recent`（近 7 天）、`older`、`archived`、`attention`、`report`；workspace / 来源筛选可组合，侧栏计数联动当前口径。
+- 视图：`recent`（近 7 天）、`older`、`archived`、`report`；任务分组只显示三个视图与搜索，报告由页脚图标进入；workspace / 来源筛选可组合，侧栏计数联动当前口径。
 - `selected` 从当前 `flatTasks` 派生，切换视图 / 筛选后不会显示列表外的任务。
 - Inspector 显示元数据、todo、继续工作通道提示、resume 命令与动作按钮。
 - 来源图标内联在 `src/lib/source-icons.ts`，不加载远程资源或图标库。

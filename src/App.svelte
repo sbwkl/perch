@@ -16,7 +16,7 @@
   } from "./lib/types";
   import { sourceIconMarkup } from "./lib/source-icons";
 
-  type ViewMode = "recent" | "older" | "archived" | "attention" | "report";
+  type ViewMode = "recent" | "older" | "archived" | "report";
 
   interface ScanNotice {
     label: string;
@@ -41,7 +41,6 @@
     pin: "M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z",
     report: "M18 20V10M12 20V4M6 20v-6",
     search: "M21 21l-4.35-4.35M11 19a8 8 0 1 1 0-16 8 8 0 0 1 0 16z",
-    alert: "M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z",
   } as const;
 
   const SOURCE_COLORS: Record<string, string> = {
@@ -114,7 +113,6 @@
   let searchError = $state("");
   let searchInput = $state<HTMLInputElement>();
   let searchResultList = $state<HTMLDivElement>();
-  let workspaceQuery = $state("");
   let listLimit = $state(60);
   let searchLimit = $state(50);
   let livePaused = $state(false);
@@ -125,21 +123,7 @@
   const TASK_PAGE_SIZE = 60;
   const SEARCH_PAGE_SIZE = 50;
 
-  function needsAttention(task: TaskView): boolean {
-    return (
-      task.source_unread ||
-      task.source_missing ||
-      task.status === "failed" ||
-      task.status === "blocked" ||
-      task.status === "limited" ||
-      task.status === "waiting" ||
-      task.status === "paused" ||
-      task.status === "running"
-    );
-  }
-
   function matchesView(task: TaskView, mode: ViewMode): boolean {
-    if (mode === "attention") return needsAttention(task);
     if (mode === "archived") return task.source_archived;
     if (mode === "report") return false;
     return !task.source_archived && task.is_recent === (mode === "recent");
@@ -174,7 +158,6 @@
     { id: "recent" as ViewMode, label: "最近", icon: ICONS.clock, count: tasksMatching("recent", workspaceFilter, sourceFilter).length },
     { id: "older" as ViewMode, label: "更早", icon: ICONS.history, count: tasksMatching("older", workspaceFilter, sourceFilter).length },
     { id: "archived" as ViewMode, label: "已归档", icon: ICONS.archive, count: tasksMatching("archived", workspaceFilter, sourceFilter).length },
-    { id: "attention" as ViewMode, label: "待关注", icon: ICONS.alert, count: tasksMatching("attention", workspaceFilter, sourceFilter).length },
   ]);
 
   const workspaceItems = $derived.by(() => {
@@ -204,35 +187,23 @@
       .sort((left, right) => Number(left.special) - Number(right.special) || left.name.localeCompare(right.name));
   });
 
-  const searchedWorkspaceItems = $derived.by(() => {
-    const term = workspaceQuery.trim().toLocaleLowerCase();
-    return term
-      ? workspaceItems.filter((item) =>
-          `${item.label} ${item.path ?? ""}`.toLocaleLowerCase().includes(term),
-        )
-      : workspaceItems;
-  });
-
   const visibleWorkspaces = $derived.by(() => {
-    const items = searchedWorkspaceItems;
-    if (showAllWorkspaces || workspaceQuery.trim() || items.length <= WORKSPACE_VISIBLE_LIMIT) {
-      return items;
+    if (showAllWorkspaces || workspaceItems.length <= WORKSPACE_VISIBLE_LIMIT) {
+      return workspaceItems;
     }
-    const visible = items.slice(0, WORKSPACE_VISIBLE_LIMIT);
+    const visible = workspaceItems.slice(0, WORKSPACE_VISIBLE_LIMIT);
     if (workspaceFilter && !visible.some((item) => item.key === workspaceFilter)) {
-      const active = items.find((item) => item.key === workspaceFilter);
+      const active = workspaceItems.find((item) => item.key === workspaceFilter);
       if (active) visible.push(active);
     }
     return visible;
   });
 
   const hiddenWorkspaceCount = $derived(
-    Math.max(0, searchedWorkspaceItems.length - visibleWorkspaces.length),
+    Math.max(0, workspaceItems.length - visibleWorkspaces.length),
   );
 
-  const canToggleWorkspaces = $derived(
-    !workspaceQuery.trim() && searchedWorkspaceItems.length > WORKSPACE_VISIBLE_LIMIT,
-  );
+  const canToggleWorkspaces = $derived(workspaceItems.length > WORKSPACE_VISIBLE_LIMIT);
 
   const sourceItems = $derived.by(() =>
     (payload?.sources ?? []).map((source) => ({
@@ -685,38 +656,11 @@
     return labels[status] ?? status;
   }
 
-  function triggerLabel(trigger: string | null): string {
-    if (trigger === "live") return "实时";
-    if (trigger === "manual") return "手动";
-    if (trigger === "startup") return "启动";
-    return trigger ?? "未知";
-  }
-
-  function sourceFreshness(source: SourceView): string {
-    if (!source.last_scan_at) return "未扫描";
-    const age = Date.now() / 1000 - source.last_scan_at;
-    const when = relativeTime(source.last_scan_at);
-    const trigger = triggerLabel(source.last_trigger);
-    return age >= 3600 ? `${trigger} · ${when}（较旧）` : `${trigger} · ${when}`;
-  }
-
-  function sourceNeedsAttention(source: SourceView): boolean {
-    if (source.status !== "ok") return true;
-    return !source.last_scan_at || Date.now() / 1000 - source.last_scan_at >= 3600;
-  }
-
   function sourceTitle(source: SourceView & { count?: number }): string {
     const parts = [
       `${source.label}：${sourceStatusLabel(source.status)}`,
-      `${source.task_count} 个全部快照任务；当前视图 / workspace 下 ${source.count ?? 0} 个`,
+      `当前视图 / workspace 下 ${source.count ?? 0} 个任务`,
     ];
-    if (source.last_scan_at) {
-      parts.push(
-        `最近扫描 ${fullTime(source.last_scan_at)} · ${triggerLabel(source.last_trigger)}`,
-      );
-    } else {
-      parts.push("尚无扫描记录");
-    }
     if (source.error) parts.push(source.error);
     return parts.join("；");
   }
@@ -951,20 +895,6 @@
           </button>
         {/each}
         <button
-          class="nav-item report-entry"
-          class:active={view === "report"}
-          aria-current={view === "report" ? "page" : undefined}
-          aria-pressed={view === "report"}
-          title="查看全局用量报告"
-          onclick={openUsageReport}
-        >
-          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-            <path d={ICONS.report} />
-          </svg>
-          <span class="nav-label">用量报告</span>
-          <span class="nav-count">全局</span>
-        </button>
-        <button
           class="nav-item search-entry"
           class:active={searchOpen}
           aria-pressed={searchOpen}
@@ -980,15 +910,7 @@
       </nav>
 
       <nav class="nav-section">
-        <p class="section-title">Workspaces <span class="section-hint">按当前视图 / 来源联动</span></p>
-        <input
-          class="workspace-search"
-          type="text"
-          bind:value={workspaceQuery}
-          placeholder="筛选 workspace"
-          aria-label="筛选 workspace"
-          spellcheck="false"
-        />
+        <p class="section-title">Workspaces</p>
         {#each visibleWorkspaces as workspace (workspace.key)}
           <button
             class="nav-item"
@@ -1025,9 +947,8 @@
             class="nav-item source-item"
             class:active={sourceFilter === source.source}
             class:degraded={source.status !== "ok"}
-            class:stale={sourceNeedsAttention(source)}
             aria-pressed={sourceFilter === source.source}
-            aria-label={`${source.label}，${sourceStatusLabel(source.status)}，${sourceFreshness(source)}，当前视图 ${source.count} 个任务`}
+            aria-label={`${source.label}，${sourceStatusLabel(source.status)}，当前视图 ${source.count} 个任务`}
             title={sourceTitle(source)}
             onclick={() => selectSource(source.source)}
           >
@@ -1038,19 +959,16 @@
                 {sourceStatusLabel(source.status)}
               </span>
             {/if}
-            <span class="source-freshness" title={sourceTitle(source)}>{sourceFreshness(source)}</span>
             <span class="nav-count" title="当前视图 / workspace 下可点击任务数">{source.count}</span>
             {#if source.error && source.status !== "unavailable"}
               <span class="source-warning" aria-hidden="true">!</span>
             {/if}
           </button>
         {/each}
-        <p class="nav-note">Trae CN 需安装 usage-ledger hook 后显示会话；ChatGPT 桌面仅 Codex 会话可见。</p>
       </nav>
     </div>
 
     <footer class="sidebar-foot">
-      <span>只读采集 · 不改动源数据</span>
       {#if payload?.usage}
         <button
           class="sidebar-report"
