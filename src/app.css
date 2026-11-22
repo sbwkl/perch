@@ -102,6 +102,17 @@ button:focus-visible {
   overflow: hidden;
 }
 
+.sidebar-scroll {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .brand {
   display: flex;
   align-items: center;
@@ -143,14 +154,10 @@ button:focus-visible {
 
 .nav-section {
   display: flex;
+  flex: none;
   flex-direction: column;
   gap: 1px;
   min-height: 0;
-}
-
-.scroll-section {
-  overflow-y: auto;
-  max-height: 38vh;
 }
 
 .section-title {
@@ -218,6 +225,7 @@ button:focus-visible {
 }
 
 .nav-count {
+  flex: none;
   font-size: 10.5px;
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
@@ -252,6 +260,7 @@ button:focus-visible {
 
 
 .source-warning {
+  flex: none;
   color: var(--danger);
   font-size: 11px;
   font-weight: 700;
@@ -305,10 +314,10 @@ button:focus-visible {
 
 .sidebar-foot {
   display: flex;
+  flex: none;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-top: auto;
   padding: 8px 8px 2px;
   border-top: 1px solid var(--border);
   font-size: 10px;
