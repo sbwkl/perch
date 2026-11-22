@@ -3,7 +3,7 @@
 Perch 是一个 macOS 桌面应用：Tauri 2 壳 + 纯 Rust core + Svelte 5 前端。
 目标是只读聚合多个 coding agent 的本地会话，因此架构的第一约束是**不写源数据**。
 
-产品背景、方案对比与逐源规格的完整论证见 [docs/DESIGN.md](docs/DESIGN.md)；
+产品背景与方案对比见 [v0.3.3-design-review.md](docs/design-docs/history/v0.3.3-design-review.md)（历史稿），当前逐源规格见 [SOURCES.md](docs/design-docs/source-designs/SOURCES.md)；
 本文描述当前代码的实际结构。
 
 ## 总览
@@ -170,7 +170,7 @@ usage-ledger 不可用时完全不出现。
 5. 在 `probe.rs` 中增加该来源的变化探测（SQLite 或文件签名）。
 6. 在 `continue_work.rs` 中定义“继续工作”的通道与固定命令模板。
 7. 前端补充来源图标/标签（`source-icons.ts` 与 `SOURCE_COLORS`）。
-8. 增加使用临时 fixture 的集成测试；更新 [docs/SOURCES.md](docs/SOURCES.md)。
+8. 增加使用临时 fixture 的集成测试；更新 [docs/design-docs/source-designs/SOURCES.md](docs/design-docs/source-designs/SOURCES.md)。
 
 新来源必须遵守只读不变量，且不能在无证据时臆造状态。
 

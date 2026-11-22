@@ -4,7 +4,7 @@
 状态：已验证
 Owner：wayne
 所属模块/入口：src-tauri（lib.rs、tauri.conf.json、capabilities）、前端（App.svelte）、demo
-功能卡：[REQ-0001](../requirements/REQ-0001-usage-report.md)
+产品规格：[usage-report.md](../../product-specs/usage-report.md)
 关联：用户 2026-11-19 批准方案 A（iframe 嵌入现有 HTML）；分支 feat/in-app-usage-report（基于 main 1b3d50c）
 
 ## 1. 摘要

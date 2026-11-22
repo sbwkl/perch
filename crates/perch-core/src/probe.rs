@@ -23,6 +23,7 @@ struct JsonlProbe {
     source: &'static str,
     roots: Vec<PathBuf>,
     json_roots: Vec<PathBuf>,
+    log_roots: Vec<PathBuf>,
     last_signature: (u64, u128),
 }
 
@@ -36,6 +37,7 @@ impl SourceProbe {
             ),
             ("kilo", vec![paths.kilo_db.clone()]),
             ("cline", vec![paths.cline_db.clone()]),
+            ("codearts", vec![paths.codearts_db.clone()]),
         ]
         .into_iter()
         .map(|(source, candidates)| {
@@ -57,6 +59,7 @@ impl SourceProbe {
                 source: "claude",
                 roots: vec![paths.claude_dir.join("projects")],
                 json_roots: vec![paths.claude_dir.join("sessions")],
+                log_roots: Vec::new(),
                 last_signature: (0, 0),
             },
             JsonlProbe {
@@ -66,6 +69,7 @@ impl SourceProbe {
                     paths.codex_dir.join("archived_sessions"),
                 ],
                 json_roots: Vec::new(),
+                log_roots: Vec::new(),
                 last_signature: (0, 0),
             },
             JsonlProbe {
@@ -75,6 +79,34 @@ impl SourceProbe {
                     paths.trae_cn_memory_dir.clone(),
                 ],
                 json_roots: Vec::new(),
+                log_roots: Vec::new(),
+                last_signature: (0, 0),
+            },
+            JsonlProbe {
+                source: crate::models::SOURCE_ANTIGRAVITY,
+                roots: vec![
+                    paths.antigravity_ide_root.clone(),
+                    paths.antigravity_cli_root.clone(),
+                ],
+                json_roots: Vec::new(),
+                log_roots: Vec::new(),
+                last_signature: (0, 0),
+            },
+            JsonlProbe {
+                source: crate::models::SOURCE_MINIMAX,
+                roots: vec![paths.minimax_dir.join("v2/sessions")],
+                json_roots: Vec::new(),
+                log_roots: Vec::new(),
+                last_signature: (0, 0),
+            },
+            JsonlProbe {
+                source: crate::models::SOURCE_CODEBUDDY,
+                roots: Vec::new(),
+                json_roots: Vec::new(),
+                log_roots: vec![
+                    paths.codebuddy_cn_logs_dir.clone(),
+                    paths.codebuddy_ide_logs_dir.clone(),
+                ],
                 last_signature: (0, 0),
             },
         ];
@@ -115,7 +147,7 @@ impl SourceProbe {
         }
 
         for probe in &mut self.jsonl {
-            let signature = jsonl_signature(&probe.roots, &probe.json_roots);
+            let signature = jsonl_signature(&probe.roots, &probe.json_roots, &probe.log_roots);
             if signature != probe.last_signature {
                 probe.last_signature = signature;
                 changed.push(probe.source);
@@ -127,7 +159,8 @@ impl SourceProbe {
 
     fn reset_jsonl_baseline(&mut self) {
         for probe in &mut self.jsonl {
-            probe.last_signature = jsonl_signature(&probe.roots, &probe.json_roots);
+            probe.last_signature =
+                jsonl_signature(&probe.roots, &probe.json_roots, &probe.log_roots);
         }
     }
 }
@@ -137,7 +170,11 @@ fn data_version(conn: &Connection) -> Option<i64> {
         .ok()
 }
 
-fn jsonl_signature(roots: &[PathBuf], json_roots: &[PathBuf]) -> (u64, u128) {
+fn jsonl_signature(
+    roots: &[PathBuf],
+    json_roots: &[PathBuf],
+    log_roots: &[PathBuf],
+) -> (u64, u128) {
     let mut count = 0u64;
     let mut latest = 0u128;
     for root in roots {
@@ -145,6 +182,9 @@ fn jsonl_signature(roots: &[PathBuf], json_roots: &[PathBuf]) -> (u64, u128) {
     }
     for root in json_roots {
         add_signature(root, "json", &mut count, &mut latest);
+    }
+    for root in log_roots {
+        add_signature(root, "log", &mut count, &mut latest);
     }
     (count, latest)
 }

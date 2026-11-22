@@ -20,6 +20,13 @@ fn paths_under(root: &Path) -> SourcePaths {
         trae_cn_events_dir: root.join("usage-ledger/trae-cn"),
         trae_cn_memory_dir: root.join("trae-cn/memory/projects"),
         cline_db: root.join("cline/sessions.db"),
+        antigravity_ide_root: root.join("gemini/antigravity"),
+        antigravity_cli_root: root.join("gemini/antigravity-cli"),
+        minimax_dir: root.join("minimax"),
+        codearts_db: root.join("codeartsdoer/opencode.db"),
+        codebuddy_cn_logs_dir: root.join("codebuddy-cn/logs"),
+        codebuddy_ide_logs_dir: root.join("codebuddy-ide/logs"),
+        codebuddy_genie_dir: root.join("codebuddy-cn/genie-history"),
     }
 }
 

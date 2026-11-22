@@ -17,10 +17,27 @@ const SOURCE_LABELS: Record<string, string> = {
   codex: "Codex",
   opencode: "OpenCode",
   kilo: "Kilo",
+  "trae-cn": "Trae CN",
   cline: "Cline",
+  antigravity: "Antigravity",
+  minimax: "MiniMax Code",
+  codearts: "CodeArts",
+  codebuddy: "CodeBuddy",
 };
 
-const SOURCES = ["qoder", "claude", "codex", "opencode", "kilo", "cline"] as const;
+const SOURCES = [
+  "qoder",
+  "claude",
+  "codex",
+  "opencode",
+  "kilo",
+  "trae-cn",
+  "cline",
+  "antigravity",
+  "minimax",
+  "codearts",
+  "codebuddy",
+] as const;
 
 const WORKSPACES = [
   { name: "acme-storefront", path: "/Users/demo/code/acme-storefront" },

@@ -21,8 +21,21 @@ const STALE_AFTER_SECONDS: f64 = 6.0 * 3600.0;
 
 /// Sources Perch collects; usage rows from anything else are ignored. Token
 /// truth exists only for some of them — Qoder's newer desktop sessions and
-/// Trae CN expose activity / credits / estimates instead.
-const PERCH_SOURCES: [&str; 6] = ["qoder", "claude", "codex", "opencode", "kilo", "trae-cn"];
+/// Trae CN expose activity / credits / estimates instead. Kept in sync with
+/// usage-ledger's SOURCES (see REQ-0002 / CHG-0004).
+const PERCH_SOURCES: [&str; 11] = [
+    "qoder",
+    "claude",
+    "codex",
+    "opencode",
+    "kilo",
+    "trae-cn",
+    "cline",
+    "antigravity",
+    "minimax",
+    "codearts",
+    "codebuddy",
+];
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TokenUsage {

@@ -12,8 +12,12 @@ pub const SOURCE_OPENCODE: &str = "opencode";
 pub const SOURCE_KILO: &str = "kilo";
 pub const SOURCE_TRAE_CN: &str = "trae-cn";
 pub const SOURCE_CLINE: &str = "cline";
+pub const SOURCE_ANTIGRAVITY: &str = "antigravity";
+pub const SOURCE_MINIMAX: &str = "minimax";
+pub const SOURCE_CODEARTS: &str = "codearts";
+pub const SOURCE_CODEBUDDY: &str = "codebuddy";
 
-pub const ALL_SOURCES: [&str; 7] = [
+pub const ALL_SOURCES: [&str; 11] = [
     SOURCE_QODER,
     SOURCE_CLAUDE,
     SOURCE_CODEX,
@@ -21,6 +25,10 @@ pub const ALL_SOURCES: [&str; 7] = [
     SOURCE_KILO,
     SOURCE_TRAE_CN,
     SOURCE_CLINE,
+    SOURCE_ANTIGRAVITY,
+    SOURCE_MINIMAX,
+    SOURCE_CODEARTS,
+    SOURCE_CODEBUDDY,
 ];
 
 pub fn source_label(source: &str) -> &'static str {
@@ -32,6 +40,10 @@ pub fn source_label(source: &str) -> &'static str {
         SOURCE_KILO => "Kilo",
         SOURCE_TRAE_CN => "Trae CN",
         SOURCE_CLINE => "Cline",
+        SOURCE_ANTIGRAVITY => "Antigravity",
+        SOURCE_MINIMAX => "MiniMax Code",
+        SOURCE_CODEARTS => "CodeArts",
+        SOURCE_CODEBUDDY => "CodeBuddy",
         _ => "未知来源",
     }
 }

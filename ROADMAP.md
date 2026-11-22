@@ -1,7 +1,7 @@
 # Roadmap
 
 Perch 以“先找到任务，再回 agent 继续”为核心。里程碑沿用
-[DESIGN.md](docs/DESIGN.md) 第 15 节，这里记录当前实现进度与下一步。
+[v0.3.3-design-review.md](docs/design-docs/history/v0.3.3-design-review.md) 第 15 节，这里记录当前实现进度与下一步。
 
 状态说明：`已完成` / `进行中` / `计划中`。顺序会随反馈调整，但 **只读源数据** 始终是硬约束。
 
@@ -48,7 +48,7 @@ Perch 以“先找到任务，再回 agent 继续”为核心。里程碑沿用
 
 - [x] 可选读取 usage-ledger 的 `usage.db`，在 Inspector 附带 token / credits / est（分轨标注，永不相加）
 - [ ] 用量报表视图（按 workspace / 时间聚合图表，复用 usage-ledger 的聚合口径）
-- [ ] 会话内容搜索（opt-in、默认关闭、仅本机内存；见 `docs/SEARCH.md` P1）
+- [ ] 会话内容搜索（opt-in、默认关闭、仅本机内存；见 `docs/design-docs/source-designs/SEARCH.md` P1）
 - [x] Trae CN hooks 事件聚合（需安装 usage-ledger hook；未安装时来源不可用）
 - [x] Cline 来源：只读 CLI 与桌面 App 共用的 `sessions.db`；CLI 会话可 `cline --id` 恢复
 - [ ] 伴生 CLI（可选）

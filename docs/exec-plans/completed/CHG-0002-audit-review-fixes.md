@@ -16,7 +16,7 @@ CHG-0001 审计后留下 7 项需要决策的问题。逐项决定如下并实�
 4. **scan_run 无限增长** → `finish_scan` 后按源裁剪，每源保留最近 200 条（诊断用途上限）。
 5. **continue_task 全表加载** → 新增 `CacheStore::load_task(key)` 单行查询，命令改用之。
 6. **usage mtime 逻辑重复** → 删除 src-tauri 本地 `usage_mtime`，统一用 `perch_core::usage::newest_mtime`（改为 pub）。
-7. **Cline resume_cmd 与实际执行不一致** → `resume_cmd` 改用过滤后的 `project_path` 生成；内置聊天工作区（`~/.cline/data/workspaces/`）不再出现在 `cd` 目标中，展示为裸命令 `cline --id <id>`，与 `continue_task` 实际执行一致。同步更新 docs/SOURCES.md。
+7. **Cline resume_cmd 与实际执行不一致** → `resume_cmd` 改用过滤后的 `project_path` 生成；内置聊天工作区（`~/.cline/data/workspaces/`）不再出现在 `cd` 目标中，展示为裸命令 `cline --id <id>`，与 `continue_task` 实际执行一致。同步更新 docs/design-docs/source-designs/SOURCES.md。
 
 附带小修（同属审计杂项）：
 

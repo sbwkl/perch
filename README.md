@@ -50,7 +50,7 @@ Perch 只读取各 agent 已落盘的会话元数据，把散落在不同侧边�
 | Trae CN | `~/.local/share/usage-ledger/trae-cn/events-*.jsonl` 与 `~/.trae-cn/memory/projects/**/session_memory_*.jsonl` | 激活 Trae CN App（无会话级深链） |
 | Cline | `~/.cline/data/db/sessions.db` | App 会话激活 Cline App；CLI 会话终端 `cline --id <id>` |
 
-各来源的字段映射、状态推断规则与已知限制见 [docs/SOURCES.md](docs/SOURCES.md)。
+各来源的字段映射、状态推断规则与已知限制见 [docs/design-docs/source-designs/SOURCES.md](docs/design-docs/source-designs/SOURCES.md)。
 
 Trae CN 的会话列表在服务端，本地 agent 库加密；Perch 只读 usage-ledger 的 Trae hook 事件，
 并枚举 `memory/projects` 下的 `session_memory_*.jsonl` 文件名来覆盖安装 hook 前的历史会话
@@ -113,21 +113,41 @@ npm run tauri build
 
 这些能力在 [ROADMAP.md](ROADMAP.md) 中按里程碑排列。
 
-## 文档
+## 需求、变更与文档
+
+- 产品规格事实源：应用内用量报告见 [usage-report.md](docs/product-specs/usage-report.md)，来源覆盖见 [agent-sources.md](docs/product-specs/agent-sources.md)。
+- 设计知识库：入口见 [docs/design-docs/index.md](docs/design-docs/index.md)，核心工程信念见 [core-beliefs.md](docs/design-docs/core-beliefs.md)，源设计见 [source-designs/SOURCES.md](docs/design-docs/source-designs/SOURCES.md)。
+- 当前实现总图见 [ARCHITECTURE.md](ARCHITECTURE.md)；历史设计稿见 [v0.3.3-design-review.md](docs/design-docs/history/v0.3.3-design-review.md)，不作为当前验收标准。
+- 变更记录见 [docs/exec-plans/completed/](docs/exec-plans/completed/)；进行中变更见 [docs/exec-plans/active/](docs/exec-plans/active/)，状态以文档头为准。
+- 文档不再分配全局顺序编号。历史 `REQ-xxxx` / `CHG-xxxx` / `ADR-xxxx` 编号冻结，仅用于追溯；新增变更文档使用 `YYYY-MM-DD-<主题>.md`，开发中放 `docs/exec-plans/active/`，验证后移入 `docs/exec-plans/completed/`。
+- 文档是事实源；issue / PR 中的结论若未回写仓库，对 agent 等于不存在。
+
+## 开发约定
+
+工作流：`main` 是保护分支，只接受合并；新特性从最新 `main` 切 `feat/<特性名>`；集成测试用临时 `tmp/integration-<特性名>` 分支，测完即删；有未提交改动时用 `git worktree` 并行开发；合并 `main` 前必须获得用户同意。完整流程见根 [AGENTS.md](AGENTS.md)。
+
+- 产品行为变化先更新对应产品规格；新功能 / 跨模块行为变更先建变更文档并链接产品规格，验收覆盖正常 / 异常 / 边界后再写代码。
+- 提交前检查：`npm run check`、`cargo fmt --all --check`、`cargo clippy -p perch-core --all-targets -- -D warnings`、`cargo test -p perch-core`。
+- 测试与 demo 只允许合成数据；不得提交真实会话标题、项目路径、数据库或日志。
+- 只读红线、代码风格与 PR 要求见 [CONTRIBUTING.md](CONTRIBUTING.md)；安全边界见 [SECURITY.md](SECURITY.md)。
+
+## 文档索引
 
 | 文档 | 内容 |
 | --- | --- |
-| [docs/DESIGN.md](docs/DESIGN.md) | 产品与数据设计、逐源采集规格、方案取舍 |
+| [AGENTS.md](AGENTS.md) | 工作区地图、硬性规则与开发流程 |
+| [README.md](README.md) | 项目定位、文档与开发约定 |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 代码结构、数据流、只读不变量、扩展点 |
-| [docs/SOURCES.md](docs/SOURCES.md) | 每个来源的路径、schema、状态规则和怪癖 |
-| [docs/SEARCH.md](docs/SEARCH.md) | 搜索字段、模糊/拼音/语义方案与隐私边界 |
+| [docs/product-specs/](docs/product-specs/) | 产品规格与验收事实源 |
+| [docs/design-docs/](docs/design-docs/) | 设计知识库：状态索引、核心信念、ADR / RFC、来源设计、历史 |
+| [docs/exec-plans/](docs/exec-plans/) | 进行中 / 已完成变更记录与技术债账本 |
+| [docs/references/DATA-PROBE.md](docs/references/DATA-PROBE.md) | 本机只读数据探针证据 |
 | [docs/FAQ.md](docs/FAQ.md) | 常见问题（深链限制、数据位置、卸载等） |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | 开发环境、命令、环境变量、演示模式 |
 | [ROADMAP.md](ROADMAP.md) | 里程碑与当前进度 |
 | [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 贡献流程与只读约束 |
 | [SECURITY.md](SECURITY.md) | 安全边界与漏洞报告方式 |
-
 ## 许可
 
 [MIT](LICENSE)

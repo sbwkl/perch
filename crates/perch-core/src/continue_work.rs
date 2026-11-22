@@ -2,8 +2,9 @@ use std::path::Path;
 use std::process::Command;
 
 use crate::models::{
-    TaskSnapshot, SOURCE_CLAUDE, SOURCE_CLINE, SOURCE_CODEX, SOURCE_KILO, SOURCE_OPENCODE,
-    SOURCE_QODER, SOURCE_TRAE_CN,
+    TaskSnapshot, SOURCE_ANTIGRAVITY, SOURCE_CLAUDE, SOURCE_CLINE, SOURCE_CODEARTS,
+    SOURCE_CODEBUDDY, SOURCE_CODEX, SOURCE_KILO, SOURCE_MINIMAX, SOURCE_OPENCODE, SOURCE_QODER,
+    SOURCE_TRAE_CN,
 };
 
 pub const QODER_BUNDLE_ID: &str = "com.qoder.app";
@@ -12,6 +13,10 @@ pub const OPENCODE_BUNDLE_ID: &str = "ai.opencode.desktop";
 pub const KILO_BUNDLE_ID: &str = "ai.kilo.desktop";
 pub const TRAE_CN_BUNDLE_ID: &str = "cn.trae.app";
 pub const CLINE_BUNDLE_ID: &str = "bot.cline.app";
+pub const ANTIGRAVITY_BUNDLE_ID: &str = "com.google.antigravity";
+pub const MINIMAX_BUNDLE_ID: &str = "com.minimax.agent.cn";
+pub const CODEARTS_BUNDLE_ID: &str = "com.huawei.codearts.agent";
+pub const CODEBUDDY_BUNDLE_ID: &str = "com.tencent.codebuddycn";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContinueChannel {
@@ -138,6 +143,30 @@ pub fn plan_continue(task: &TaskSnapshot, probe: &dyn ChannelProbe) -> crate::Re
                 "Cline App",
             )),
         },
+        // Antigravity IDE / agy CLI 均无确认的会话级恢复方式，只能激活窗口。
+        SOURCE_ANTIGRAVITY => Ok(ContinuePlan {
+            channel: ContinueChannel::App,
+            action: ContinueAction::ActivateApp(ANTIGRAVITY_BUNDLE_ID.to_owned()),
+            target: "Antigravity App".to_owned(),
+        }),
+        // MiniMax Code 无确认的会话级深链，只能激活窗口。
+        SOURCE_MINIMAX => Ok(ContinuePlan {
+            channel: ContinueChannel::App,
+            action: ContinueAction::ActivateApp(MINIMAX_BUNDLE_ID.to_owned()),
+            target: "MiniMax Code App".to_owned(),
+        }),
+        // CodeArts（码道）桌面 Agent 无会话级恢复命令，只能激活窗口。
+        SOURCE_CODEARTS => Ok(ContinuePlan {
+            channel: ContinueChannel::App,
+            action: ContinueAction::ActivateApp(CODEARTS_BUNDLE_ID.to_owned()),
+            target: "CodeArts App".to_owned(),
+        }),
+        // CodeBuddy CN（VSCode 系 IDE）无会话级深链，只能激活窗口。
+        SOURCE_CODEBUDDY => Ok(ContinuePlan {
+            channel: ContinueChannel::App,
+            action: ContinueAction::ActivateApp(CODEBUDDY_BUNDLE_ID.to_owned()),
+            target: "CodeBuddy App".to_owned(),
+        }),
         other => Err(crate::PerchError::message(format!(
             "未知来源，无法继续工作：{other}"
         ))),
@@ -334,6 +363,27 @@ mod tests {
             plan.action,
             ContinueAction::ActivateApp(QODER_BUNDLE_ID.to_owned())
         );
+    }
+
+    #[test]
+    fn app_only_sources_activate_their_desktop_apps() {
+        let cases = [
+            (SOURCE_ANTIGRAVITY, ANTIGRAVITY_BUNDLE_ID, "Antigravity App"),
+            (SOURCE_MINIMAX, MINIMAX_BUNDLE_ID, "MiniMax Code App"),
+            (SOURCE_CODEARTS, CODEARTS_BUNDLE_ID, "CodeArts App"),
+            (SOURCE_CODEBUDDY, CODEBUDDY_BUNDLE_ID, "CodeBuddy App"),
+        ];
+        for (source, bundle_id, target) in cases {
+            let plan = plan_continue(&task(source, None), &probe(true, CliPresence::None))
+                .unwrap_or_else(|error| panic!("{source}: {error}"));
+            assert_eq!(plan.channel, ContinueChannel::App, "{source}");
+            assert_eq!(
+                plan.action,
+                ContinueAction::ActivateApp(bundle_id.to_owned()),
+                "{source}"
+            );
+            assert_eq!(plan.target, target, "{source}");
+        }
     }
 
     #[test]
