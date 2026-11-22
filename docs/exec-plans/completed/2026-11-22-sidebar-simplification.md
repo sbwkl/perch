@@ -61,7 +61,7 @@
 
 ## 7. 验证结果
 
-- 自动化：`npm run check` 0 errors / 0 warnings；`npm run build` 成功；`cargo fmt --all --check` 通过；`cargo clippy -p perch-core --all-targets -- -D warnings` 零告警；`cargo test -p perch-core`、`cargo test -p perch --lib` 全部通过。
+- 自动化：`npm run check` 0 errors / 0 warnings；`npm run build` 成功；`cargo fmt --all --check` 通过；`cargo clippy -p perch-core --all-targets -- -D warnings` 零告警；`cargo test -p perch-core`、`cargo test -p perch --lib` 全部通过；`tmp/integration-sidebar-simplification` 从最新 `origin/main` 合入无冲突、`cargo test --workspace` 与全量门禁通过并删除；PR https://github.com/sbwkl/perch/pull/9 的 Frontend / Rust core CI 均通过。
 - demo / CDP 合成数据验收：任务分组仅「最近 / 更早 / 已归档 / 搜索」；无「待关注」「用量报告」导航项；无 workspace 搜索框，分组标题仅 `Workspaces`；来源行仅名称 / 状态 / 当前视图计数，title 不含触发方式或更新时间；无 `source-freshness`、来源说明及「只读采集」页脚文字；页脚报告图标仍能进入 iframe 报告视图并返回；900×560 无横向溢出、侧栏可滚动、页脚可点击。
 - 边界：无 usage 数据时的页脚不可用图标、报告视图返回、workspace 超过 8、来源错误 / 未扫描、搜索 / 筛选叠加保持既有路径；未读取真实 SQLite / JSONL。
 
@@ -81,3 +81,4 @@
 |---|---|---|
 | 提议 → 就绪 | wayne + agent | 2026-11-22 用户明确要求移除指定 UI 文案 / 入口；本变更文档先于代码 |
 | 开发中 → 已验证 | agent | 2026-11-22 本文件 §7：全量门禁与 demo / CDP 合成数据验收通过 |
+| 已验证（集成 / PR） | agent | 临时集成分支从最新 main 全量验证通过并删除；PR #9 CI 两项检查通过 |
