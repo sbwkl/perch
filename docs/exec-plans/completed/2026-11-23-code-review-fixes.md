@@ -80,7 +80,7 @@ PR #9 代码审核发现两处需在合并前修复的问题：
 
 ## 7. 验证结果
 
-- 自动化：`npm run check` 0 errors / 0 warnings；`npm run build` 成功；`cargo fmt --all --check` 通过；`cargo clippy -p perch-core --all-targets -- -D warnings` 零告警；`cargo test -p perch-core` 全部通过；`cargo test -p perch --lib` 4 个测试通过，包括新增 `sources_updated_is_emitted_only_with_real_changes`。
+- 自动化：`npm run check` 0 errors / 0 warnings；`npm run build` 成功；`cargo fmt --all --check` 通过；`cargo clippy -p perch-core --all-targets -- -D warnings` 零告警；`cargo test -p perch-core` 全部通过；`cargo test -p perch --lib` 4 个测试通过，包括新增 `sources_updated_is_emitted_only_with_real_changes`；`tmp/integration-code-review-fixes` 从最新 `origin/main` 合入无冲突、`cargo test --workspace` 与全量门禁通过并删除；PR https://github.com/sbwkl/perch/pull/9 的 Frontend / Rust core CI 均通过。
 - core 单测：`continue_hints_expose_action_before_click` 覆盖 OpenCode / Kilo 永远动态且 `locates_session=false`，Cline desktop / cli / unknown 分别对齐 App / Terminal / Dynamic，Codex desktop 与 Qoder 固定提示不变。
 - 真机 `npm run tauri dev`：Vite 与 Rust 编译启动成功，无错误日志；首次扫描完成后，连续两次相隔 9 秒的 AX 头部快照（任务数 / 快照时间 / 扫描摘要）保持稳定，验证空闲轮次不再每 3 秒触发全量 bootstrap；点击任务检查继续提示，Codex 深链、Claude 终端保持固定通道，OpenCode 动态提示明确“激活 App 无法定位具体会话”。
 - demo / CDP 合成数据：继续提示徽标与按钮文案仍可见，筛选 / 分页 / 报告 / 折叠行为未回归。
@@ -102,3 +102,4 @@ PR #9 代码审核发现两处需在合并前修复的问题：
 |---|---|---|
 | 提议 → 就绪 | wayne + agent | 2026-11-23 PR #9 代码审核结果；本变更文档先于代码 |
 | 开发中 → 已验证 | agent | 2026-11-23 本文件 §7：全量门禁、单测、demo / 真机短验通过 |
+| 已验证（集成 / PR） | agent | 临时集成分支从最新 main 全量验证通过并删除；PR #9 CI 两项检查通过 |
