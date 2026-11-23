@@ -9,8 +9,9 @@ use crate::error::Result;
 use crate::models::{source_label, TaskSnapshot};
 use crate::store::CacheStore;
 
-/// P0 returns only the best matches; the UI reports the total separately.
-pub const MAX_RESULTS: usize = 10;
+/// The UI paginates results; return every metadata hit so search can reveal
+/// all matches under real task volume.
+pub const SEARCH_PAGE_SIZE: usize = 50;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SearchHit {
@@ -115,7 +116,8 @@ fn search_tasks_at(
             })
             .then_with(|| left.key.cmp(&right.key))
     });
-    hits.truncate(MAX_RESULTS);
+    // Search returns all ranked metadata hits; the UI pages them without
+    // hiding results behind a hard cap.
 
     Ok(SearchResponse {
         hits: hits
@@ -563,7 +565,7 @@ mod tests {
     }
 
     #[test]
-    fn limits_hits_and_reports_total() {
+    fn returns_all_hits_and_reports_total() {
         let tasks = (0..12)
             .map(|index| task(&format!("task-{index}"), &format!("匹配任务 {index}")))
             .collect();
@@ -571,7 +573,7 @@ mod tests {
 
         let response = search(&store, "匹配");
         assert_eq!(response.total, 12);
-        assert_eq!(response.hits.len(), MAX_RESULTS);
+        assert_eq!(response.hits.len(), 12);
     }
 
     #[test]

@@ -278,6 +278,82 @@ fn bootstrap_groups_by_workspace_and_splits_recent_older() {
 }
 
 #[test]
+fn attention_count_includes_failed_archived_and_running_tasks() {
+    let store = CacheStore::open_in_memory().unwrap();
+    let now = 1_800_000_000.0;
+    let scan = store.begin_scan("qoder", "full", "source", "test").unwrap();
+    let mut recent = make_task("qoder", "normal", "alpha", now - 10.0);
+    recent.status_source = Some("idle".to_owned());
+    let mut running = make_task("qoder", "running", "alpha", now - 20.0);
+    running.status_source = Some("running".to_owned());
+    let mut failed = make_task("qoder", "failed", "alpha", now - 30.0);
+    failed.status_source = Some("failed".to_owned());
+    let mut archived = make_task("qoder", "archived", "alpha", now - 40.0);
+    archived.source_archived = true;
+    archived.source_unread = true;
+    let mut child = make_task("qoder", "child", "alpha", now - 50.0);
+    child.parent_key = Some("qoder:normal".to_owned());
+    let tasks = [recent, running, failed, archived, child]
+        .into_iter()
+        .map(|mut item| {
+            item.refresh_fingerprint();
+            item
+        })
+        .collect();
+    store
+        .save_result(&SourceResult::ok("qoder", tasks, Vec::new()), scan)
+        .unwrap();
+
+    let payload = build_bootstrap(&store, now).unwrap();
+    assert_eq!(
+        payload.counts.attention, 3,
+        "running, failed and unread archived tasks need attention; children do not"
+    );
+}
+
+#[test]
+fn bootstrap_exposes_continue_hint_and_source_trigger() {
+    let store = CacheStore::open_in_memory().unwrap();
+    let scan = store.begin_scan("qoder", "full", "source", "test").unwrap();
+    store
+        .save_result(
+            &SourceResult::ok(
+                "qoder",
+                vec![make_task("qoder", "a", "alpha", 1_000.0)],
+                Vec::new(),
+            ),
+            scan,
+        )
+        .unwrap();
+    store
+        .record_sync_state(&perch_core::models::SourceSyncState {
+            source: "qoder".to_owned(),
+            last_scan_at: Some(1_000.0),
+            last_ok_at: Some(1_000.0),
+            last_mode: Some("full".to_owned()),
+            last_trigger: Some("live".to_owned()),
+            status: "ok".to_owned(),
+            files_seen: Some(1),
+            task_count: Some(1),
+            schema_version: None,
+            error: None,
+        })
+        .unwrap();
+
+    let payload = build_bootstrap(&store, 1_000.0).unwrap();
+    let task = &payload.workspaces[0].tasks[0];
+    let hint = task.continue_hint.as_ref().expect("continue hint");
+    assert_eq!(hint.label, "仅激活 App");
+    assert!(!hint.locates_session);
+    let source = payload
+        .sources
+        .iter()
+        .find(|item| item.source == "qoder")
+        .unwrap();
+    assert_eq!(source.last_trigger.as_deref(), Some("live"));
+}
+
+#[test]
 fn load_task_returns_single_snapshot_by_key() {
     let store = CacheStore::open_in_memory().unwrap();
     let scan = store.begin_scan("qoder", "full", "source", "test").unwrap();

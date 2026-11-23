@@ -1,6 +1,6 @@
 # Perch
 
-> 多 agent 任务总览：把 Qoder、Claude Code、Codex、OpenCode、Kilo、Trae CN、Cline 的本地会话汇总到一处。
+> 多 agent 任务总览：把 Qoder、Claude Code、Codex、OpenCode、Kilo、Trae CN、Cline、Antigravity、MiniMax Code、CodeArts、CodeBuddy 的本地会话汇总到一处。
 > 先找到任务，再决定回哪个 agent 继续。
 
 ![Perch 主界面](docs/images/overview.png)
@@ -19,18 +19,18 @@ Perch 只读取各 agent 已落盘的会话元数据，把散落在不同侧边�
 
 ## 它能做什么
 
-- **统一任务列表**：七个来源的任务按最近活动时间平铺展示，行内标注 workspace。
-- **三种视图**：最近（近 7 天）、更早（7 天之外）、已归档；workspace 与来源筛选可叠加在当前视图上。
+- **统一任务列表**：11 个来源的任务按最近活动时间平铺展示，行内标注 workspace。
+- **简洁导航**：最近（近 7 天）、更早（7 天之外）、已归档、搜索；Workspaces / 来源按近 7 天会话数倒排，超过 8 项折叠，workspace 只显示源数据名称，不显示路径父目录 / 分组后缀；任务视图可组合 workspace / 来源筛选（仅侧栏选中态表达、不在第二栏显示 tag），长列表按页展开；用量报告由页脚图标进入。
 - **搜索**：`⌘F` 或侧边栏入口打开搜索弹层，即时搜索标题、项目、路径、待办、模型、分支、状态、来源、类型与会话 ID；
-  支持中文、拼音与拉丁模糊匹配；默认搜索全部会话（含归档），结果取前 10 条，`↑`/`↓` 选择、`Enter` 打开。
-- **实时感知**：窗口可见时每 3 秒探测源变化，变更后自动重扫并刷新界面；也可用 `⌘R` 手动刷新。
-- **详情面板**：展示模型、分支、消息数、待办进度和恢复命令。
+  支持中文、拼音与拉丁模糊匹配；忽略当前任务视图、默认包含归档，当前 workspace / 来源筛选会叠加并显示作用域；返回全部命中并在弹层分页展示，`↑`/`↓` 选择、`Enter` 打开。
+- **实时感知**：窗口可见时检查 SQLite 变化、节流计算 JSONL / 日志签名；变化经去抖与冷却后重扫，界面显示扫描来源 / 耗时并允许暂停实时刷新；`⌘R` 手动刷新优先。
+- **详情面板**：展示模型、分支、消息数、待办进度、继续工作通道与恢复命令。
 - **用量附加（可选）**：按会话关联 usage-ledger 的 token 真值、Qoder credits 与 est 估算，
   四轨分开展示、永不相加；选中单一来源时，顶部显示该来源的摘要（不同来源单位不同，
   不做跨来源汇总）。侧边栏页脚的用量报告图标调用 usage-ledger 自己的 `usage html`，
-  在浏览器打开完整的 HTML 报告。
-- **继续工作**：按来源决定激活 App 还是在终端恢复会话，命令由 Rust 侧固定模板生成。
-- **只读保证**：SQLite 只读连接 + 只读 JSONL；界面脚注和详情面板都明确标注不改动源数据。
+  在应用内嵌视图展示完整的 HTML 报告；报告是全局的，不随任务筛选变化。
+- **继续工作**：点击前显示终端恢复 / 深链打开 / 仅激活 App 通道；按来源决定动作，命令由 Rust 侧固定模板生成。
+- **只读保证**：SQLite 只读连接 + 只读 JSONL；详情面板标注数据边界，侧边栏不展示只读说明。
 
 ### 界面预览
 
@@ -49,6 +49,10 @@ Perch 只读取各 agent 已落盘的会话元数据，把散落在不同侧边�
 | Kilo | `~/.local/share/kilo/kilo.db` | App 运行中则激活 App；否则终端 `kilo` |
 | Trae CN | `~/.local/share/usage-ledger/trae-cn/events-*.jsonl` 与 `~/.trae-cn/memory/projects/**/session_memory_*.jsonl` | 激活 Trae CN App（无会话级深链） |
 | Cline | `~/.cline/data/db/sessions.db` | App 会话激活 Cline App；CLI 会话终端 `cline --id <id>` |
+| Antigravity | `~/.gemini/antigravity/`、`~/.gemini/antigravity-cli/` | 激活 Antigravity App（无确认的会话级恢复方式） |
+| MiniMax Code | `~/.minimax/v2/sessions/`、`runtime-state.sqlite` | 激活 MiniMax Code App（无确认的会话级恢复方式） |
+| CodeArts | `~/.codeartsdoer/codearts-data/opencode.db` | 激活 CodeArts App（无确认的会话级恢复方式） |
+| CodeBuddy | CodeBuddy CN / IDE 日志与 genie-history | 激活 CodeBuddy App（无确认的会话级恢复方式） |
 
 各来源的字段映射、状态推断规则与已知限制见 [docs/design-docs/source-designs/SOURCES.md](docs/design-docs/source-designs/SOURCES.md)。
 
@@ -100,7 +104,7 @@ npm run tauri build
 - 不发起任何网络请求，没有遥测、账号或云同步。
 - 本地缓存位于 `~/Library/Application Support/app.perch.desktop/cache.db`，可随时删除重建，
   不影响源 agent 数据。标题由 agent 生成，可能包含 prompt 片段；Perch 只在本机保存。
-- 详情面板的“打开”按钮不会执行前端传入的任意命令；会话 ID 会做字符集校验。
+- 详情面板的“继续工作”按钮不会执行前端传入的任意命令；会话 ID 会做字符集校验。
 
 更多边界与威胁模型见 [SECURITY.md](SECURITY.md)。
 
@@ -148,6 +152,7 @@ npm run tauri build
 | [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 贡献流程与只读约束 |
 | [SECURITY.md](SECURITY.md) | 安全边界与漏洞报告方式 |
+
 ## 许可
 
 [MIT](LICENSE)

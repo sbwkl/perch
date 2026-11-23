@@ -4,8 +4,10 @@
   import { onMount, tick } from "svelte";
   import type {
     BootstrapPayload,
+    ContinueHint,
     ContinueOutcome,
     SearchHit,
+    SourceView,
     SearchResponse,
     SyncReport,
     TaskView,
@@ -19,6 +21,14 @@
   interface ScanNotice {
     label: string;
     message: string;
+  }
+
+  interface ScanStatusEvent {
+    source: string;
+    trigger: "manual" | "live";
+    phase: "start" | "end";
+    duration_ms: number | null;
+    live_paused: boolean;
   }
 
   const ICONS = {
@@ -81,12 +91,14 @@
   let scanNotices = $state<ScanNotice[]>([]);
   let lastScanSummary = $state("");
   let view = $state<ViewMode>("recent");
+  let taskReturnView = $state<Exclude<ViewMode, "report">>("recent");
   let workspaceFilter = $state<string | null>(null);
   let sourceFilter = $state<string | null>(null);
   let selectedKey = $state<string | null>(null);
   let continuing = $state(false);
   let continueNotice = $state("");
   let showAllWorkspaces = $state(false);
+  let showAllSources = $state(false);
   let reportOpen = $state(false);
   let reportNotice = $state("");
   let reportFailed = $state(false);
@@ -102,33 +114,117 @@
   let searchError = $state("");
   let searchInput = $state<HTMLInputElement>();
   let searchResultList = $state<HTMLDivElement>();
+  let listLimit = $state(60);
+  let searchLimit = $state(50);
+  let livePaused = $state(false);
+  let scanStatus = $state("");
+  let activeScans = $state<Record<string, string>>({});
 
-  const WORKSPACE_VISIBLE_LIMIT = 8;
+  const NAV_VISIBLE_LIMIT = 8;
+  const RECENT_WINDOW_SECONDS = 7 * 24 * 60 * 60;
+  const TASK_PAGE_SIZE = 60;
+  const SEARCH_PAGE_SIZE = 50;
+
+  function matchesView(task: TaskView, mode: ViewMode): boolean {
+    if (mode === "archived") return task.source_archived;
+    if (mode === "report") return false;
+    return !task.source_archived && task.is_recent === (mode === "recent");
+  }
+
+  function primaryTask(task: TaskView): boolean {
+    return !task.is_child && !task.is_automation;
+  }
+
+  const allPrimaryTasks = $derived.by(() =>
+    (payload?.workspaces ?? []).flatMap((group) => group.tasks).filter(primaryTask),
+  );
+
+  const countView = $derived<Exclude<ViewMode, "report">>(
+    view === "report" ? taskReturnView : view,
+  );
+  interface ActivityRank {
+    recentCount: number;
+    lastActivity: number;
+  }
+
+  const activityIndex = $derived.by(() => {
+    const workspaces = new Map<string, ActivityRank>();
+    const sources = new Map<string, ActivityRank>();
+    const now = payload?.generated_at ?? Date.now() / 1000;
+    const cutoff = now - RECENT_WINDOW_SECONDS;
+    const rank = (map: Map<string, ActivityRank>, key: string, task: TaskView) => {
+      const activity = task.updated_at ?? task.created_at ?? 0;
+      const entry = map.get(key) ?? { recentCount: 0, lastActivity: 0 };
+      if (activity >= cutoff) entry.recentCount += 1;
+      entry.lastActivity = Math.max(entry.lastActivity, activity);
+      map.set(key, entry);
+    };
+    for (const task of allPrimaryTasks) {
+      if (task.source_archived || task.source_missing) continue;
+      rank(workspaces, task.workspace_key, task);
+      rank(sources, task.source, task);
+    }
+    return { workspaces, sources };
+  });
+
+  function activityOf(
+    map: Map<string, ActivityRank>,
+    key: string,
+  ): ActivityRank {
+    return map.get(key) ?? { recentCount: 0, lastActivity: 0 };
+  }
+
+  function compareActivity(left: ActivityRank, right: ActivityRank): number {
+    return (
+      right.recentCount - left.recentCount ||
+      right.lastActivity - left.lastActivity
+    );
+  }
+
+
+  function tasksMatching(
+    mode: ViewMode,
+    workspace: string | null,
+    source: string | null,
+  ): TaskView[] {
+    return allPrimaryTasks.filter(
+      (task) =>
+        matchesView(task, mode) &&
+        (!workspace || task.workspace_key === workspace) &&
+        (!source || task.source === source),
+    );
+  }
 
   const smartLists = $derived([
-    { id: "recent" as ViewMode, label: "最近", count: payload?.counts.recent ?? 0, icon: ICONS.clock },
-    { id: "older" as ViewMode, label: "更早", count: payload?.counts.older ?? 0, icon: ICONS.history },
-    { id: "archived" as ViewMode, label: "已归档", count: payload?.counts.archived ?? 0, icon: ICONS.archive },
+    { id: "recent" as ViewMode, label: "最近", icon: ICONS.clock, count: tasksMatching("recent", workspaceFilter, sourceFilter).length },
+    { id: "older" as ViewMode, label: "更早", icon: ICONS.history, count: tasksMatching("older", workspaceFilter, sourceFilter).length },
+    { id: "archived" as ViewMode, label: "已归档", icon: ICONS.archive, count: tasksMatching("archived", workspaceFilter, sourceFilter).length },
   ]);
 
-  const workspaceItems = $derived.by(() =>
-    (payload?.workspaces ?? [])
+  const workspaceItems = $derived.by(() => {
+    const all = (payload?.workspaces ?? [])
       .map((group) => ({
         key: group.key,
         name: group.name,
         path: group.project_path,
-        count: group.tasks.filter(
-          (task) => !task.is_child && !task.is_automation && !task.source_archived,
-        ).length,
+        count: tasksMatching(countView, group.key, sourceFilter).length,
+        activity: activityOf(activityIndex.workspaces, group.key),
       }))
-      .filter((item) => item.count > 0),
-  );
+      .filter((item) => item.count > 0);
+    return all
+      .map((item) => ({ ...item, label: item.name }))
+      .sort(
+        (left, right) =>
+          compareActivity(left.activity, right.activity) ||
+          left.name.localeCompare(right.name),
+      );
+  });
 
   const visibleWorkspaces = $derived.by(() => {
-    if (showAllWorkspaces || workspaceItems.length <= WORKSPACE_VISIBLE_LIMIT) {
+    if (showAllWorkspaces || workspaceItems.length <= NAV_VISIBLE_LIMIT) {
       return workspaceItems;
     }
-    const visible = workspaceItems.slice(0, WORKSPACE_VISIBLE_LIMIT);
+    const visible = workspaceItems.slice(0, NAV_VISIBLE_LIMIT);
     if (workspaceFilter && !visible.some((item) => item.key === workspaceFilter)) {
       const active = workspaceItems.find((item) => item.key === workspaceFilter);
       if (active) visible.push(active);
@@ -140,7 +236,39 @@
     Math.max(0, workspaceItems.length - visibleWorkspaces.length),
   );
 
-  const canToggleWorkspaces = $derived(workspaceItems.length > WORKSPACE_VISIBLE_LIMIT);
+  const canToggleWorkspaces = $derived(workspaceItems.length > NAV_VISIBLE_LIMIT);
+
+  const sourceItems = $derived.by(() =>
+    (payload?.sources ?? [])
+      .map((source) => ({
+        ...source,
+        count: tasksMatching(countView, workspaceFilter, source.source).length,
+        activity: activityOf(activityIndex.sources, source.source),
+      }))
+      .sort(
+        (left, right) =>
+          compareActivity(left.activity, right.activity) ||
+          left.label.localeCompare(right.label),
+      ),
+  );
+
+  const visibleSources = $derived.by(() => {
+    if (showAllSources || sourceItems.length <= NAV_VISIBLE_LIMIT) {
+      return sourceItems;
+    }
+    const visible = sourceItems.slice(0, NAV_VISIBLE_LIMIT);
+    if (sourceFilter && !visible.some((item) => item.source === sourceFilter)) {
+      const active = sourceItems.find((item) => item.source === sourceFilter);
+      if (active) visible.push(active);
+    }
+    return visible;
+  });
+
+  const hiddenSourceCount = $derived(
+    Math.max(0, sourceItems.length - visibleSources.length),
+  );
+
+  const canToggleSources = $derived(sourceItems.length > NAV_VISIBLE_LIMIT);
 
   function compareTaskOrder(left: TaskView, right: TaskView): number {
     const leftRunning = left.status === "running";
@@ -157,12 +285,8 @@
       if (workspaceFilter && group.key !== workspaceFilter) continue;
       for (const task of group.tasks) {
         const isSelected = task.key === selectedKey;
-        if ((task.is_child || task.is_automation) && !isSelected) continue;
-        if (view === "archived") {
-          if (!task.source_archived) continue;
-        } else if (task.source_archived || task.is_recent !== (view === "recent")) {
-          continue;
-        }
+        if (!primaryTask(task) && !isSelected) continue;
+        if (!matchesView(task, view)) continue;
         if (sourceFilter && task.source !== sourceFilter) continue;
         tasks.push(task);
       }
@@ -170,9 +294,47 @@
     return tasks.sort(compareTaskOrder);
   });
 
+  const renderedTasks = $derived(flatTasks.slice(0, listLimit));
+  const hasMoreTasks = $derived(flatTasks.length > renderedTasks.length);
   const totalVisible = $derived(flatTasks.length);
-
   const hasVisibleTasks = $derived(flatTasks.length > 0);
+
+  const selected = $derived.by<TaskView | null>(() =>
+    flatTasks.find((task) => task.key === selectedKey) ?? null,
+  );
+
+  const continueHint = $derived<ContinueHint | null>(selected?.continue_hint ?? null);
+
+  const continueButtonLabel = $derived(
+    continuing
+      ? "打开中…"
+      : continueHint
+        ? `${continueHint.label} ${selected?.source_label ?? ""}`.trim()
+        : `打开 ${selected?.source_label ?? ""}`.trim(),
+  );
+
+  const searchScope = $derived.by(() => {
+    const parts: string[] = [];
+    if (workspaceFilter) {
+      parts.push(
+        `Workspace：${workspaceItems.find((item) => item.key === workspaceFilter)?.name ?? workspaceFilter}`,
+      );
+    }
+    if (sourceFilter) parts.push(`来源：${SOURCE_LABELS[sourceFilter] ?? sourceFilter}`);
+    return parts;
+  });
+
+  const searchScopeLabel = $derived(
+    searchScope.length > 0
+      ? `作用域：${searchScope.join(" · ")}`
+      : "搜索所有会话（含归档）",
+  );
+
+  function searchScopeTitle(): string {
+    return searchScope.length > 0
+      ? `当前仅搜索 ${searchScope.join("、")}；视图不影响搜索，仍包含归档 / 子会话 / 自动化`
+      : "忽略最近 / 更早 / 已归档视图，搜索全部会话（含归档 / 子会话 / 自动化）";
+  }
 
   const allTasks = $derived.by(() => {
     const map = new Map<string, TaskView>();
@@ -193,6 +355,17 @@
     return results;
   });
 
+  const renderedSearchResults = $derived(searchResults.slice(0, searchLimit));
+  const hasMoreSearchResults = $derived(searchResults.length > renderedSearchResults.length);
+
+  function showMoreSearchResults() {
+    searchLimit += SEARCH_PAGE_SIZE;
+  }
+
+  function showMoreTasks() {
+    listLimit += TASK_PAGE_SIZE;
+  }
+
   let searchSeq = 0;
   $effect(() => {
     const term = query.trim();
@@ -200,6 +373,7 @@
     const workspace = workspaceFilter;
     void payload?.generated_at;
     const seq = ++searchSeq;
+    searchLimit = SEARCH_PAGE_SIZE;
     if (!term) {
       searchHits = [];
       searchTotal = 0;
@@ -236,13 +410,11 @@
     return () => clearTimeout(timer);
   });
 
-  const selected = $derived.by<TaskView | null>(() => {
-    if (!payload || !selectedKey) return null;
-    for (const group of payload.workspaces) {
-      const found = group.tasks.find((task) => task.key === selectedKey);
-      if (found) return found;
-    }
-    return null;
+  $effect(() => {
+    void view;
+    void workspaceFilter;
+    void sourceFilter;
+    listLimit = TASK_PAGE_SIZE;
   });
 
   const selectedUsage = $derived(selected?.usage ?? null);
@@ -261,28 +433,63 @@
 
   const heading = $derived.by(() => {
     if (view === "report") return "用量报告";
+    const parts: string[] = [];
     if (workspaceFilter) {
-      return (
-        workspaceItems.find((item) => item.key === workspaceFilter)?.name ??
-        payload?.workspaces.find((group) => group.key === workspaceFilter)?.name ??
-        "Workspace"
+      parts.push(
+        workspaceItems.find((item) => item.key === workspaceFilter)?.label ??
+          payload?.workspaces.find((group) => group.key === workspaceFilter)?.name ??
+          "Workspace",
       );
     }
-    if (sourceFilter) return SOURCE_LABELS[sourceFilter] ?? sourceFilter;
+    if (sourceFilter) parts.push(SOURCE_LABELS[sourceFilter] ?? sourceFilter);
+    if (parts.length > 0) return parts.join(" · ");
     return smartLists.find((item) => item.id === view)?.label ?? "任务";
   });
 
   const subheading = $derived.by(() => {
-    if (view === "report") return "usage-ledger 生成 · 应用内嵌展示";
+    if (view === "report") return "usage-ledger 生成 · 全局报告 · 不随任务筛选变化";
     const generated = payload ? fullTime(payload.generated_at) : "—";
     const summary = lastScanSummary ? ` · ${lastScanSummary}` : "";
-    return `${totalVisible} 个任务 · 快照 ${generated}${summary}`;
+    const shown = Math.min(totalVisible, listLimit);
+    const count = totalVisible > shown ? `${shown} / ${totalVisible} 个任务` : `${totalVisible} 个任务`;
+    return `${count} · 快照 ${generated}${summary}`;
   });
 
   async function loadBootstrap() {
     payload = await invoke<BootstrapPayload>("bootstrap");
   }
 
+  function formatScanStatus(status: ScanStatusEvent): string {
+    const source = status.source === "all" ? "全部来源" : SOURCE_LABELS[status.source] ?? status.source;
+    const trigger = status.trigger === "manual" ? "手动刷新" : "后台更新";
+    if (status.phase === "start") return `${trigger} · 正在扫描 ${source}`;
+    return `${trigger} · ${source} 扫描完成 · ${status.duration_ms ?? 0} ms`;
+  }
+
+  function handleScanStatus(status: ScanStatusEvent) {
+    livePaused = status.live_paused;
+    const label = formatScanStatus(status);
+    if (status.phase === "start") {
+      activeScans = { ...activeScans, [`${status.trigger}:${status.source}`]: label };
+    } else {
+      const next = { ...activeScans };
+      delete next[`${status.trigger}:${status.source}`];
+      activeScans = next;
+    }
+    scanStatus = Object.values(activeScans)[0] ?? label;
+    if (status.trigger === "manual" && status.phase === "start") lastScanSummary = "手动扫描中";
+  }
+
+  async function toggleLiveRefresh() {
+    const next = !livePaused;
+    try {
+      const result = await invoke<{ paused: boolean }>("set_live_refresh", { paused: next });
+      livePaused = result.paused;
+      scanStatus = result.paused ? "实时刷新已暂停；⌘R 可手动刷新" : "实时刷新已恢复";
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : String(error);
+    }
+  }
   async function refresh() {
     if (refreshing) return;
     refreshing = true;
@@ -300,7 +507,9 @@
         Math.round((report.finished_at - report.started_at) * 1000),
       )} ms`;
       await loadBootstrap();
-      if (selectedKey && !payloadContains(selectedKey)) selectedKey = null;
+      if (selectedKey && !flatTasks.some((task) => task.key === selectedKey)) {
+        selectedKey = null;
+      }
     } catch (error) {
       errorMessage = error instanceof Error ? error.message : String(error);
     } finally {
@@ -309,10 +518,9 @@
     }
   }
 
-  function payloadContains(key: string): boolean {
-    return Boolean(
-      payload?.workspaces.some((group) => group.tasks.some((task) => task.key === key)),
-    );
+  function clearSelection() {
+    selectedKey = null;
+    continueNotice = "";
   }
 
   function selectTask(key: string) {
@@ -374,16 +582,22 @@
 
   function openUsageReport() {
     view = "report";
-    workspaceFilter = null;
-    sourceFilter = null;
+    clearSelection();
     closeSearch();
     void generateUsageReport(false);
   }
 
+  function returnToTasks() {
+    view = taskReturnView;
+    clearSelection();
+    reportNotice = "";
+    reportFailed = false;
+  }
+
   function selectView(next: ViewMode) {
+    if (next !== "report") taskReturnView = next;
     view = next;
-    workspaceFilter = null;
-    sourceFilter = null;
+    clearSelection();
     closeSearch();
   }
 
@@ -413,14 +627,20 @@
   }
 
   function revealTask(task: TaskView) {
-    view = task.source_archived ? "archived" : task.is_recent ? "recent" : "older";
+    const nextView = task.source_archived ? "archived" : task.is_recent ? "recent" : "older";
+    view = nextView;
+    taskReturnView = nextView;
     workspaceFilter = task.workspace_key;
     sourceFilter = null;
     selectTask(task.key);
     void tick().then(() => {
-      document
-        .querySelector(".flat-list .task.selected")
-        ?.scrollIntoView({ block: "nearest" });
+      const index = flatTasks.findIndex((item) => item.key === task.key);
+      if (index >= listLimit) listLimit = Math.ceil((index + 1) / TASK_PAGE_SIZE) * TASK_PAGE_SIZE;
+      void tick().then(() => {
+        document
+          .querySelector(".flat-list .task.selected")
+          ?.scrollIntoView({ block: "nearest" });
+      });
     });
   }
 
@@ -428,8 +648,13 @@
     if (searchResults.length === 0) return;
     searchIndex =
       (searchIndex + delta + searchResults.length) % searchResults.length;
+    if (searchIndex >= searchLimit) {
+      searchLimit = Math.ceil((searchIndex + 1) / SEARCH_PAGE_SIZE) * SEARCH_PAGE_SIZE;
+    }
     void tick().then(() => {
-      const item = searchResultList?.children[searchIndex] as HTMLElement | undefined;
+      const item = searchResultList?.querySelector<HTMLElement>(
+        `.search-result[data-index="${searchIndex}"]`,
+      );
       item?.scrollIntoView({ block: "nearest" });
     });
   }
@@ -441,12 +666,39 @@
 
   function selectWorkspace(key: string) {
     workspaceFilter = workspaceFilter === key ? null : key;
-    sourceFilter = null;
+    clearSelection();
   }
 
   function selectSource(source: string) {
     sourceFilter = sourceFilter === source ? null : source;
+    clearSelection();
+  }
+
+  function clearSearchScope() {
     workspaceFilter = null;
+    sourceFilter = null;
+    clearSelection();
+    void tick().then(() => searchInput?.focus());
+  }
+
+  function sourceStatusLabel(status: string): string {
+    const labels: Record<string, string> = {
+      ok: "正常",
+      partial: "部分扫描",
+      unavailable: "不可用",
+      error: "错误",
+      unknown: "未扫描",
+    };
+    return labels[status] ?? status;
+  }
+
+  function sourceTitle(source: SourceView & { count?: number }): string {
+    const parts = [
+      `${source.label}：${sourceStatusLabel(source.status)}`,
+      `当前视图 / workspace 下 ${source.count ?? 0} 个任务`,
+    ];
+    if (source.error) parts.push(source.error);
+    return parts.join("；");
   }
 
   function sourceColor(source: string): string {
@@ -558,6 +810,7 @@
   onMount(() => {
     let disposed = false;
     let unlisten: (() => void) | null = null;
+    let unlistenScan: (() => void) | null = null;
 
     void (async () => {
       try {
@@ -588,9 +841,17 @@
       else unlisten = stop;
     });
 
+    void listen("scan-status", (event) => {
+      if (!disposed) handleScanStatus(event.payload as ScanStatusEvent);
+    }).then((stop) => {
+      if (disposed) stop();
+      else unlistenScan = stop;
+    });
+
     return () => {
       disposed = true;
       unlisten?.();
+      unlistenScan?.();
     };
   });
 </script>
@@ -658,6 +919,8 @@
           <button
             class="nav-item"
             class:active={view === item.id}
+            aria-current={view === item.id ? "page" : undefined}
+            aria-pressed={view === item.id}
             onclick={() => selectView(item.id)}
           >
             <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
@@ -670,6 +933,7 @@
         <button
           class="nav-item search-entry"
           class:active={searchOpen}
+          aria-pressed={searchOpen}
           title="搜索任务（⌘F）"
           onclick={openSearch}
         >
@@ -687,18 +951,25 @@
           <button
             class="nav-item"
             class:active={workspaceFilter === workspace.key}
+            aria-pressed={workspaceFilter === workspace.key}
+            data-recent-count={workspace.activity.recentCount}
+            data-last-activity={workspace.activity.lastActivity}
             title={workspace.path ?? workspace.name}
             onclick={() => selectWorkspace(workspace.key)}
           >
             <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
               <path d={ICONS.folder} />
             </svg>
-            <span class="nav-label">{workspace.name}</span>
+            <span class="nav-label">{workspace.label}</span>
             <span class="nav-count">{workspace.count}</span>
           </button>
         {/each}
         {#if canToggleWorkspaces}
-          <button class="nav-more" onclick={() => (showAllWorkspaces = !showAllWorkspaces)}>
+          <button
+            class="nav-more"
+            aria-expanded={showAllWorkspaces}
+            onclick={() => (showAllWorkspaces = !showAllWorkspaces)}
+          >
             {showAllWorkspaces ? "收起" : `显示更多（${hiddenWorkspaceCount}）`}
           </button>
         {/if}
@@ -709,27 +980,44 @@
 
       <nav class="nav-section sources">
         <p class="section-title">来源</p>
-        {#each payload?.sources ?? [] as source (source.source)}
+        {#each visibleSources as source (source.source)}
           <button
             class="nav-item source-item"
             class:active={sourceFilter === source.source}
-            title={source.error ?? source.label}
+            class:degraded={source.status !== "ok"}
+            aria-pressed={sourceFilter === source.source}
+            data-recent-count={source.activity.recentCount}
+            data-last-activity={source.activity.lastActivity}
+            aria-label={`${source.label}，${sourceStatusLabel(source.status)}，当前视图 ${source.count} 个任务`}
+            title={sourceTitle(source)}
             onclick={() => selectSource(source.source)}
           >
             <span class="source-icon">{@html sourceIconMarkup(source.source)}</span>
             <span class="nav-label">{source.label}</span>
-            <span class="nav-count">{source.task_count}</span>
+            {#if source.status !== "ok"}
+              <span class="source-status" aria-label={`来源状态：${sourceStatusLabel(source.status)}`}>
+                {sourceStatusLabel(source.status)}
+              </span>
+            {/if}
+            <span class="nav-count" title="当前视图 / workspace 下可点击任务数">{source.count}</span>
             {#if source.error && source.status !== "unavailable"}
-              <span class="source-warning">!</span>
+              <span class="source-warning" aria-hidden="true">!</span>
             {/if}
           </button>
         {/each}
-        <p class="nav-note">Trae CN 需安装 usage-ledger hook 后显示会话；ChatGPT 桌面仅 Codex 会话可见。</p>
+        {#if canToggleSources}
+          <button
+            class="nav-more"
+            aria-expanded={showAllSources}
+            onclick={() => (showAllSources = !showAllSources)}
+          >
+            {showAllSources ? "收起" : `显示更多（${hiddenSourceCount}）`}
+          </button>
+        {/if}
       </nav>
     </div>
 
     <footer class="sidebar-foot">
-      <span>只读采集 · 不改动源数据</span>
       {#if payload?.usage}
         <button
           class="sidebar-report"
@@ -746,6 +1034,8 @@
             : view === "report"
               ? "重新生成用量报告"
               : "在应用内查看 usage-ledger 用量报告"}
+          aria-current={view === "report" ? "page" : undefined}
+          aria-pressed={view === "report"}
         >
           <svg
             class="report-icon"
@@ -760,6 +1050,17 @@
             <path d={reportOpen ? ICONS.refresh : ICONS.report} />
           </svg>
         </button>
+      {:else}
+        <button
+          class="sidebar-report unavailable"
+          aria-label="用量报告不可用：未检测到 usage-ledger 用量数据"
+          title="未检测到 usage-ledger 用量数据；安装并同步后可在应用内查看报告"
+          onclick={openUsageReport}
+        >
+          <svg class="report-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d={ICONS.report} />
+          </svg>
+        </button>
       {/if}
     </footer>
   </aside>
@@ -771,6 +1072,9 @@
         <p>{subheading}</p>
       </div>
       {#if view === "report"}
+        <button class="refresh-button" onclick={returnToTasks} title="返回任务视图">
+          <span>返回任务</span>
+        </button>
         <button
           class="refresh-button"
           onclick={() => void generateUsageReport(false)}
@@ -843,6 +1147,18 @@
       {/if}
     </header>
 
+    {#if scanStatus || (view !== "report" && !busy)}
+      <div class="scan-status" class:paused={livePaused}>
+        <span class="scan-dot" class:busy={Object.keys(activeScans).length > 0}></span>
+        <span>{scanStatus || (livePaused ? "实时刷新已暂停" : "实时刷新已开启")}</span>
+        {#if view !== "report"}
+          <button class="scan-toggle" onclick={() => void toggleLiveRefresh()} aria-pressed={livePaused}>
+            {livePaused ? "恢复实时" : "暂停实时"}
+          </button>
+        {/if}
+      </div>
+    {/if}
+
     {#if errorMessage}
       <div class="banner error">{errorMessage}</div>
     {/if}
@@ -886,10 +1202,15 @@
     {:else}
       <div class="groups">
         <div class="flat-list">
-          {#each flatTasks as task (task.key)}
+          {#each renderedTasks as task (task.key)}
             {@render taskRow(task, !workspaceFilter)}
           {/each}
         </div>
+        {#if hasMoreTasks}
+          <button class="list-more" onclick={showMoreTasks}>
+            显示更多（还有 {flatTasks.length - renderedTasks.length} 条 · 当前每页 {TASK_PAGE_SIZE} 条）
+          </button>
+        {/if}
       </div>
     {/if}
   </main>
@@ -915,15 +1236,30 @@
         </header>
 
         <div class="continue-row">
+          {#if continueHint}
+            <span
+              class="continue-channel {continueHint.channel}"
+              title={continueHint.detail}
+              aria-label={`继续工作通道：${continueHint.label}；${continueHint.detail}`}
+            >
+              {continueHint.label}
+            </span>
+          {/if}
           <button
             class="continue-button"
             onclick={() => void continueTask()}
             disabled={continuing}
+            title={continueHint?.detail ?? "按来源固定模板打开"}
           >
-            {continuing ? "打开中…" : `打开 ${selected.source_label}`}
+            {continueButtonLabel}
           </button>
           {#if continueNotice}<span class="continue-note">{continueNotice}</span>{/if}
         </div>
+        {#if continueHint}
+          <p class="continue-detail">
+            {continueHint.detail}{#if !continueHint.locates_session}；点击前请确认当前 App 中的会话。{/if}
+          </p>
+        {/if}
 
         <section class="detail-block">
           <h3>任务信息</h3>
@@ -1092,7 +1428,10 @@
           </div>
         {:else if !searchActive}
           <div class="search-state">
-            <p>搜索所有会话（含归档）</p>
+            <p title={searchScopeTitle()}>{searchScopeLabel}</p>
+            {#if searchScope.length > 0}
+              <button class="search-scope-clear" onclick={clearSearchScope}>清除作用域</button>
+            {/if}
             <p class="subtle">
               支持标题、项目、路径、待办、模型、分支、状态、来源、类型、会话 ID；支持拼音与模糊匹配。
             </p>
@@ -1106,9 +1445,10 @@
             {/if}
           </div>
         {:else}
-          {#each searchResults as result, index (result.task.key)}
+          {#each renderedSearchResults as result, index (result.task.key)}
             <button
               class="search-result"
+              data-index={index}
               class:active={index === searchIndex}
               onmouseenter={() => (searchIndex = index)}
               onclick={() => openSearchResult(result.task)}
@@ -1136,6 +1476,11 @@
               <span class="status {statusClass(result.task)}">{statusLabel(result.task)}</span>
             </button>
           {/each}
+          {#if hasMoreSearchResults}
+            <button class="search-more" onclick={showMoreSearchResults}>
+              显示更多（还有 {searchResults.length - renderedSearchResults.length} 条）
+            </button>
+          {/if}
         {/if}
       </div>
 
@@ -1143,12 +1488,18 @@
         <span class="search-hints">
           <kbd>↑</kbd><kbd>↓</kbd> 选择 <kbd>↵</kbd> 打开 <kbd>Esc</kbd> 关闭
         </span>
+        {#if searchScope.length > 0}
+          <span class="search-scope" title={searchScopeTitle()}>
+            {searchScopeLabel}
+            <button onclick={clearSearchScope} aria-label="清除搜索作用域">清除</button>
+          </span>
+        {/if}
         {#if searchActive && !searchError}
           <span class="search-count">
             {#if searching}
               搜索中…
             {:else if searchTotal > 0}
-              {searchTotal} 个结果{#if searchTotal > searchResults.length} · 显示 {searchResults.length} 条{/if}
+              {searchTotal} 个结果{#if hasMoreSearchResults} · 已展示 {renderedSearchResults.length} 条{/if}
             {:else}
               无结果
             {/if}

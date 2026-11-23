@@ -1,9 +1,11 @@
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use perch_core::continue_work::{plan_continue, ContinueAction, ContinuePlan, SystemProbe};
 use perch_core::models::{BootstrapPayload, SyncReport};
+use perch_core::probe::LiveScanScheduler;
 use perch_core::query::build_bootstrap_with_usage;
 use perch_core::{paths, CacheStore, ScanEngine, SourcePaths, SourceProbe, UsageSnapshot};
 use tauri::{Emitter, Manager, State};
@@ -15,6 +17,59 @@ use std::os::unix::fs::PermissionsExt;
 struct AppState {
     engine: Arc<Mutex<ScanEngine>>,
     usage_db: PathBuf,
+    live_paused: Arc<AtomicBool>,
+    manual_scanning: Arc<AtomicBool>,
+    live_generation: Arc<Mutex<u64>>,
+}
+
+#[derive(Clone, serde::Serialize)]
+struct ScanStatus {
+    source: String,
+    trigger: String,
+    phase: String,
+    duration_ms: Option<u64>,
+    live_paused: bool,
+}
+
+fn emit_scan_status(app: &tauri::AppHandle, status: ScanStatus) {
+    let _ = app.emit("scan-status", status);
+}
+
+fn scan_duration_ms(started: &Instant) -> u64 {
+    started.elapsed().as_millis() as u64
+}
+
+fn should_emit_sources_updated(due_count: usize, usage_changed: bool) -> bool {
+    due_count > 0 || usage_changed
+}
+
+struct ManualGuard {
+    manual_scanning: Arc<AtomicBool>,
+    live_generation: Arc<Mutex<u64>>,
+}
+
+impl ManualGuard {
+    fn enter(state: &AppState) -> Result<Self, String> {
+        let mut generation = state
+            .live_generation
+            .lock()
+            .map_err(|error| error.to_string())?;
+        *generation += 1;
+        state.manual_scanning.store(true, Ordering::SeqCst);
+        Ok(Self {
+            manual_scanning: state.manual_scanning.clone(),
+            live_generation: state.live_generation.clone(),
+        })
+    }
+}
+
+impl Drop for ManualGuard {
+    fn drop(&mut self) {
+        self.manual_scanning.store(false, Ordering::SeqCst);
+        if let Ok(mut generation) = self.live_generation.lock() {
+            *generation += 1;
+        }
+    }
 }
 
 fn cache_db_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -50,12 +105,51 @@ async fn refresh_sources(
     source: Option<String>,
 ) -> Result<SyncReport, String> {
     let state = app.state::<AppState>().inner().clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    let guard = ManualGuard::enter(&state)?;
+    let started = Instant::now();
+    emit_scan_status(
+        &app,
+        ScanStatus {
+            source: source.clone().unwrap_or_else(|| "all".to_owned()),
+            trigger: "manual".to_owned(),
+            phase: "start".to_owned(),
+            duration_ms: None,
+            live_paused: state.live_paused.load(Ordering::SeqCst),
+        },
+    );
+    let manual_source = source.clone().unwrap_or_else(|| "all".to_owned());
+    let result = tauri::async_runtime::spawn_blocking(move || {
         let engine = state.engine.lock().map_err(|error| error.to_string())?;
         Ok(engine.scan(source.as_deref(), "manual"))
     })
     .await
-    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string())?;
+    emit_scan_status(
+        &app,
+        ScanStatus {
+            source: manual_source,
+            trigger: "manual".to_owned(),
+            phase: "end".to_owned(),
+            duration_ms: Some(scan_duration_ms(&started)),
+            live_paused: app.state::<AppState>().live_paused.load(Ordering::SeqCst),
+        },
+    );
+    drop(guard);
+    result
+}
+
+#[derive(serde::Serialize)]
+struct LiveRefreshState {
+    paused: bool,
+}
+
+#[tauri::command]
+fn set_live_refresh(state: State<'_, AppState>, paused: bool) -> LiveRefreshState {
+    if let Ok(mut generation) = state.live_generation.lock() {
+        *generation += 1;
+    }
+    state.live_paused.store(paused, Ordering::SeqCst);
+    LiveRefreshState { paused }
 }
 
 #[tauri::command]
@@ -253,14 +347,22 @@ pub fn run() {
             app.manage(AppState {
                 engine: Arc::new(Mutex::new(engine)),
                 usage_db: usage_db.clone(),
+                live_paused: Arc::new(AtomicBool::new(false)),
+                manual_scanning: Arc::new(AtomicBool::new(false)),
+                live_generation: Arc::new(Mutex::new(0)),
             });
 
             let handle = app.handle().clone();
             std::thread::spawn(move || {
                 let mut probe = SourceProbe::new(&paths);
+                let mut scheduler = LiveScanScheduler::new();
                 let mut usage_stamp = perch_core::usage::newest_mtime(&usage_db);
+                let mut last_generation = 0u64;
                 loop {
                     std::thread::sleep(Duration::from_secs(3));
+                    let Some(state) = handle.try_state::<AppState>() else {
+                        continue;
+                    };
                     if let Some(window) = handle.get_webview_window("main") {
                         if window.is_minimized().unwrap_or(false)
                             || !window.is_visible().unwrap_or(true)
@@ -268,23 +370,63 @@ pub fn run() {
                             continue;
                         }
                     }
-                    let changed = probe.poll();
-                    let next_usage_stamp = perch_core::usage::newest_mtime(&usage_db);
-                    let usage_changed = next_usage_stamp != usage_stamp;
-                    if changed.is_empty() && !usage_changed {
+                    let paused = state.live_paused.load(Ordering::SeqCst);
+                    let generation = state
+                        .live_generation
+                        .lock()
+                        .map(|value| *value)
+                        .unwrap_or(last_generation);
+                    if generation != last_generation {
+                        probe.reset_baseline(Instant::now());
+                        scheduler.clear();
+                        last_generation = generation;
                         continue;
                     }
-                    if !changed.is_empty() {
-                        let state = handle.state::<AppState>();
+                    let now = Instant::now();
+                    let changed = probe.changed_sources(now);
+                    let next_usage_stamp = perch_core::usage::newest_mtime(&usage_db);
+                    let usage_changed = next_usage_stamp != usage_stamp;
+                    if paused || state.manual_scanning.load(Ordering::SeqCst) {
+                        probe.poll_throttled();
+                        usage_stamp = next_usage_stamp;
+                        continue;
+                    }
+                    scheduler.note_changes(&changed, now);
+                    let due = scheduler.due_sources(now);
+                    if !due.is_empty() {
                         let Ok(engine) = state.engine.lock() else {
                             continue;
                         };
-                        for source in changed {
+                        for source in &due {
+                            let started = Instant::now();
+                            emit_scan_status(
+                                &handle,
+                                ScanStatus {
+                                    source: (*source).to_owned(),
+                                    trigger: "live".to_owned(),
+                                    phase: "start".to_owned(),
+                                    duration_ms: None,
+                                    live_paused: state.live_paused.load(Ordering::SeqCst),
+                                },
+                            );
                             engine.scan(Some(source), "live");
+                            probe.defer_jsonl(source, started);
+                            emit_scan_status(
+                                &handle,
+                                ScanStatus {
+                                    source: (*source).to_owned(),
+                                    trigger: "live".to_owned(),
+                                    phase: "end".to_owned(),
+                                    duration_ms: Some(scan_duration_ms(&started)),
+                                    live_paused: state.live_paused.load(Ordering::SeqCst),
+                                },
+                            );
                         }
                     }
                     usage_stamp = next_usage_stamp;
-                    let _ = handle.emit("sources-updated", ());
+                    if should_emit_sources_updated(due.len(), usage_changed) {
+                        let _ = handle.emit("sources-updated", ());
+                    }
                 }
             });
 
@@ -295,7 +437,8 @@ pub fn run() {
             refresh_sources,
             search_tasks,
             continue_task,
-            open_usage_report
+            open_usage_report,
+            set_live_refresh
         ])
         .run(tauri::generate_context!())
         .expect("error while running Perch");
@@ -349,5 +492,38 @@ mod tests {
 
         let error = render_usage_report(&bin, &temp.path().join("cache")).unwrap_err();
         assert!(error.contains("database is locked"), "{error}");
+    }
+}
+
+#[cfg(test)]
+mod scan_control_tests {
+    use super::*;
+
+    #[test]
+    fn sources_updated_is_emitted_only_with_real_changes() {
+        assert!(!should_emit_sources_updated(0, false));
+        assert!(should_emit_sources_updated(1, false));
+        assert!(should_emit_sources_updated(0, true));
+        assert!(should_emit_sources_updated(2, true));
+    }
+
+    #[test]
+    fn manual_guard_blocks_live_scans_and_resets_generation() {
+        let state = AppState {
+            engine: Arc::new(Mutex::new(ScanEngine::new(
+                CacheStore::open_in_memory().unwrap(),
+                &SourcePaths::detect(),
+            ))),
+            usage_db: PathBuf::from("/tmp/perch-synthetic-usage.db"),
+            live_paused: Arc::new(AtomicBool::new(false)),
+            manual_scanning: Arc::new(AtomicBool::new(false)),
+            live_generation: Arc::new(Mutex::new(0)),
+        };
+        let guard = ManualGuard::enter(&state).unwrap();
+        assert!(state.manual_scanning.load(Ordering::SeqCst));
+        assert_eq!(*state.live_generation.lock().unwrap(), 1);
+        drop(guard);
+        assert!(!state.manual_scanning.load(Ordering::SeqCst));
+        assert_eq!(*state.live_generation.lock().unwrap(), 2);
     }
 }

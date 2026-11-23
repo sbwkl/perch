@@ -62,6 +62,99 @@ pub trait ChannelProbe {
     fn cli_presence(&self, source: &str, session_id: &str) -> CliPresence;
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ContinueHintChannel {
+    Terminal,
+    Deeplink,
+    App,
+    Dynamic,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ContinueHint {
+    pub channel: ContinueHintChannel,
+    pub label: String,
+    pub detail: String,
+    pub locates_session: bool,
+}
+
+fn continue_hint(
+    channel: ContinueHintChannel,
+    label: &str,
+    detail: String,
+    locates_session: bool,
+) -> ContinueHint {
+    ContinueHint {
+        channel,
+        label: label.to_owned(),
+        detail,
+        locates_session,
+    }
+}
+
+fn terminal_hint(source_label: &str, locates_session: bool) -> ContinueHint {
+    continue_hint(
+        ContinueHintChannel::Terminal,
+        "终端恢复",
+        format!("在 Terminal 中恢复 {source_label} 会话"),
+        locates_session,
+    )
+}
+
+fn deeplink_hint() -> ContinueHint {
+    continue_hint(
+        ContinueHintChannel::Deeplink,
+        "深链打开",
+        "通过会话深链打开 Codex App".to_owned(),
+        true,
+    )
+}
+
+fn app_hint(source_label: &str) -> ContinueHint {
+    continue_hint(
+        ContinueHintChannel::App,
+        "仅激活 App",
+        format!("激活 {source_label}，无法定位到具体会话"),
+        false,
+    )
+}
+
+fn dynamic_hint(source_label: &str) -> ContinueHint {
+    continue_hint(
+        ContinueHintChannel::Dynamic,
+        "按运行状态决定",
+        format!("根据 {source_label} App / CLI 运行状态选择激活 App 或终端恢复；激活 App 无法定位具体会话"),
+        false,
+    )
+}
+
+/// Describes the fixed continue-work decision using snapshot metadata only.
+/// The actual action stays in Rust; the UI must never send a command or URL.
+pub fn describe_continue(task: &TaskSnapshot) -> Option<ContinueHint> {
+    let label = crate::models::source_label(&task.source);
+    let hint = match task.source.as_str() {
+        SOURCE_CLAUDE => terminal_hint(label, true),
+        SOURCE_CODEX => match task.agent_kind.as_deref() {
+            Some("desktop" | "automation") => deeplink_hint(),
+            Some("cli") => terminal_hint(label, true),
+            _ => dynamic_hint(label),
+        },
+        // OpenCode / Kilo always use probed_plan, regardless of agent_kind.
+        SOURCE_OPENCODE | SOURCE_KILO => dynamic_hint(label),
+        // Cline has explicit desktop / cli branches; unknown uses probed_plan.
+        SOURCE_CLINE => match task.agent_kind.as_deref() {
+            Some("desktop") => app_hint(label),
+            Some("cli") => terminal_hint(label, true),
+            _ => dynamic_hint(label),
+        },
+        SOURCE_QODER | SOURCE_TRAE_CN | SOURCE_ANTIGRAVITY | SOURCE_MINIMAX | SOURCE_CODEARTS
+        | SOURCE_CODEBUDDY => app_hint(label),
+        _ => return None,
+    };
+    Some(hint)
+}
+
 /// 无法从数据判断执行通道时：App 在运行优先 App；否则有 CLI 进程走终端；
 /// 两者都没有时仍按用户偏好优先打开 App。
 pub fn plan_continue(task: &TaskSnapshot, probe: &dyn ChannelProbe) -> crate::Result<ContinuePlan> {
@@ -566,6 +659,44 @@ mod tests {
         let detected =
             plan_continue(&task(SOURCE_CLINE, None), &probe(false, CliPresence::Agent)).unwrap();
         assert_eq!(detected.channel, ContinueChannel::Cli);
+    }
+
+    #[test]
+    fn continue_hints_expose_action_before_click() {
+        let claude = describe_continue(&task(SOURCE_CLAUDE, Some("cli"))).unwrap();
+        assert_eq!(claude.channel, ContinueHintChannel::Terminal);
+        assert_eq!(claude.label, "终端恢复");
+        assert!(claude.locates_session);
+
+        let codex = describe_continue(&task(SOURCE_CODEX, Some("desktop"))).unwrap();
+        assert_eq!(codex.channel, ContinueHintChannel::Deeplink);
+        assert!(codex.locates_session);
+
+        let qoder = describe_continue(&task(SOURCE_QODER, None)).unwrap();
+        assert_eq!(qoder.channel, ContinueHintChannel::App);
+        assert!(!qoder.locates_session);
+        assert!(qoder.detail.contains("无法定位"));
+
+        let cline_cli = describe_continue(&task(SOURCE_CLINE, Some("cli"))).unwrap();
+        assert_eq!(cline_cli.channel, ContinueHintChannel::Terminal);
+        assert!(cline_cli.locates_session);
+        let cline_desktop = describe_continue(&task(SOURCE_CLINE, Some("desktop"))).unwrap();
+        assert_eq!(cline_desktop.channel, ContinueHintChannel::App);
+        assert!(!cline_desktop.locates_session);
+        let cline = describe_continue(&task(SOURCE_CLINE, None)).unwrap();
+        assert_eq!(cline.channel, ContinueHintChannel::Dynamic);
+        assert!(!cline.locates_session);
+
+        let opencode = describe_continue(&task(SOURCE_OPENCODE, Some("cli"))).unwrap();
+        assert_eq!(opencode.channel, ContinueHintChannel::Dynamic);
+        assert!(!opencode.locates_session);
+        let kilo = describe_continue(&task(SOURCE_KILO, Some("desktop"))).unwrap();
+        assert_eq!(kilo.channel, ContinueHintChannel::Dynamic);
+        assert!(!kilo.locates_session);
+
+        let mut unknown = task(SOURCE_CLAUDE, None);
+        unknown.source = "synthetic-unknown".to_owned();
+        assert!(describe_continue(&unknown).is_none());
     }
 
     #[test]

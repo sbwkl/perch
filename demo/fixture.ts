@@ -1,5 +1,6 @@
 import type {
   BootstrapPayload,
+  ContinueHint,
   SourceView,
   TaskUsage,
   TaskView,
@@ -44,6 +45,8 @@ const WORKSPACES = [
   { name: "docs-portal", path: "/Users/demo/code/docs-portal" },
   { name: "data-pipeline", path: "/Users/demo/code/data-pipeline" },
   { name: "scratchpad", path: "/Users/demo/code/scratchpad" },
+  { name: "docs-portal", path: "/Users/demo/archive/docs-portal" },
+  { name: "tmp", path: "/private/tmp/perch-demo" },
 ];
 
 interface TaskSeed {
@@ -109,6 +112,7 @@ function makeTask(seed: TaskSeed): TaskView {
     resume_cmd: seed.resume_cmd ?? null,
     is_recent: updated >= NOW - 7 * DAY,
     todos,
+    continue_hint: continueHint(seed.source),
     usage: seed.usage,
   };
 }
@@ -386,6 +390,60 @@ const TASKS: TaskView[] = [
     messages: 12,
   }),
 ];
+const STRESS_COUNT = Number(new URLSearchParams(location.search).get("stress") ?? 0);
+if (STRESS_COUNT > 0) {
+  for (let index = 0; index < 12; index += 1) {
+    WORKSPACES.push({
+      name: `合成工作区 ${String(index + 1).padStart(2, "0")}`,
+      path: `/Users/demo/synthetic/workspace-${index + 1}`,
+    });
+  }
+  for (let index = 0; index < STRESS_COUNT; index += 1) {
+    TASKS.push(
+      makeTask({
+        source: SOURCES[index % SOURCES.length],
+        title: `合成历史任务 ${String(index + 1).padStart(3, "0")}`,
+        workspace: index % WORKSPACES.length,
+        status: index % 11 === 0 ? "blocked" : "idle",
+        updated_minutes_ago: 8 * 1_440 + index * 30,
+        created_days_ago: 20 + (index % 40),
+        archived: index % 17 === 0,
+        unread: index % 29 === 0,
+      }),
+    );
+  }
+  // Synthetic recent sessions make the sidebar ordering deterministic under stress.
+  for (let index = 0; index < WORKSPACES.length; index += 1) {
+    const recentSessions = 1 + (index % 5);
+    for (let session = 0; session < recentSessions; session += 1) {
+      TASKS.push(
+        makeTask({
+          source: SOURCES[(index + session * 3) % SOURCES.length],
+          title: `合成近期会话 ${index + 1}-${session + 1}`,
+          workspace: index,
+          status: "idle",
+          updated_minutes_ago: 30 + index * 10 + session,
+          created_days_ago: 1,
+        }),
+      );
+    }
+  }
+  for (let index = 0; index < SOURCES.length; index += 1) {
+    const recentSessions = index % 4;
+    for (let session = 0; session < recentSessions; session += 1) {
+      TASKS.push(
+        makeTask({
+          source: SOURCES[index],
+          title: `合成来源近期会话 ${index + 1}-${session + 1}`,
+          workspace: 0,
+          status: "idle",
+          updated_minutes_ago: 15 + index * 6 + session,
+          created_days_ago: 1,
+        }),
+      );
+    }
+  }
+}
 
 function buildWorkspaces(): WorkspaceGroup[] {
   return WORKSPACES.map((workspace) => {
@@ -407,6 +465,32 @@ function buildWorkspaces(): WorkspaceGroup[] {
     );
 }
 
+function continueHint(source: string): ContinueHint {
+  const label = SOURCE_LABELS[source];
+  if (source === "claude") {
+    return {
+      channel: "terminal",
+      label: "终端恢复",
+      detail: `在 Terminal 中恢复 ${label} 会话`,
+      locates_session: true,
+    };
+  }
+  if (source === "codex") {
+    return {
+      channel: "deeplink",
+      label: "深链打开",
+      detail: "通过会话深链打开 Codex App",
+      locates_session: true,
+    };
+  }
+  return {
+    channel: "app",
+    label: "仅激活 App",
+    detail: `激活 ${label}，无法定位到具体会话`,
+    locates_session: false,
+  };
+}
+
 function buildSources(): SourceView[] {
   return SOURCES.map((source) => ({
     source,
@@ -414,6 +498,7 @@ function buildSources(): SourceView[] {
     status: "ok" as const,
     last_scan_at: NOW,
     last_ok_at: NOW,
+    last_trigger: "demo",
     task_count: TASKS.filter((task) => task.source === source).length,
     files_seen: 6,
     error: null,
@@ -432,11 +517,16 @@ export function demoPayload(): BootstrapPayload {
       recent: visible.filter((task) => task.is_recent).length,
       older: visible.filter((task) => !task.is_recent).length,
       archived: TASKS.filter((task) => task.source_archived).length,
-      attention: visible.filter(
+      attention: TASKS.filter(
         (task) =>
           task.source_unread ||
+          task.source_missing ||
+          task.status === "failed" ||
           task.status === "blocked" ||
-          task.status === "limited",
+          task.status === "limited" ||
+          task.status === "waiting" ||
+          task.status === "paused" ||
+          task.status === "running",
       ).length,
     },
     usage: {
