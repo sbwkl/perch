@@ -124,8 +124,8 @@ fn dynamic_hint(source_label: &str) -> ContinueHint {
     continue_hint(
         ContinueHintChannel::Dynamic,
         "按运行状态决定",
-        format!("根据 {source_label} App / CLI 运行状态选择激活 App 或终端恢复"),
-        true,
+        format!("根据 {source_label} App / CLI 运行状态选择激活 App 或终端恢复；激活 App 无法定位具体会话"),
+        false,
     )
 }
 
@@ -140,17 +140,14 @@ pub fn describe_continue(task: &TaskSnapshot) -> Option<ContinueHint> {
             Some("cli") => terminal_hint(label, true),
             _ => dynamic_hint(label),
         },
-        SOURCE_OPENCODE | SOURCE_KILO | SOURCE_CLINE
-            if task.agent_kind.as_deref() == Some("cli") =>
-        {
-            terminal_hint(label, task.source != crate::models::SOURCE_KILO)
-        }
-        SOURCE_OPENCODE | SOURCE_KILO | SOURCE_CLINE
-            if task.agent_kind.as_deref() == Some("desktop") =>
-        {
-            app_hint(label)
-        }
-        SOURCE_OPENCODE | SOURCE_KILO | SOURCE_CLINE => dynamic_hint(label),
+        // OpenCode / Kilo always use probed_plan, regardless of agent_kind.
+        SOURCE_OPENCODE | SOURCE_KILO => dynamic_hint(label),
+        // Cline has explicit desktop / cli branches; unknown uses probed_plan.
+        SOURCE_CLINE => match task.agent_kind.as_deref() {
+            Some("desktop") => app_hint(label),
+            Some("cli") => terminal_hint(label, true),
+            _ => dynamic_hint(label),
+        },
         SOURCE_QODER | SOURCE_TRAE_CN | SOURCE_ANTIGRAVITY | SOURCE_MINIMAX | SOURCE_CODEARTS
         | SOURCE_CODEBUDDY => app_hint(label),
         _ => return None,
@@ -680,8 +677,22 @@ mod tests {
         assert!(!qoder.locates_session);
         assert!(qoder.detail.contains("无法定位"));
 
+        let cline_cli = describe_continue(&task(SOURCE_CLINE, Some("cli"))).unwrap();
+        assert_eq!(cline_cli.channel, ContinueHintChannel::Terminal);
+        assert!(cline_cli.locates_session);
+        let cline_desktop = describe_continue(&task(SOURCE_CLINE, Some("desktop"))).unwrap();
+        assert_eq!(cline_desktop.channel, ContinueHintChannel::App);
+        assert!(!cline_desktop.locates_session);
         let cline = describe_continue(&task(SOURCE_CLINE, None)).unwrap();
         assert_eq!(cline.channel, ContinueHintChannel::Dynamic);
+        assert!(!cline.locates_session);
+
+        let opencode = describe_continue(&task(SOURCE_OPENCODE, Some("cli"))).unwrap();
+        assert_eq!(opencode.channel, ContinueHintChannel::Dynamic);
+        assert!(!opencode.locates_session);
+        let kilo = describe_continue(&task(SOURCE_KILO, Some("desktop"))).unwrap();
+        assert_eq!(kilo.channel, ContinueHintChannel::Dynamic);
+        assert!(!kilo.locates_session);
 
         let mut unknown = task(SOURCE_CLAUDE, None);
         unknown.source = "synthetic-unknown".to_owned();

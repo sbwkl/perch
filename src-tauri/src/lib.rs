@@ -39,6 +39,10 @@ fn scan_duration_ms(started: &Instant) -> u64 {
     started.elapsed().as_millis() as u64
 }
 
+fn should_emit_sources_updated(due_count: usize, usage_changed: bool) -> bool {
+    due_count > 0 || usage_changed
+}
+
 struct ManualGuard {
     manual_scanning: Arc<AtomicBool>,
     live_generation: Arc<Mutex<u64>>,
@@ -420,7 +424,7 @@ pub fn run() {
                         }
                     }
                     usage_stamp = next_usage_stamp;
-                    if !due.is_empty() || usage_changed || changed.is_empty() {
+                    if should_emit_sources_updated(due.len(), usage_changed) {
                         let _ = handle.emit("sources-updated", ());
                     }
                 }
@@ -494,6 +498,14 @@ mod tests {
 #[cfg(test)]
 mod scan_control_tests {
     use super::*;
+
+    #[test]
+    fn sources_updated_is_emitted_only_with_real_changes() {
+        assert!(!should_emit_sources_updated(0, false));
+        assert!(should_emit_sources_updated(1, false));
+        assert!(should_emit_sources_updated(0, true));
+        assert!(should_emit_sources_updated(2, true));
+    }
 
     #[test]
     fn manual_guard_blocks_live_scans_and_resets_generation() {

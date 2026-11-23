@@ -6,7 +6,7 @@
 | 文档类型 | 产品规格 |
 | 当前版本 | v0.1.0 |
 | 适用范围 | 当前来源覆盖行为与验收规格 |
-| 关联 | [CHG-0004](../exec-plans/completed/CHG-0004-usage-ledger-agents.md)、[侧栏来源溢出修复](../exec-plans/completed/2026-11-22-sidebar-source-overflow.md)、[真实体验确定性缺陷修复](../exec-plans/completed/2026-11-22-real-ux-clarity-fixes.md)、[P0/P1 全量修复](../exec-plans/completed/2026-11-22-real-ux-p0-p1.md)、[侧边栏界面收敛](../exec-plans/completed/2026-11-22-sidebar-simplification.md)、[近 7 天侧栏排序](../exec-plans/completed/2026-11-22-sidebar-recent-activity-order.md)、[删除临时目录后缀](../exec-plans/completed/2026-11-22-remove-temporary-workspace-suffix.md)、[删除 workspace 名称后缀](../exec-plans/completed/2026-11-22-remove-workspace-name-suffix.md)、[删除筛选 chip](../exec-plans/completed/2026-11-22-remove-filter-chips.md)、[代码审核修复](../exec-plans/active/2026-11-23-code-review-fixes.md) |
+| 关联 | [CHG-0004](../exec-plans/completed/CHG-0004-usage-ledger-agents.md)、[侧栏来源溢出修复](../exec-plans/completed/2026-11-22-sidebar-source-overflow.md)、[真实体验确定性缺陷修复](../exec-plans/completed/2026-11-22-real-ux-clarity-fixes.md)、[P0/P1 全量修复](../exec-plans/completed/2026-11-22-real-ux-p0-p1.md)、[侧边栏界面收敛](../exec-plans/completed/2026-11-22-sidebar-simplification.md)、[近 7 天侧栏排序](../exec-plans/completed/2026-11-22-sidebar-recent-activity-order.md)、[删除临时目录后缀](../exec-plans/completed/2026-11-22-remove-temporary-workspace-suffix.md)、[删除 workspace 名称后缀](../exec-plans/completed/2026-11-22-remove-workspace-name-suffix.md)、[删除筛选 chip](../exec-plans/completed/2026-11-22-remove-filter-chips.md)、[代码审核修复](../exec-plans/completed/2026-11-23-code-review-fixes.md) |
 
 ## 1. 摘要
 
@@ -49,7 +49,7 @@ Perch 当前覆盖 11 个本地 AI 编码 Agent 来源，与 usage-ledger 的来
 - R9：When 用量报告打开, the system shall 标识当前报告视图为全局报告、提供返回任务路径，且不启动外部浏览器；任务分组不显示报告导航项。
 - R10：While 当前 workspace / 来源筛选生效, the system shall 在搜索弹层明示搜索作用域；When 无筛选时, the system shall 明示忽略任务视图并搜索全部会话（含归档）。
 
-验证位置：R1–R5 见来源采集器 / probe / continue 测试与当前代码核对；R6–R7 见侧栏布局实机验证；R8–R20 见本次变更文档的 core / Tauri 测试、demo UI 验收与 `npm run check`；R3 / R12 的事件与提示一致性见 [代码审核修复](../exec-plans/active/2026-11-23-code-review-fixes.md) 单测与实机验证。
+验证位置：R1–R5 见来源采集器 / probe / continue 测试与当前代码核对；R6–R7 见侧栏布局实机验证；R8–R20 见本次变更文档的 core / Tauri 测试、demo UI 验收与 `npm run check`；R3 / R12 的事件与提示一致性见 [代码审核修复](../exec-plans/completed/2026-11-23-code-review-fixes.md) 单测与实机验证。
 
 ## 5. 变更索引
 
@@ -64,7 +64,7 @@ Perch 当前覆盖 11 个本地 AI 编码 Agent 来源，与 usage-ledger 的来
 | 2026-11-22 | 删除 workspace 的「[临时目录]」后缀 | 已验证 | [../exec-plans/completed/2026-11-22-remove-temporary-workspace-suffix.md](../exec-plans/completed/2026-11-22-remove-temporary-workspace-suffix.md) |
 | 2026-11-22 | 删除 workspace 名称的路径父目录后缀 | 已验证 | [../exec-plans/completed/2026-11-22-remove-workspace-name-suffix.md](../exec-plans/completed/2026-11-22-remove-workspace-name-suffix.md) |
 | 2026-11-22 | 删除第二栏筛选 chip | 已验证 | [../exec-plans/completed/2026-11-22-remove-filter-chips.md](../exec-plans/completed/2026-11-22-remove-filter-chips.md) |
-| 2026-11-23 | PR #9 代码审核修复 | 开发中 | [../exec-plans/active/2026-11-23-code-review-fixes.md](../exec-plans/active/2026-11-23-code-review-fixes.md) |
+| 2026-11-23 | PR #9 代码审核修复 | 已验证 | [../exec-plans/completed/2026-11-23-code-review-fixes.md](../exec-plans/completed/2026-11-23-code-review-fixes.md) |
 
 ## 6. 链接
 

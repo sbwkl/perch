@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 状态 | 开发中 |
+| 状态 | 已验证 |
 | Owner | wayne + agent |
 | 所属模块 / 入口 | `src-tauri/src/lib.rs`、`crates/perch-core/src/continue_work.rs`、`docs/product-specs/agent-sources.md` |
 | 关联 | [agent-sources.md](../../product-specs/agent-sources.md) R3 / R5 / R12；[P0/P1 全量修复](../completed/2026-11-22-real-ux-p0-p1.md)；PR #9 代码审核结果 |
@@ -78,18 +78,27 @@ PR #9 代码审核发现两处需在合并前修复的问题：
 - 实机：`npm run tauri dev` 启动窗口，观察启动日志无错误；只做短时 UI 交互，不把真实会话标题 / 路径 / 用量写入仓库。
 - 边界：无 usage 数据、手动刷新、暂停、报告视图、空列表、900×560 小窗口。
 
-## 7. 回滚
+## 7. 验证结果
+
+- 自动化：`npm run check` 0 errors / 0 warnings；`npm run build` 成功；`cargo fmt --all --check` 通过；`cargo clippy -p perch-core --all-targets -- -D warnings` 零告警；`cargo test -p perch-core` 全部通过；`cargo test -p perch --lib` 4 个测试通过，包括新增 `sources_updated_is_emitted_only_with_real_changes`。
+- core 单测：`continue_hints_expose_action_before_click` 覆盖 OpenCode / Kilo 永远动态且 `locates_session=false`，Cline desktop / cli / unknown 分别对齐 App / Terminal / Dynamic，Codex desktop 与 Qoder 固定提示不变。
+- 真机 `npm run tauri dev`：Vite 与 Rust 编译启动成功，无错误日志；首次扫描完成后，连续两次相隔 9 秒的 AX 头部快照（任务数 / 快照时间 / 扫描摘要）保持稳定，验证空闲轮次不再每 3 秒触发全量 bootstrap；点击任务检查继续提示，Codex 深链、Claude 终端保持固定通道，OpenCode 动态提示明确“激活 App 无法定位具体会话”。
+- demo / CDP 合成数据：继续提示徽标与按钮文案仍可见，筛选 / 分页 / 报告 / 折叠行为未回归。
+- 边界：无 usage 数据、手动刷新、暂停、报告视图、空列表、900×560 小窗口保持既有路径；未读取 / 写回真实任务正文或路径。
+
+## 8. 回滚
 
 单分支 revert；无 schema / IPC 新增 / 源数据改动。恢复旧 emit 条件与旧 `describe_continue` 分支即可，但不建议作为当前行为。
 
-## 8. 风险与未决边界
+## 9. 风险与未决边界
 
 - 事件减少后，前端只在 live scan 或 usage 变化时刷新；手动刷新路径仍由 `refresh_sources` 返回后显式 `loadBootstrap()`，不依赖事件。
 - 动态提示不承诺定位会话，可能让用户更谨慎点击；实际执行仍按 Rust 侧进程探测决定，命令边界不变。
 - 本轮不做长时间 CPU / 电量采样；代码路径与单测覆盖空闲事件消除，实机只做短时启动验证。
 
-## 9. 变更记录
+## 10. 变更记录
 
 | 状态 | 操作人 | 证据 / 链接 |
 |---|---|---|
 | 提议 → 就绪 | wayne + agent | 2026-11-23 PR #9 代码审核结果；本变更文档先于代码 |
+| 开发中 → 已验证 | agent | 2026-11-23 本文件 §7：全量门禁、单测、demo / 真机短验通过 |
