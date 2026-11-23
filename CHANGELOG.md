@@ -7,7 +7,7 @@
 
 ### Added
 
-- Claude Desktop 会话可通过只读本地 ID 映射生成 `claude://code/continue?session=<local_id>` 深链，在 Claude Desktop 中定位到同一会话；其他 Claude 会话继续在终端 `claude --resume`。
+- Claude Desktop 会话可通过只读本地 ID 映射生成 `claude://code/continue?session=<local_id>` 深链并激活 Claude Desktop；严谨实机验证显示该深链当前不能定位到指定会话，界面明确提示无法定位；其他 Claude 会话继续在终端 `claude --resume`。
 - 删除第二栏顶部 `Workspace：… ×` / `来源：… ×` 筛选 chip；筛选状态仅由侧栏选中态表达，搜索弹层作用域提示保留。
 - 删除 workspace 名称后的路径父目录拼接，Workspace 按钮只显示源数据名称；同名 workspace 不再追加 ` · 路径父目录`。
 - 删除 workspace 名称后的 `[临时目录]` / 分组后缀；路径类型不再影响侧栏排序，低活跃项由近 7 天排序与折叠自然后置。

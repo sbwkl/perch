@@ -377,7 +377,7 @@ fn bootstrap_exposes_claude_desktop_deeplink_metadata() {
     let hint = view.continue_hint.as_ref().expect("continue hint");
     assert_eq!(hint.label, "深链打开");
     assert!(hint.detail.contains("Claude Desktop"));
-    assert!(hint.locates_session);
+    assert!(!hint.locates_session);
 }
 
 #[test]

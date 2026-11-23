@@ -102,12 +102,17 @@ fn terminal_hint(source_label: &str, locates_session: bool) -> ContinueHint {
     )
 }
 
-fn deeplink_hint(app_label: &str) -> ContinueHint {
+fn deeplink_hint(app_label: &str, locates_session: bool) -> ContinueHint {
+    let detail = if locates_session {
+        format!("通过会话深链打开 {app_label}")
+    } else {
+        format!("打开 {app_label}（无法定位到具体会话）")
+    };
     continue_hint(
         ContinueHintChannel::Deeplink,
         "深链打开",
-        format!("通过会话深链打开 {app_label}"),
-        true,
+        detail,
+        locates_session,
     )
 }
 
@@ -136,12 +141,12 @@ pub fn describe_continue(task: &TaskSnapshot) -> Option<ContinueHint> {
     let hint = match task.source.as_str() {
         SOURCE_CLAUDE => match task.agent_kind.as_deref() {
             Some("desktop") if valid_claude_deeplink(task.deeplink.as_deref()) => {
-                deeplink_hint("Claude Desktop")
+                deeplink_hint("Claude Desktop", false)
             }
             _ => terminal_hint(label, true),
         },
         SOURCE_CODEX => match task.agent_kind.as_deref() {
-            Some("desktop" | "automation") => deeplink_hint("Codex App"),
+            Some("desktop" | "automation") => deeplink_hint("Codex App", true),
             Some("cli") => terminal_hint(label, true),
             _ => dynamic_hint(label),
         },
@@ -521,13 +526,14 @@ mod tests {
     }
 
     #[test]
-    fn claude_desktop_uses_deeplink() {
+    fn claude_desktop_deeplink_does_not_promise_session_location() {
         let mut task = task(SOURCE_CLAUDE, Some("desktop"));
         task.deeplink = Some("claude://code/continue?session=local_abc123".to_owned());
 
         let hint = describe_continue(&task).unwrap();
         assert_eq!(hint.channel, ContinueHintChannel::Deeplink);
-        assert!(hint.locates_session);
+        assert!(!hint.locates_session);
+        assert!(hint.detail.contains("无法定位"));
         assert!(hint.detail.contains("Claude Desktop"));
 
         let plan = plan_continue(&task, &probe(false, CliPresence::None)).unwrap();

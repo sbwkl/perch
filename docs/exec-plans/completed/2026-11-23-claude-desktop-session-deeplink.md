@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 | --- | --- |
-| 状态 | 已验证 |
+| 状态 | 已验证（含限制） |
 | 类型 | 变更文档 |
 | 关联产品规格 | [agent-sources.md R3](../../product-specs/agent-sources.md) |
 | 关联设计 | [SOURCES.md](../design-docs/source-designs/SOURCES.md)、[ARCHITECTURE.md](../../ARCHITECTURE.md) |
@@ -47,5 +47,10 @@ Perch 目前把所有 Claude 会话固定标记为 CLI 会话，「打开」始�
 
 - 2026-11-23：TDD 完成。新增测试覆盖 Desktop 合法映射、缺映射、非法 ID、空 ID、归档映射、混合入口及空 entrypoint、缓存字段透传、变化探测与继续工作决策；全部通过。
 - 2026-11-23：`cargo fmt --all --check`、`cargo clippy -p perch-core --all-targets -- -D warnings`、`cargo test -p perch-core`、`npm run check` 全部通过。
-- 2026-11-23：实机 `npm run tauri dev` 验证：缓存中 Claude Desktop 会话出现 `claude://code/continue?session=local_…` 深链，详情显示「深链打开 Claude Desktop」；点击后 Claude Desktop 切到前台并打开同一会话。CLI 会话仍显示「终端恢复」。
+- 2026-11-23：严谨实机验证发现限制。先将 Claude Desktop 切到「Doctor command」会话，确认窗口标题为该会话；再从 Perch 点击目标会话的深链。Claude Desktop 切到前台，但窗口标题仍为「Doctor command」，未选中「Perch Agent 会话定位对比」。手工点击左侧目标会话后标题切换，证明标题是可靠判据。结论：`claude://code/continue?session=local_…` 与 `claude://chat/<uuid>` 在此版本 Claude Desktop 中均只激活 App，不能稳定定位指定会话；Perch 的 UI 不应继续承诺 `locates_session = true`。
 - 2026-11-23：集成测试从 `main` 建临时分支 `tmp/integration-claude-desktop-session-deeplink` 合入本特性分支，重复 `cargo fmt --all --check`、`cargo clippy -p perch-core --all-targets -- -D warnings`、`cargo test -p perch-core`、`npm run check` 全部通过后删除临时分支。
+
+## 后续处理
+
+- 需要撤销「深链可精确定位」的产品承诺：`describe_continue` 对 Claude Desktop 分支应返回非定位提示，或回退终端恢复，避免误导用户。
+- 若仍要追求桌面内定位，需要另找 Claude Desktop 已确认有效的会话级路由；当前包内 `code/continue` 的 `session` 参数验证虽接受 `local_…`，实机未能定位。

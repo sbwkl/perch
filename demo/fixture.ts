@@ -476,8 +476,8 @@ function continueHint(source: string, desktopDeeplink = false): ContinueHint {
       return {
         channel: "deeplink",
         label: "深链打开",
-        detail: "通过会话深链打开 Claude Desktop",
-        locates_session: true,
+        detail: "打开 Claude Desktop（无法定位到具体会话）",
+        locates_session: false,
       };
     }
     return {

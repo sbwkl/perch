@@ -132,7 +132,7 @@ Claude Code 在 `~/.claude/sessions/<pid>.json` 写入运行中进程的实时�
 
 - JSONL 最后一个非空 `entrypoint` 为 `claude-desktop-3p`，且只读索引中存在合法
   `cliSessionId -> local_<uuid>` 映射：固定模板 `claude://code/continue?session=<local_id>`，
-  在 Claude Desktop 中定位同一会话。
+  激活 Claude Desktop；严谨实机验证显示该深链未切到指定会话，因此界面提示无法定位。
 - 其他会话（CLI、混合来源但最后入口不是 Desktop、缺少映射或 ID 非法）：终端执行
   `cd '<cwd>' && claude --resume <sessionId>`。
 - `task_key` / `source_id` 始终是 CLI UUID，不因 Desktop 映射改变；缓存复用 `agent_kind` /
