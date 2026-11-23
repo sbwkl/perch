@@ -78,7 +78,7 @@ Perch 是一个 macOS 桌面应用：Tauri 2 壳 + 纯 Rust core + Svelte 5 前�
 - SQLite 来源每轮检查 `PRAGMA data_version`；JSONL / 日志目录签名最多每 15 秒计算一次。
 - 变化按源记录，6 秒静默去抖、30 秒冷却、60 秒最长等待；只重扫到期的来源（`trigger = "live"`）。
 - 手动刷新期间后台不争用 `ScanEngine` 锁；扫描开始 / 结束通过 `scan-status` 发射来源、触发方式与耗时。
-- 完成后 emit `sources-updated`，前端重新 `bootstrap`；完成后推迟该 JSONL / 日志源的签名检查。
+- 仅当完成 live scan 或检测到 usage 变化时 emit `sources-updated`；空闲 / 去抖 / 冷却轮次不触发前端全量 `bootstrap`；完成后推迟该 JSONL / 日志源的签名检查。
 
 探测只做轻量读取，不解析内容；不会常驻 daemon，应用退出即停止。
 
