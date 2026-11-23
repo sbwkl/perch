@@ -106,7 +106,7 @@ Perch 是一个 macOS 桌面应用：Tauri 2 壳 + 纯 Rust core + Svelte 5 前�
 | 来源 | 决策 |
 | --- | --- |
 | Qoder | `open -b com.qoder.app`（无会话级深链） |
-| Claude Code | 终端 `claude --resume <id>` |
+| Claude Code | Desktop 来源且有合法映射 → `claude://code/continue?session=<local_id>`；其他 → 终端 `claude --resume <id>` |
 | Codex | `desktop/automation` → `codex://threads/<id>`；`cli` → 终端 `codex resume <id>`；未知按 App 是否运行决定 |
 | OpenCode | App 运行 → 激活 `ai.opencode.desktop`；否则终端 `opencode --session <id>` |
 | Kilo | App 运行 → 激活 `ai.kilo.desktop`；否则终端 `kilo` |

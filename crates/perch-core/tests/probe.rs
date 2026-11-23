@@ -13,6 +13,7 @@ fn paths_under(root: &Path) -> SourcePaths {
         home: root.to_path_buf(),
         qoder_db: root.join("qoder.sqlite"),
         claude_dir: root.join("claude"),
+        claude_desktop_sessions_dir: root.join("claude-desktop-sessions"),
         codex_dir: root.join("codex"),
         opencode_db: root.join("opencode.db"),
         opencode_stable_db: root.join("opencode-stable.db"),
@@ -72,6 +73,23 @@ fn probe_detects_claude_session_state_changes() {
     assert!(probe.poll().is_empty(), "initial baseline must be quiet");
 
     fs::write(sessions.join("123.json"), "{\"status\":\"idle\"}").unwrap();
+    assert_eq!(probe.poll(), vec!["claude"]);
+    assert!(probe.poll().is_empty(), "no further changes expected");
+}
+
+#[test]
+fn probe_detects_claude_desktop_session_index_changes() {
+    let temp = TempDir::new().unwrap();
+    let paths = paths_under(temp.path());
+    let index = paths
+        .claude_desktop_sessions_dir
+        .join("account/org/00000000-0000-4000-8000-000000000001");
+    fs::create_dir_all(&index).unwrap();
+
+    let mut probe = SourceProbe::new(&paths);
+    assert!(probe.poll().is_empty(), "initial baseline must be quiet");
+
+    fs::write(index.join("local_synthetic.json"), "{}").unwrap();
     assert_eq!(probe.poll(), vec!["claude"]);
     assert!(probe.poll().is_empty(), "no further changes expected");
 }

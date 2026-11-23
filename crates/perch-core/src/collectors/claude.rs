@@ -3,6 +3,7 @@ use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
+use serde::Deserialize;
 use serde_json::Value;
 use walkdir::WalkDir;
 
@@ -13,13 +14,66 @@ use super::common::{
 use super::Collector;
 use crate::models::{SourceResult, TaskSnapshot, TodoSnapshot, SOURCE_CLAUDE};
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopSessionIndex {
+    session_id: Option<String>,
+    cli_session_id: Option<String>,
+    is_archived: Option<bool>,
+}
+
 pub struct ClaudeCollector {
     root: PathBuf,
+    desktop_sessions_root: Option<PathBuf>,
 }
 
 impl ClaudeCollector {
     pub fn new(root: PathBuf) -> Self {
-        Self { root }
+        Self {
+            root,
+            desktop_sessions_root: None,
+        }
+    }
+
+    pub fn with_desktop_sessions_root(mut self, root: PathBuf) -> Self {
+        self.desktop_sessions_root = Some(root);
+        self
+    }
+
+    fn desktop_session_ids(&self) -> HashMap<String, String> {
+        let Some(root) = self.desktop_sessions_root.as_ref() else {
+            return HashMap::new();
+        };
+        if !root.is_dir() {
+            return HashMap::new();
+        }
+        let mut ids = HashMap::new();
+        for entry in WalkDir::new(root).into_iter().flatten() {
+            let path = entry.path();
+            let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
+                continue;
+            };
+            if !path.is_file() || !name.starts_with("local_") || !name.ends_with(".json") {
+                continue;
+            }
+            let Ok(content) = fs::read_to_string(path) else {
+                continue;
+            };
+            let Ok(index) = serde_json::from_str::<DesktopSessionIndex>(&content) else {
+                continue;
+            };
+            if index.is_archived.unwrap_or(false) {
+                continue;
+            }
+            let (Some(session_id), Some(cli_session_id)) = (index.session_id, index.cli_session_id)
+            else {
+                continue;
+            };
+            if valid_desktop_session_id(&session_id) {
+                ids.insert(cli_session_id, session_id);
+            }
+        }
+        ids
     }
 
     fn scan_inner(&self) -> crate::Result<SourceResult> {
@@ -66,8 +120,9 @@ impl ClaudeCollector {
         let mut tasks = Vec::new();
         let mut todos = Vec::new();
         let live_sessions = self.load_live_sessions();
+        let desktop_session_ids = self.desktop_session_ids();
         for path in session_files {
-            match self.parse_session(&path, &live_sessions) {
+            match self.parse_session(&path, &live_sessions, &desktop_session_ids) {
                 Ok(Some(parsed)) => {
                     let mut task = parsed.task;
                     let session_id = task.source_id.clone();
@@ -108,6 +163,7 @@ impl ClaudeCollector {
         &self,
         path: &Path,
         live_sessions: &HashMap<String, LiveSession>,
+        desktop_session_ids: &HashMap<String, String>,
     ) -> crate::Result<Option<ParsedSession>> {
         let session_id = match path.file_stem().and_then(|stem| stem.to_str()) {
             Some(stem) if !stem.is_empty() => stem.to_owned(),
@@ -119,6 +175,7 @@ impl ClaudeCollector {
         let mut cwd = None;
         let mut git_branch = None;
         let mut model = None;
+        let mut entrypoint: Option<String> = None;
         let mut custom_title = None;
         let mut ai_title = None;
         let mut first_ts: Option<f64> = None;
@@ -139,6 +196,9 @@ impl ClaudeCollector {
 
             if let Some(found) = json_string(&value, "cwd") {
                 cwd = Some(found);
+            }
+            if let Some(found) = json_string(&value, "entrypoint") {
+                entrypoint = Some(found);
             }
             if let Some(found) = json_string(&value, "gitBranch") {
                 git_branch = Some(found);
@@ -212,6 +272,18 @@ impl ClaudeCollector {
             (fallback_title(), "fallback")
         };
 
+        let (agent_kind, deeplink) = if entrypoint.as_deref() == Some("claude-desktop-3p") {
+            match desktop_session_ids.get(&session_id) {
+                Some(session) if valid_desktop_session_id(session) => (
+                    "desktop",
+                    Some(format!("claude://code/continue?session={session}")),
+                ),
+                _ => ("cli", None),
+            }
+        } else {
+            ("cli", None)
+        };
+
         let mut task = TaskSnapshot::new(SOURCE_CLAUDE, &session_id);
         task.title = truncate_chars(&title, 240);
         task.title_source = title_source.to_owned();
@@ -227,7 +299,8 @@ impl ClaudeCollector {
         task.status_raw = live.and_then(|item| item.status_raw.clone());
         task.model = model;
         task.git_branch = git_branch;
-        task.agent_kind = Some("cli".to_owned());
+        task.agent_kind = Some(agent_kind.to_owned());
+        task.deeplink = deeplink;
         task.message_count = Some(message_count);
         task.resume_cmd =
             shell_cd_command(cwd.as_deref(), &format!("claude --resume {session_id}"));
@@ -342,6 +415,13 @@ impl Collector for ClaudeCollector {
 
 struct ParsedSession {
     task: TaskSnapshot,
+}
+
+fn valid_desktop_session_id(value: &str) -> bool {
+    let Some(id) = value.strip_prefix("local_") else {
+        return false;
+    };
+    (1..=64).contains(&id.len()) && id.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-')
 }
 
 struct LiveSession {

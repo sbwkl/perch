@@ -25,7 +25,7 @@
 | 来源 | 存储 | 主要文件 | 待办 | 继续工作 |
 | --- | --- | --- | --- | --- |
 | Qoder | SQLite | `main.sqlite` | 无 | 激活 App |
-| Claude Code | JSONL + JSON | `projects/**/*.jsonl`、`sessions/`、`tasks/` | 有 | 终端 `claude --resume` |
+| Claude Code | JSONL + JSON | `projects/**/*.jsonl`、`sessions/`、`tasks/`、Desktop 会话索引 JSON | 有 | Desktop 深链或终端 `claude --resume` |
 | Codex | JSONL + SQLite | `sessions/`、`archived_sessions/`、`session_index.jsonl`、`goals_1.sqlite` | 无（goal 状态） | `codex://threads/<id>` 或终端 |
 | OpenCode | SQLite | `opencode.db` | 旧表有，v2 暂无 | 激活 App 或终端 |
 | Kilo | SQLite | `kilo.db` | 旧表有 | 激活 App 或终端 |
@@ -100,15 +100,19 @@ Qoder App 已注册 `qoder://`，但不支持会话级 URL（`main.log` 报 `DEE
 ~/.claude/projects/**/subagents/...                 # 子会话，仅计数，不解析
 ~/.claude/sessions/<pid>.json                       # 运行中进程的实时状态
 ~/.claude/tasks/<sessionId>/*.json                  # 待办
+~/Library/Application Support/Claude-3p/claude-code-sessions/**/local_*.json  # Claude Desktop 会话 ID 映射（只读）
 ```
 
-覆盖变量：`PERCH_CLAUDE_DIR`。
+覆盖变量：`PERCH_CLAUDE_DIR`、`PERCH_CLAUDE_DESKTOP_SESSIONS_DIR`。
 
 **读取内容**
 
 - 只解析 `projects/` 下深度为 `<project>/<sessionId>.jsonl` 的顶层文件；路径中包含 `subagents`
   的文件跳过。
-- 从 JSONL 中读取：`cwd`、`gitBranch`、`timestamp`、`type`、`message.model`、`isSidechain`。
+- 从 JSONL 中读取：`cwd`、`gitBranch`、`timestamp`、`type`、`message.model`、`isSidechain`、
+  `entrypoint`（只读顶层字段，用于区分 Desktop 来源）。
+- Claude Desktop 会话索引只读取 `local_*.json` 的 `sessionId` / `cliSessionId` 两个字段建映射，
+  不读取标题、摘要、prompt、工具输入输出或凭据。
 - `message_count` = 非 sidechain 的 user + assistant 记录数。
 - 标题：最后一条 `custom-title.customTitle` → 最后一条 `ai-title.aiTitle` → `新会话`。
 - 时间：首/末记录 timestamp，缺失用文件 mtime。
@@ -126,7 +130,13 @@ Claude Code 在 `~/.claude/sessions/<pid>.json` 写入运行中进程的实时�
 
 **继续工作**
 
-终端执行 `cd '<cwd>' && claude --resume <sessionId>`。Claude 桌面 App 只能新建会话，不能恢复指定会话。
+- JSONL 最后一个非空 `entrypoint` 为 `claude-desktop-3p`，且只读索引中存在合法
+  `cliSessionId -> local_<uuid>` 映射：固定模板 `claude://code/continue?session=<local_id>`，
+  在 Claude Desktop 中定位同一会话。
+- 其他会话（CLI、混合来源但最后入口不是 Desktop、缺少映射或 ID 非法）：终端执行
+  `cd '<cwd>' && claude --resume <sessionId>`。
+- `task_key` / `source_id` 始终是 CLI UUID，不因 Desktop 映射改变；缓存复用 `agent_kind` /
+  `deeplink` / `resume_cmd` 字段，不新增 schema。
 
 **已知限制**
 
@@ -134,7 +144,7 @@ Claude Code 在 `~/.claude/sessions/<pid>.json` 写入运行中进程的实时�
 - 子会话（`subagents/`）暂不进入主列表，也不读取其待办。
 - 没有运行/完成状态。
 
-**变化探测**：`projects/` 下 JSONL 的文件数 + 最新 mtime 签名。
+**变化探测**：`projects/` 下 JSONL 的文件数 + 最新 mtime 签名；桌面会话索引目录的文件数 + 最新 mtime 签名。
 
 ---
 

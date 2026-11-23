@@ -83,6 +83,7 @@ docs/                    产品规格、设计知识库、执行计划、探针�
 | `PERCH_SOURCE_HOME` | 替换所有默认路径的 home 基准 |
 | `PERCH_QODER_DB` | Qoder 数据库路径 |
 | `PERCH_CLAUDE_DIR` | Claude 数据目录 |
+| `PERCH_CLAUDE_DESKTOP_SESSIONS_DIR` | Claude Desktop 会话 ID 映射目录 |
 | `PERCH_CODEX_DIR` | Codex 数据目录 |
 | `PERCH_OPENCODE_DB` | OpenCode 主数据库 |
 | `PERCH_OPENCODE_STABLE_DB` | OpenCode 回退数据库 |

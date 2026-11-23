@@ -67,7 +67,10 @@ impl SourceProbe {
             JsonlProbe {
                 source: "claude",
                 roots: vec![paths.claude_dir.join("projects")],
-                json_roots: vec![paths.claude_dir.join("sessions")],
+                json_roots: vec![
+                    paths.claude_dir.join("sessions"),
+                    paths.claude_desktop_sessions_dir.clone(),
+                ],
                 log_roots: Vec::new(),
                 last_signature: (0, 0),
             },

@@ -102,11 +102,11 @@ fn terminal_hint(source_label: &str, locates_session: bool) -> ContinueHint {
     )
 }
 
-fn deeplink_hint() -> ContinueHint {
+fn deeplink_hint(app_label: &str) -> ContinueHint {
     continue_hint(
         ContinueHintChannel::Deeplink,
         "深链打开",
-        "通过会话深链打开 Codex App".to_owned(),
+        format!("通过会话深链打开 {app_label}"),
         true,
     )
 }
@@ -134,9 +134,14 @@ fn dynamic_hint(source_label: &str) -> ContinueHint {
 pub fn describe_continue(task: &TaskSnapshot) -> Option<ContinueHint> {
     let label = crate::models::source_label(&task.source);
     let hint = match task.source.as_str() {
-        SOURCE_CLAUDE => terminal_hint(label, true),
+        SOURCE_CLAUDE => match task.agent_kind.as_deref() {
+            Some("desktop") if valid_claude_deeplink(task.deeplink.as_deref()) => {
+                deeplink_hint("Claude Desktop")
+            }
+            _ => terminal_hint(label, true),
+        },
         SOURCE_CODEX => match task.agent_kind.as_deref() {
-            Some("desktop" | "automation") => deeplink_hint(),
+            Some("desktop" | "automation") => deeplink_hint("Codex App"),
             Some("cli") => terminal_hint(label, true),
             _ => dynamic_hint(label),
         },
@@ -171,11 +176,16 @@ pub fn plan_continue(task: &TaskSnapshot, probe: &dyn ChannelProbe) -> crate::Re
             action: ContinueAction::ActivateApp(QODER_BUNDLE_ID.to_owned()),
             target: "Qoder App".to_owned(),
         }),
-        // Claude Code 的 App 只负责打开新会话，不能恢复指定会话，只能走终端。
-        SOURCE_CLAUDE => Ok(terminal_plan(
-            task,
-            format!("claude --resume {}", task.source_id),
-        )),
+        // Claude Desktop sessions carry a validated local_<id> deeplink in snapshot metadata.
+        SOURCE_CLAUDE => match (task.agent_kind.as_deref(), task.deeplink.as_deref()) {
+            (Some("desktop"), Some(url)) if valid_claude_deeplink(Some(url)) => {
+                Ok(app_url_plan(url.to_owned(), "Claude Desktop"))
+            }
+            _ => Ok(terminal_plan(
+                task,
+                format!("claude --resume {}", task.source_id),
+            )),
+        },
         SOURCE_CODEX => match task.agent_kind.as_deref() {
             Some("desktop" | "automation") => Ok(app_url_plan(
                 format!("codex://threads/{}", task.source_id),
@@ -308,6 +318,20 @@ fn terminal_plan(task: &TaskSnapshot, command: String) -> ContinuePlan {
         },
         target: "终端".to_owned(),
     }
+}
+
+fn valid_claude_deeplink(url: Option<&str>) -> bool {
+    const PREFIX: &str = "claude://code/continue?session=";
+    let Some(url) = url else {
+        return false;
+    };
+    let Some(session) = url.strip_prefix(PREFIX) else {
+        return false;
+    };
+    let Some(id) = session.strip_prefix("local_") else {
+        return false;
+    };
+    (1..=64).contains(&id.len()) && id.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-')
 }
 
 fn valid_session_id(value: &str) -> bool {
@@ -487,6 +511,78 @@ mod tests {
         )
         .unwrap();
         assert_eq!(plan.channel, ContinueChannel::Cli);
+        assert_eq!(
+            plan.action,
+            ContinueAction::Terminal {
+                cwd: Some("/Users/x/work/gamma".to_owned()),
+                command: "claude --resume ses_abc123".to_owned(),
+            }
+        );
+    }
+
+    #[test]
+    fn claude_desktop_uses_deeplink() {
+        let mut task = task(SOURCE_CLAUDE, Some("desktop"));
+        task.deeplink = Some("claude://code/continue?session=local_abc123".to_owned());
+
+        let hint = describe_continue(&task).unwrap();
+        assert_eq!(hint.channel, ContinueHintChannel::Deeplink);
+        assert!(hint.locates_session);
+        assert!(hint.detail.contains("Claude Desktop"));
+
+        let plan = plan_continue(&task, &probe(false, CliPresence::None)).unwrap();
+        assert_eq!(plan.channel, ContinueChannel::App);
+        assert_eq!(
+            plan.action,
+            ContinueAction::OpenUrl("claude://code/continue?session=local_abc123".to_owned())
+        );
+        assert_eq!(plan.target, "Claude Desktop");
+    }
+
+    #[test]
+    fn claude_desktop_without_deeplink_uses_terminal() {
+        let task = task(SOURCE_CLAUDE, Some("desktop"));
+
+        let hint = describe_continue(&task).unwrap();
+        assert_eq!(hint.channel, ContinueHintChannel::Terminal);
+
+        let plan = plan_continue(&task, &probe(false, CliPresence::None)).unwrap();
+        assert_eq!(
+            plan.action,
+            ContinueAction::Terminal {
+                cwd: Some("/Users/x/work/gamma".to_owned()),
+                command: "claude --resume ses_abc123".to_owned(),
+            }
+        );
+    }
+
+    #[test]
+    fn claude_desktop_with_malformed_deeplink_uses_terminal() {
+        let mut task = task(SOURCE_CLAUDE, Some("desktop"));
+        task.deeplink = Some("claude://code/continue?session=last".to_owned());
+
+        let hint = describe_continue(&task).unwrap();
+        assert_eq!(hint.channel, ContinueHintChannel::Terminal);
+
+        let plan = plan_continue(&task, &probe(false, CliPresence::None)).unwrap();
+        assert_eq!(
+            plan.action,
+            ContinueAction::Terminal {
+                cwd: Some("/Users/x/work/gamma".to_owned()),
+                command: "claude --resume ses_abc123".to_owned(),
+            }
+        );
+    }
+
+    #[test]
+    fn claude_desktop_with_empty_local_id_uses_terminal() {
+        let mut task = task(SOURCE_CLAUDE, Some("desktop"));
+        task.deeplink = Some("claude://code/continue?session=local_".to_owned());
+
+        let hint = describe_continue(&task).unwrap();
+        assert_eq!(hint.channel, ContinueHintChannel::Terminal);
+
+        let plan = plan_continue(&task, &probe(false, CliPresence::None)).unwrap();
         assert_eq!(
             plan.action,
             ContinueAction::Terminal {

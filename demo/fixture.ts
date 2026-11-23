@@ -65,6 +65,7 @@ interface TaskSeed {
   messages?: number;
   title_source?: string;
   resume_cmd?: string;
+  desktop_deeplink?: boolean;
   usage?: TaskUsage;
 }
 
@@ -104,15 +105,17 @@ function makeTask(seed: TaskSeed): TaskView {
     source_missing: false,
     model: seed.model ?? null,
     git_branch: seed.branch ?? null,
-    agent_kind: null,
+    agent_kind: seed.desktop_deeplink ? "desktop" : null,
     message_count: seed.messages ?? null,
     todo_total: todos.length,
     todo_done: todos.filter((todo) => todo.status === "completed").length,
-    deeplink: null,
+    deeplink: seed.desktop_deeplink
+      ? "claude://code/continue?session=local_demo0001"
+      : null,
     resume_cmd: seed.resume_cmd ?? null,
     is_recent: updated >= NOW - 7 * DAY,
     todos,
-    continue_hint: continueHint(seed.source),
+    continue_hint: continueHint(seed.source, seed.desktop_deeplink),
     usage: seed.usage,
   };
 }
@@ -189,6 +192,7 @@ const TASKS: TaskView[] = [
     branch: "main",
     messages: 26,
     title_source: "ai",
+    desktop_deeplink: true,
     usage: TOKEN_USAGE,
     todos: [
       ["补齐空订单导出用例", "completed"],
@@ -465,9 +469,17 @@ function buildWorkspaces(): WorkspaceGroup[] {
     );
 }
 
-function continueHint(source: string): ContinueHint {
+function continueHint(source: string, desktopDeeplink = false): ContinueHint {
   const label = SOURCE_LABELS[source];
   if (source === "claude") {
+    if (desktopDeeplink) {
+      return {
+        channel: "deeplink",
+        label: "深链打开",
+        detail: "通过会话深链打开 Claude Desktop",
+        locates_session: true,
+      };
+    }
     return {
       channel: "terminal",
       label: "终端恢复",

@@ -19,6 +19,7 @@ pub struct SourcePaths {
     pub home: PathBuf,
     pub qoder_db: PathBuf,
     pub claude_dir: PathBuf,
+    pub claude_desktop_sessions_dir: PathBuf,
     pub codex_dir: PathBuf,
     pub opencode_db: PathBuf,
     pub opencode_stable_db: PathBuf,
@@ -44,6 +45,10 @@ impl SourcePaths {
                 home.join("Library/Application Support/com.qoder.app.stable/main.sqlite")
             }),
             claude_dir: env_path("PERCH_CLAUDE_DIR").unwrap_or_else(|| home.join(".claude")),
+            claude_desktop_sessions_dir: env_path("PERCH_CLAUDE_DESKTOP_SESSIONS_DIR")
+                .unwrap_or_else(|| {
+                    home.join("Library/Application Support/Claude-3p/claude-code-sessions")
+                }),
             codex_dir: env_path("PERCH_CODEX_DIR").unwrap_or_else(|| home.join(".codex")),
             opencode_db: env_path("PERCH_OPENCODE_DB")
                 .unwrap_or_else(|| data_dir.join("opencode/opencode.db")),

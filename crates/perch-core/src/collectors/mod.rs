@@ -23,7 +23,10 @@ pub trait Collector: Send {
 pub fn all_collectors(paths: &SourcePaths) -> Vec<Box<dyn Collector>> {
     vec![
         Box::new(qoder::QoderCollector::new(paths.qoder_db.clone())),
-        Box::new(claude::ClaudeCollector::new(paths.claude_dir.clone())),
+        Box::new(
+            claude::ClaudeCollector::new(paths.claude_dir.clone())
+                .with_desktop_sessions_root(paths.claude_desktop_sessions_dir.clone()),
+        ),
         Box::new(codex::CodexCollector::new(paths.codex_dir.clone())),
         Box::new(opencode::OpenCodeCollector::new(
             paths.opencode_db.clone(),

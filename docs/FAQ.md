@@ -80,8 +80,8 @@ Perch 不臆造 `done`。待办进度来自 `~/.claude/tasks/<sessionId>/`。
 ## “打开”按钮会执行什么？
 
 见 [ARCHITECTURE.md](../ARCHITECTURE.md) 的“继续工作”一节。命令由 Rust 侧按来源固定模板生成，
-session id 会做字符集校验，前端不能传入任意命令。Claude Code 和 Codex CLI 会话会在 Terminal 中恢复；
-Qoder 只能激活 App。
+session id 会做字符集校验，前端不能传入任意命令。Claude 会话中，Claude Desktop 创建且存在合法本地映射的会话
+会在 Claude Desktop 中定位，其余 Claude 会话与 Codex CLI 会话在 Terminal 中恢复；Qoder 只能激活 App。
 
 ## 支持 Windows / Linux 吗？
 

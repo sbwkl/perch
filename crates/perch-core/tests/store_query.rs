@@ -354,6 +354,33 @@ fn bootstrap_exposes_continue_hint_and_source_trigger() {
 }
 
 #[test]
+fn bootstrap_exposes_claude_desktop_deeplink_metadata() {
+    let store = CacheStore::open_in_memory().unwrap();
+    let scan = store
+        .begin_scan("claude", "full", "source", "test")
+        .unwrap();
+    let mut task = make_task("claude", "desktop-session", "alpha", 1_000.0);
+    task.agent_kind = Some("desktop".to_owned());
+    task.deeplink = Some("claude://code/continue?session=local_demo".to_owned());
+    task.resume_cmd = Some("claude --resume desktop-session".to_owned());
+    store
+        .save_result(&SourceResult::ok("claude", vec![task], Vec::new()), scan)
+        .unwrap();
+
+    let payload = build_bootstrap(&store, 1_000.0).unwrap();
+    let view = &payload.workspaces[0].tasks[0];
+    assert_eq!(view.agent_kind.as_deref(), Some("desktop"));
+    assert_eq!(
+        view.deeplink.as_deref(),
+        Some("claude://code/continue?session=local_demo")
+    );
+    let hint = view.continue_hint.as_ref().expect("continue hint");
+    assert_eq!(hint.label, "深链打开");
+    assert!(hint.detail.contains("Claude Desktop"));
+    assert!(hint.locates_session);
+}
+
+#[test]
 fn load_task_returns_single_snapshot_by_key() {
     let store = CacheStore::open_in_memory().unwrap();
     let scan = store.begin_scan("qoder", "full", "source", "test").unwrap();
