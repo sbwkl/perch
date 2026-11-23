@@ -48,3 +48,4 @@ Perch 目前把所有 Claude 会话固定标记为 CLI 会话，「打开」始�
 - 2026-11-23：TDD 完成。新增测试覆盖 Desktop 合法映射、缺映射、非法 ID、空 ID、归档映射、混合入口及空 entrypoint、缓存字段透传、变化探测与继续工作决策；全部通过。
 - 2026-11-23：`cargo fmt --all --check`、`cargo clippy -p perch-core --all-targets -- -D warnings`、`cargo test -p perch-core`、`npm run check` 全部通过。
 - 2026-11-23：实机 `npm run tauri dev` 验证：缓存中 Claude Desktop 会话出现 `claude://code/continue?session=local_…` 深链，详情显示「深链打开 Claude Desktop」；点击后 Claude Desktop 切到前台并打开同一会话。CLI 会话仍显示「终端恢复」。
+- 2026-11-23：集成测试从 `main` 建临时分支 `tmp/integration-claude-desktop-session-deeplink` 合入本特性分支，重复 `cargo fmt --all --check`、`cargo clippy -p perch-core --all-targets -- -D warnings`、`cargo test -p perch-core`、`npm run check` 全部通过后删除临时分支。
