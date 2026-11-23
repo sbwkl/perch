@@ -6,7 +6,7 @@
 | 文档类型 | 产品规格 |
 | 当前版本 | v0.1.0 |
 | 适用范围 | 当前来源覆盖行为与验收规格 |
-| 关联 | [CHG-0004](../exec-plans/completed/CHG-0004-usage-ledger-agents.md)、[侧栏来源溢出修复](../exec-plans/completed/2026-11-22-sidebar-source-overflow.md)、[真实体验确定性缺陷修复](../exec-plans/completed/2026-11-22-real-ux-clarity-fixes.md)、[P0/P1 全量修复](../exec-plans/completed/2026-11-22-real-ux-p0-p1.md)、[侧边栏界面收敛](../exec-plans/completed/2026-11-22-sidebar-simplification.md)、[近 7 天侧栏排序](../exec-plans/completed/2026-11-22-sidebar-recent-activity-order.md)、[删除临时目录后缀](../exec-plans/completed/2026-11-22-remove-temporary-workspace-suffix.md)、[删除 workspace 名称后缀](../exec-plans/completed/2026-11-22-remove-workspace-name-suffix.md)、[删除筛选 chip](../exec-plans/completed/2026-11-22-remove-filter-chips.md)、[代码审核修复](../exec-plans/completed/2026-11-23-code-review-fixes.md) |
+| 关联 | [CHG-0004](../exec-plans/completed/CHG-0004-usage-ledger-agents.md)、[侧栏来源溢出修复](../exec-plans/completed/2026-11-22-sidebar-source-overflow.md)、[真实体验确定性缺陷修复](../exec-plans/completed/2026-11-22-real-ux-clarity-fixes.md)、[P0/P1 全量修复](../exec-plans/completed/2026-11-22-real-ux-p0-p1.md)、[侧边栏界面收敛](../exec-plans/completed/2026-11-22-sidebar-simplification.md)、[近 7 天侧栏排序](../exec-plans/completed/2026-11-22-sidebar-recent-activity-order.md)、[删除临时目录后缀](../exec-plans/completed/2026-11-22-remove-temporary-workspace-suffix.md)、[删除 workspace 名称后缀](../exec-plans/completed/2026-11-22-remove-workspace-name-suffix.md)、[删除筛选 chip](../exec-plans/completed/2026-11-22-remove-filter-chips.md)、[代码审核修复](../exec-plans/completed/2026-11-23-code-review-fixes.md)、[Qoder 会话深链](../exec-plans/active/2026-11-23-qoder-session-deeplink.md) |
 
 ## 1. 摘要
 
@@ -30,7 +30,7 @@ Perch 当前覆盖 11 个本地 AI 编码 Agent 来源，与 usage-ledger 的来
 
 - R1：When 某来源的本地数据目录存在, the system shall 扫描其会话并在任务列表展示，字段语义与既有来源一致（标题、项目、时间、状态）。
 - R2：If 某来源的数据目录不存在或采集失败, then the system shall 标记来源状态并保留旧快照，不影响其他来源与其他功能；状态需在侧栏可读暴露，不只依赖颜色。
-- R3：When 用户对某来源的会话触发“继续工作”, the system shall 按该 Agent 的固定方式恢复会话（deeplink、命令行或目录激活）；点击前展示的通道提示须与 Rust `plan_continue` 的决策分支一致，动态通道不得承诺定位具体会话；命令 / URL 不得来自前端。
+- R3：When 用户对某来源的会话触发“继续工作”, the system shall 按该 Agent 的固定方式恢复会话；Qoder 会话在合法 session id 下使用 `qoder://chat/open?sessionId=<id>`、Codex 桌面 / 自动化会话使用 `codex://threads/<id>` 精确定位，其余来源（含 session id 不合法的 Qoder / Codex）只激活对应 App，不启动终端或 CLI 恢复；点击前展示的通道提示须与 Rust `plan_continue` 的决策分支一致，App 通道不得承诺定位具体会话；URL 不得来自前端。
 - R4：When usage-ledger 报告包含某来源的用量, the system shall 将该来源计入 `PERCH_SOURCES` 用量子集。
 - R5：While 窗口可见且实时刷新未暂停, the system shall 每 3 秒检查 SQLite `data_version`，按不超过 15 秒的节流周期计算 JSONL / 日志目录签名；When 变化源经去抖 / 冷却 / 最长等待判定需要更新, the system shall 只重扫该来源；手动刷新期间后台 live scan 不争用 engine 锁。
 - R11：When 用户暂停 / 恢复实时刷新, the system shall 通过固定窄命令切换；While 暂停中, the system shall 更新变化基线但不触发 live scan；来源行不显示触发方式或更新时间。
@@ -65,6 +65,7 @@ Perch 当前覆盖 11 个本地 AI 编码 Agent 来源，与 usage-ledger 的来
 | 2026-11-22 | 删除 workspace 名称的路径父目录后缀 | 已验证 | [../exec-plans/completed/2026-11-22-remove-workspace-name-suffix.md](../exec-plans/completed/2026-11-22-remove-workspace-name-suffix.md) |
 | 2026-11-22 | 删除第二栏筛选 chip | 已验证 | [../exec-plans/completed/2026-11-22-remove-filter-chips.md](../exec-plans/completed/2026-11-22-remove-filter-chips.md) |
 | 2026-11-23 | PR #9 代码审核修复 | 已验证 | [../exec-plans/completed/2026-11-23-code-review-fixes.md](../exec-plans/completed/2026-11-23-code-review-fixes.md) |
+| 2026-11-23 | Qoder 会话深链与 App-only 继续工作 | 开发中 | [../exec-plans/active/2026-11-23-qoder-session-deeplink.md](../exec-plans/active/2026-11-23-qoder-session-deeplink.md) |
 
 ## 6. 链接
 
