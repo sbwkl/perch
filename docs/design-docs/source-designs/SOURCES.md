@@ -24,13 +24,13 @@
 
 | 来源 | 存储 | 主要文件 | 待办 | 继续工作 |
 | --- | --- | --- | --- | --- |
-| Qoder | SQLite | `main.sqlite` | 无 | 激活 App |
-| Claude Code | JSONL + JSON | `projects/**/*.jsonl`、`sessions/`、`tasks/` | 有 | 终端 `claude --resume` |
-| Codex | JSONL + SQLite | `sessions/`、`archived_sessions/`、`session_index.jsonl`、`goals_1.sqlite` | 无（goal 状态） | `codex://threads/<id>` 或终端 |
-| OpenCode | SQLite | `opencode.db` | 旧表有，v2 暂无 | 激活 App 或终端 |
-| Kilo | SQLite | `kilo.db` | 旧表有 | 激活 App 或终端 |
+| Qoder | SQLite | `main.sqlite` | 无 | 会话深链 `qoder://chat/open?sessionId=<id>` |
+| Claude Code | JSONL + JSON | `projects/**/*.jsonl`、`sessions/`、`tasks/` | 有 | 激活 Claude App |
+| Codex | JSONL + SQLite | `sessions/`、`archived_sessions/`、`session_index.jsonl`、`goals_1.sqlite` | 无（goal 状态） | 桌面 `codex://threads/<id>`；其他激活 App |
+| OpenCode | SQLite | `opencode.db` | 旧表有，v2 暂无 | 激活 App |
+| Kilo | SQLite | `kilo.db` | 旧表有 | 激活 App |
 | Trae CN | usage-ledger hooks JSONL | `trae-cn/events-*.jsonl` | 无 | 激活 App |
-| Cline | SQLite | `~/.cline/data/db/sessions.db` | 无 | 激活 App 或终端 |
+| Cline | SQLite | `~/.cline/data/db/sessions.db` | 无 | 激活 App |
 | Antigravity | JSONL 转录 + SQLite | `brain/**/logs/transcript_full.jsonl`、`conversation_summaries.db` | 无 | 激活 App |
 | MiniMax Code | JSONL + SQLite | `v2/sessions/**/messages.jsonl`、`runtime-state.sqlite` | 无 | 激活 App |
 | CodeArts | SQLite | `~/.codeartsdoer/codearts-data/opencode.db` | 有 | 激活 App |
@@ -79,8 +79,11 @@
 
 **继续工作**
 
-Qoder App 已注册 `qoder://`，但不支持会话级 URL（`main.log` 报 `DEEP_LINK_ROUTE_UNSUPPORTED`），
-因此只能 `open -b com.qoder.app` 激活窗口，界面上会提示“无法定位到具体会话”。
+`qoder://chat/open?sessionId=<session_id>`。Qoder 主进程只解析 host `chat` + path `/open`，
+并把 `sessionId` 限制为 `^[A-Za-z0-9_-]{1,128}$`，因此 Perch 对 `source_id` 做同样校验；
+不合法或超长时回退 `open -b com.qoder.app`，提示“无法定位到具体会话”。
+`requestSetId`、`qoder-app://` 与旧的 `qoder://chat/<id>`（`DEEP_LINK_ROUTE_UNSUPPORTED`）不使用。
+证据与实机验证见 [docs/references/agent-session-deeplinks.md](../../references/agent-session-deeplinks.md)。
 
 **已知限制**
 
@@ -126,7 +129,8 @@ Claude Code 在 `~/.claude/sessions/<pid>.json` 写入运行中进程的实时�
 
 **继续工作**
 
-终端执行 `cd '<cwd>' && claude --resume <sessionId>`。Claude 桌面 App 只能新建会话，不能恢复指定会话。
+激活 `com.anthropic.claudefordesktop`。Claude 桌面 App 不能恢复指定会话，Perch 不启动终端，
+界面提示“无法定位到具体会话”。
 
 **已知限制**
 
@@ -191,8 +195,7 @@ Claude Code 在 `~/.claude/sessions/<pid>.json` 写入运行中进程的实时�
 **继续工作**
 
 - `desktop` / `automation`：`codex://threads/<id>`。
-- `cli`：终端 `cd '<cwd>' && codex resume <id>`。
-- 未知 `agent_kind`：根据 Codex App 是否运行、CLI 进程是否存在决定。
+- 其他 `agent_kind`（含 `cli`）：激活 `com.openai.codex`；Perch 不再启动终端 `codex resume`。
 
 **已知限制**
 
@@ -236,8 +239,8 @@ Claude Code 在 `~/.claude/sessions/<pid>.json` 写入运行中进程的实时�
 
 **继续工作**
 
-- App 运行中：激活 `ai.opencode.desktop`。
-- 否则：终端 `cd '<directory>' && opencode --session <id>`。
+激活 `ai.opencode.desktop`。OpenCode 桌面 App 只处理 `opencode://console/authorized?window=`，
+没有会话级深链；`opencode --session <id>` 属于终端通道，不在当前继续工作范围内。
 
 **变化探测**：`PRAGMA data_version`。
 
@@ -264,9 +267,8 @@ Kilo 的 schema 与旧版 OpenCode `session` 表同构（没有 `session_v2`、`
 
 **继续工作**
 
-- App 运行中：激活 `ai.kilo.desktop`。
-- 否则：终端 `cd '<directory>' && kilo`。Kilo CLI 没有已确认的会话恢复参数，因此不拼接 session id；
-  详情面板中的恢复命令也只展示可确认的部分。
+激活 `ai.kilo.desktop`。`kilo-desktop://` 只注册了 `model-catalog` 路由，与会话无关；
+`kilo --session <id>` 属于终端通道，不在当前继续工作范围内。
 
 **变化探测**：`PRAGMA data_version`。
 
@@ -375,10 +377,8 @@ Trae CN 没有确认的会话级深链，只能 `open -b cn.trae.app` 激活窗�
 
 **继续工作**
 
-- `desktop`：激活 `bot.cline.app`。Cline 没有会话级 URL scheme，无法定位到具体会话。
-- `cli`：终端 `cd '<project>' && cline --id <session_id>`（Cline CLI 支持 `--id` 恢复会话）；
-  内置聊天工作区没有项目路径，直接执行 `cline --id <session_id>`。
-- 未知 `agent_kind`：Cline App 运行中优先激活 App，否则检测到 Cline CLI 进程时走终端。
+激活 `bot.cline.app`。Cline 桌面 App 没有 URL scheme，Perch 也不启动终端 `cline --id`；
+界面提示“无法定位到具体会话”。
 
 **已知限制**
 

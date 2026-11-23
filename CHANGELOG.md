@@ -7,6 +7,9 @@
 
 ### Added
 
+- Qoder 会话深链：`qoder://chat/open?sessionId=<id>` 精确打开目标会话；session id 按 `^[A-Za-z0-9_-]{1,128}$` 校验，不合法时回退激活 Qoder App。
+- 继续工作收敛为 App 通道：Qoder 与 Codex 桌面会话走会话级深链，其余来源（含 Claude、OpenCode、Kilo、Cline、Trae CN 等）只激活对应 App，不再启动终端或 CLI 恢复。
+
 - 删除第二栏顶部 `Workspace：… ×` / `来源：… ×` 筛选 chip；筛选状态仅由侧栏选中态表达，搜索弹层作用域提示保留。
 - 删除 workspace 名称后的路径父目录拼接，Workspace 按钮只显示源数据名称；同名 workspace 不再追加 ` · 路径父目录`。
 - 删除 workspace 名称后的 `[临时目录]` / 分组后缀；路径类型不再影响侧栏排序，低活跃项由近 7 天排序与折叠自然后置。

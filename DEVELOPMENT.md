@@ -48,7 +48,7 @@ crates/perch-core/       采集、缓存、查询、继续工作决策
   src/query.rs           任务视图与 BootstrapPayload
   src/usage.rs           只读 usage-ledger，按会话聚合 token / credits / est
   src/probe.rs           SQLite data_version / JSONL 签名探测
-  src/continue_work.rs   打开 App / 终端恢复的决策
+  src/continue_work.rs   会话深链 / 激活 App 的继续工作决策
 demo/                    开发专用演示模式与截图夹具
 docs/                    产品规格、设计知识库、执行计划、探针证据、FAQ、截图
   product-specs/         产品规格与验收事实源
