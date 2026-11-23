@@ -104,7 +104,7 @@ export async function invoke<T>(
         .find((item) => item.key === taskKey);
       const hint = task?.continue_hint;
       return {
-        channel: hint?.channel === "terminal" ? "cli" : "app",
+        channel: "app",
         target: hint?.label ?? taskKey,
         message: `已按「${hint?.label ?? "打开"}」演示（不会启动任何应用）`,
       } as T;

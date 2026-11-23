@@ -1359,7 +1359,7 @@
 
         {#if selected.resume_cmd}
           <section class="detail-block">
-            <h3>恢复命令 <span class="subtle">只读展示</span></h3>
+            <h3>恢复命令 <span class="subtle">只读展示，Perch 不会执行</span></h3>
             <code class="command">{selected.resume_cmd}</code>
           </section>
         {/if}

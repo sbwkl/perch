@@ -467,11 +467,11 @@ function buildWorkspaces(): WorkspaceGroup[] {
 
 function continueHint(source: string): ContinueHint {
   const label = SOURCE_LABELS[source];
-  if (source === "claude") {
+  if (source === "qoder") {
     return {
-      channel: "terminal",
-      label: "终端恢复",
-      detail: `在 Terminal 中恢复 ${label} 会话`,
+      channel: "deeplink",
+      label: "深链打开",
+      detail: "通过会话深链打开 Qoder",
       locates_session: true,
     };
   }
