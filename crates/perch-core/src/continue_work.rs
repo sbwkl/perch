@@ -80,7 +80,7 @@ fn app_hint(source_label: &str) -> ContinueHint {
 pub fn describe_continue(task: &TaskSnapshot) -> Option<ContinueHint> {
     let label = crate::models::source_label(&task.source);
     let hint = match task.source.as_str() {
-        SOURCE_QODER if valid_deeplink_id(&task.source_id, 128) => deeplink_hint("Qoder"),
+        SOURCE_QODER if valid_qoder_session_id(&task.source_id) => deeplink_hint("Qoder"),
         SOURCE_CODEX if codex_deeplink_id(task).is_some() => deeplink_hint("Codex App"),
         SOURCE_CLAUDE | SOURCE_CODEX | SOURCE_QODER | SOURCE_OPENCODE | SOURCE_KILO
         | SOURCE_TRAE_CN | SOURCE_CLINE | SOURCE_ANTIGRAVITY | SOURCE_MINIMAX | SOURCE_CODEARTS
@@ -96,7 +96,7 @@ pub fn describe_continue(task: &TaskSnapshot) -> Option<ContinueHint> {
 pub fn plan_continue(task: &TaskSnapshot) -> crate::Result<ContinuePlan> {
     match task.source.as_str() {
         // Qoder App 只解析 chat/open；路由会把 sessionId 限制为 [A-Za-z0-9_-]{1,128}。
-        SOURCE_QODER if valid_deeplink_id(&task.source_id, 128) => Ok(app_url_plan(
+        SOURCE_QODER if valid_qoder_session_id(&task.source_id) => Ok(app_url_plan(
             format!("qoder://chat/open?sessionId={}", task.source_id),
             "Qoder",
         )),
@@ -148,8 +148,8 @@ fn activate_plan(bundle_id: &str, target: &str) -> ContinuePlan {
 }
 
 /// Qoder 的 `chat/open` 路由只接受 `[A-Za-z0-9_-]` 且长度不超过 128 的 sessionId。
-fn valid_deeplink_id(value: &str, max_len: usize) -> bool {
-    (1..=max_len).contains(&value.len())
+fn valid_qoder_session_id(value: &str) -> bool {
+    (1..=128).contains(&value.len())
         && value
             .chars()
             .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')

@@ -33,7 +33,7 @@
 - **scheme 细节**：主进程 deep-link router 构造为 `new mtn(t, [...], i)`，其中 `t = i.deepLink?.protocol ?? "qoder"`；ingress `new Pzt(Gi.protocol)` 只接受以 `<protocol>://` 开头的 URL。未发现把 `qoder-app://` 映射到本地 router 的代码；`qoder-app://` 在包内只作为 OAuth auth redirect URI 出现（`/out/main/chunks/Bb-Xbnf1.js`）。因此**首选 `qoder://`**；`qoder-app://` 只能在实机验证通过后使用。
 - **与历史证据的关系**：`docs/design-docs/source-designs/SOURCES.md` 记录的 `qoder://chat/<id>` → `DEEP_LINK_ROUTE_UNSUPPORTED` 与本次发现的 `chat/open` 不是同一路径：router 对所有未匹配 handler 的 URL 都会抛 `DEEP_LINK_ROUTE_UNSUPPORTED`，不能据此否定 `chat/open`。包内未找到生成 `chat/open` URL 的调用方（MCP App 通过 `ui/open-link` 传入），但有严谨实机证据（见下），因此标 **A**。
 - **严谨实机验证（2026-11-23）**：以一个真实目标会话（报告中记为“目标会话 A”，不记录标题或 ID）做两次独立交叉验证。第一次先将 Qoder 切到非目标会话 B，确认前台标题不是目标；打开 `qoder://chat/open?sessionId=<目标会话ID>` 后前台标题切到目标会话 A。第二次先将 Qoder 切到另一个非目标会话 C，再次打开同一深链，前台标题又切到目标会话 A。结论：该深链确实能精确打开指定会话；实机截图仅保留在本地临时目录，不写入文档。
-- **可由 Perch TaskView 构造**：**可以**。`TaskSnapshot.source_id` 即 Qoder 的会话 ID（见 `crates/perch-core/src/collectors/qoder.rs`，采集 `sessionId`），且 `valid_session_id()` 允许的字符是 `[A-Za-z0-9_-]`，正好覆盖校验；长度需额外限制 ≤128。固定模板即可，不需要新字段；`deeplink` 字段可保留给第三方传入的 URL，但不应信任外部 URL。
+- **可由 Perch TaskView 构造**：**可以**。`TaskSnapshot.source_id` 即 Qoder 的会话 ID（见 `crates/perch-core/src/collectors/qoder.rs`，采集 `sessionId`），且 `continue_work::valid_qoder_session_id()` 校验的字符集是 `[A-Za-z0-9_-]`、长度 ≤128，覆盖 Qoder 路由的限制。固定模板即可，不需要新字段；`deeplink` 字段可保留给第三方传入的 URL，但不应信任外部 URL。
 - **建议**：已按此实现：Qoder 的继续工作使用固定模板 `qoder://chat/open?sessionId=<source_id>`，并对长度与字符集做严格校验（`^[A-Za-z0-9_-]{1,128}$`）。`qoder-app://` 与 `requestSetId` 暂不启用，除非后续单独验证。无效 ID 回退激活 App，不构造额外 URL。
 
 ## 2. Codex（ChatGPT 桌面版）
@@ -46,7 +46,7 @@
     - 语义：`conversationId` → `(0,i.JX)(o.data.conversationId)` 后由 `navigateToRoute` / `threadIdToLocate` 传给窗口（同文件 `early-bootstrap-916-*.js` 与 `early-bootstrap-7-*.js` 中 `onDeepLinkReceived`、`threadIdToLocate` 相关代码）。
   - 证据 2：`/webview/assets/async/*.js` 多处把 UI 中的“在浏览器中打开”生成 `codex://threads/${encodeURIComponent(t.threadId)}`。
   - 附加参数：`?view=review`（可选 `&diffFilter=...&path=...`）打开该 thread 的 review 面板，仍以指定会话为目标。
-- **可由 Perch TaskView 构造**：**可以，但需格式校验**。Perch 的 `codex::source_id` 来自 rollout 的 `id`/`session_id`（`crates/perch-core/src/collectors/codex.rs:238`）。`plan_continue` 直接拼 `codex://threads/{source_id}`，没有校验 UUID；若 source_id 不是标准 UUID（例如旧版 `plugins_...` 形式），App 解析器会拒绝。建议在 Rust 侧加 UUID 校验；当前失败时不做特别处理（代码生成之后由 App 自行报错）。
+- **可由 Perch TaskView 构造**：**可以，但需 UUID 校验**。Perch 的 `codex::source_id` 来自 rollout 的 `id`/`session_id`（`crates/perch-core/src/collectors/codex.rs:238`），本机 166 条 Codex 任务全部是 UUID 形态。`plan_continue` 只在 `agent_kind = desktop | automation` 且 `source_id` 通过 `is_uuid` 时拼 `codex://threads/{source_id}`；非 UUID（例如旧版 `plugins_...` 形式）回退激活 Codex App，不构造 URL。
 - **验证建议**：用合成 UUID 点击 `codex://threads/00000000-0000-4000-8000-000000000000`，确认打开的是“定位失败”还是“选中会话”；再对真实会话做人工确认（本次不执行）。CLI `codex resume <uuid>`（`codex --help` / `codex resume --help`）是已确认的精确终端等价机制，但不在 Perch 当前继续工作范围内。
 
 ## 3. OpenCode

@@ -107,7 +107,7 @@ Perch 是一个 macOS 桌面应用：Tauri 2 壳 + 纯 Rust core + Svelte 5 前�
 | --- | --- |
 | Qoder | `qoder://chat/open?sessionId=<id>`（`^[A-Za-z0-9_-]{1,128}$`）；不合法时 `open -b com.qoder.app` |
 | Claude Code | `open -b com.anthropic.claudefordesktop` |
-| Codex | `desktop/automation` → `codex://threads/<id>`；其他 `agent_kind` → `open -b com.openai.codex` |
+| Codex | `desktop/automation` 且 id 为 UUID → `codex://threads/<id>`；其他 `agent_kind` 或非 UUID id → `open -b com.openai.codex` |
 | OpenCode | `open -b ai.opencode.desktop` |
 | Kilo | `open -b ai.kilo.desktop` |
 | Trae CN | `open -b cn.trae.app`（hook/memory 无项目路径，也没有确认的会话级深链） |

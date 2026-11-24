@@ -65,6 +65,8 @@ interface TaskSeed {
   messages?: number;
   title_source?: string;
   resume_cmd?: string;
+  agent_kind?: string;
+  source_id?: string;
   usage?: TaskUsage;
 }
 
@@ -72,6 +74,8 @@ let sequence = 0;
 
 function makeTask(seed: TaskSeed): TaskView {
   sequence += 1;
+  const sourceId =
+    seed.source_id ?? `demo-${seed.source}-${String(sequence).padStart(4, "0")}`;
   const workspace = WORKSPACES[seed.workspace];
   const todos: TodoView[] = (seed.todos ?? []).map(([subject, status], index) => ({
     item_id: `${sequence}-${index}`,
@@ -84,7 +88,7 @@ function makeTask(seed: TaskSeed): TaskView {
     key: `${seed.source}:demo-${sequence}`,
     source: seed.source,
     source_label: SOURCE_LABELS[seed.source],
-    source_id: `demo-${seed.source}-${String(sequence).padStart(4, "0")}`,
+    source_id: sourceId,
     parent_key: null,
     is_child: false,
     is_automation: false,
@@ -104,7 +108,7 @@ function makeTask(seed: TaskSeed): TaskView {
     source_missing: false,
     model: seed.model ?? null,
     git_branch: seed.branch ?? null,
-    agent_kind: null,
+    agent_kind: seed.agent_kind ?? null,
     message_count: seed.messages ?? null,
     todo_total: todos.length,
     todo_done: todos.filter((todo) => todo.status === "completed").length,
@@ -112,7 +116,7 @@ function makeTask(seed: TaskSeed): TaskView {
     resume_cmd: seed.resume_cmd ?? null,
     is_recent: updated >= NOW - 7 * DAY,
     todos,
-    continue_hint: continueHint(seed.source),
+    continue_hint: continueHint(seed.source, seed.agent_kind, sourceId),
     usage: seed.usage,
   };
 }
@@ -168,6 +172,7 @@ const QODER_USAGE: TaskUsage = {
 const TASKS: TaskView[] = [
   makeTask({
     source: "qoder",
+    source_id: "demo0a1b-2c3d-4e5f-8a9b-0c1d2e3f4a5b",
     title: "重构结算页的价格计算逻辑",
     workspace: 0,
     status: "running",
@@ -197,6 +202,8 @@ const TASKS: TaskView[] = [
   }),
   makeTask({
     source: "codex",
+    source_id: "01a0f16e-6064-7033-a99a-f0800a7f5477",
+    agent_kind: "desktop",
     title: "修复移动端导航栏的层级问题",
     workspace: 0,
     status: "active",
@@ -241,6 +248,7 @@ const TASKS: TaskView[] = [
   }),
   makeTask({
     source: "qoder",
+    source_id: "demo6f7a-8b9c-40d1-9e2f-3a4b5c6d7e8f",
     title: "更新 API 参考文档",
     workspace: 1,
     status: "running",
@@ -465,9 +473,17 @@ function buildWorkspaces(): WorkspaceGroup[] {
     );
 }
 
-function continueHint(source: string): ContinueHint {
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Mirrors perch_core::continue_work::describe_continue.
+function continueHint(
+  source: string,
+  agentKind?: string,
+  sourceId?: string,
+): ContinueHint {
   const label = SOURCE_LABELS[source];
-  if (source === "qoder") {
+  if (source === "qoder" && sourceId && /^[A-Za-z0-9_-]{1,128}$/.test(sourceId)) {
     return {
       channel: "deeplink",
       label: "深链打开",
@@ -475,7 +491,12 @@ function continueHint(source: string): ContinueHint {
       locates_session: true,
     };
   }
-  if (source === "codex") {
+  if (
+    source === "codex" &&
+    (agentKind === "desktop" || agentKind === "automation") &&
+    sourceId !== undefined &&
+    UUID_PATTERN.test(sourceId)
+  ) {
     return {
       channel: "deeplink",
       label: "深链打开",

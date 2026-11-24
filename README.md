@@ -44,7 +44,7 @@ Perch 只读取各 agent 已落盘的会话元数据，把散落在不同侧边�
 | --- | --- | --- |
 | Qoder | `~/Library/Application Support/com.qoder.app.stable/main.sqlite` | 会话深链 `qoder://chat/open?sessionId=<id>`；ID 不合法时激活 App |
 | Claude Code | `~/.claude/projects/**/*.jsonl` 与 `~/.claude/tasks/` | 激活 Claude App（无会话级深链） |
-| Codex | `~/.codex/sessions`、`archived_sessions`、`session_index.jsonl` | 桌面会话用 `codex://threads/<id>`；其他会话激活 Codex App |
+| Codex | `~/.codex/sessions`、`archived_sessions`、`session_index.jsonl` | 桌面会话且 id 为 UUID 用 `codex://threads/<id>`；其余激活 Codex App |
 | OpenCode | `~/.local/share/opencode/opencode.db` | 激活 OpenCode App（无会话级深链） |
 | Kilo | `~/.local/share/kilo/kilo.db` | 激活 Kilo App（无会话级深链） |
 | Trae CN | `~/.local/share/usage-ledger/trae-cn/events-*.jsonl` 与 `~/.trae-cn/memory/projects/**/session_memory_*.jsonl` | 激活 Trae CN App（无会话级深链） |
