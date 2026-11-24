@@ -70,6 +70,9 @@ interface TaskSeed {
   usage?: TaskUsage;
 }
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 let sequence = 0;
 
 function makeTask(seed: TaskSeed): TaskView {
@@ -472,9 +475,6 @@ function buildWorkspaces(): WorkspaceGroup[] {
         (right.last_activity_at ?? 0) - (left.last_activity_at ?? 0),
     );
 }
-
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Mirrors perch_core::continue_work::describe_continue.
 function continueHint(

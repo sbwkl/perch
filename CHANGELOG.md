@@ -21,6 +21,10 @@
   窗口可见时通过 `PRAGMA data_version` 探测变化
 - 会话状态新增 `failed` 映射与危险色显示，用于 Cline 的失败会话
 
+### Fixed
+
+- `npm run demo` 因 `demo/fixture.ts` 的 `UUID_PATTERN` 在初始化前被读取而白屏。
+
 ### Planned
 
 - `overlay.db` 与全局置顶（M2）
