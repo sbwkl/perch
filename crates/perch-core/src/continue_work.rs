@@ -35,59 +35,25 @@ pub enum ContinueHintChannel {
     App,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// States which fixed channel `plan_continue` will take. Wording belongs to the
+/// UI: the deeplink channel can locate a session, the app channel cannot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ContinueHint {
     pub channel: ContinueHintChannel,
-    pub label: String,
-    pub detail: String,
-    pub locates_session: bool,
-}
-
-fn continue_hint(
-    channel: ContinueHintChannel,
-    label: &str,
-    detail: String,
-    locates_session: bool,
-) -> ContinueHint {
-    ContinueHint {
-        channel,
-        label: label.to_owned(),
-        detail,
-        locates_session,
-    }
-}
-
-fn deeplink_hint(app_label: &str) -> ContinueHint {
-    continue_hint(
-        ContinueHintChannel::Deeplink,
-        "深链打开",
-        format!("通过会话深链打开 {app_label}"),
-        true,
-    )
-}
-
-fn app_hint(source_label: &str) -> ContinueHint {
-    continue_hint(
-        ContinueHintChannel::App,
-        "仅激活 App",
-        format!("激活 {source_label}，无法定位到具体会话"),
-        false,
-    )
 }
 
 /// Describes the fixed continue-work decision using snapshot metadata only.
 /// The actual action stays in Rust; the UI must never send a command or URL.
 pub fn describe_continue(task: &TaskSnapshot) -> Option<ContinueHint> {
-    let label = crate::models::source_label(&task.source);
-    let hint = match task.source.as_str() {
-        SOURCE_QODER if valid_qoder_session_id(&task.source_id) => deeplink_hint("Qoder"),
-        SOURCE_CODEX if codex_deeplink_id(task).is_some() => deeplink_hint("Codex App"),
+    let channel = match task.source.as_str() {
+        SOURCE_QODER if valid_qoder_session_id(&task.source_id) => ContinueHintChannel::Deeplink,
+        SOURCE_CODEX if codex_deeplink_id(task).is_some() => ContinueHintChannel::Deeplink,
         SOURCE_CLAUDE | SOURCE_CODEX | SOURCE_QODER | SOURCE_OPENCODE | SOURCE_KILO
         | SOURCE_TRAE_CN | SOURCE_CLINE | SOURCE_ANTIGRAVITY | SOURCE_MINIMAX | SOURCE_CODEARTS
-        | SOURCE_CODEBUDDY => app_hint(label),
+        | SOURCE_CODEBUDDY => ContinueHintChannel::App,
         _ => return None,
     };
-    Some(hint)
+    Some(ContinueHint { channel })
 }
 
 /// 继续工作只使用固定模板：Qoder 与 Codex 桌面会话走会话级深链，其余来源只激活对应 App。
@@ -187,9 +153,6 @@ mod tests {
     fn qoder_uses_session_deeplink() {
         let hint = describe_continue(&task(SOURCE_QODER, None)).unwrap();
         assert_eq!(hint.channel, ContinueHintChannel::Deeplink);
-        assert_eq!(hint.label, "深链打开");
-        assert!(hint.detail.contains("Qoder"));
-        assert!(hint.locates_session);
 
         let plan = plan_continue(&task(SOURCE_QODER, None)).unwrap();
         assert_eq!(
@@ -223,8 +186,6 @@ mod tests {
 
         let hint = describe_continue(&task).unwrap();
         assert_eq!(hint.channel, ContinueHintChannel::App);
-        assert!(!hint.locates_session);
-        assert!(hint.detail.contains("无法定位"));
 
         let plan = plan_continue(&task).unwrap();
         assert_eq!(
@@ -299,7 +260,6 @@ mod tests {
             );
             let hint = describe_continue(&task).unwrap();
             assert_eq!(hint.channel, ContinueHintChannel::App, "{id}");
-            assert!(!hint.locates_session, "{id}");
         }
 
         let upper = codex_task(Some("desktop"), "01A0F16E-6064-7033-A99A-F0800A7F5477");
@@ -315,23 +275,18 @@ mod tests {
     fn continue_hints_expose_action_before_click() {
         let claude = describe_continue(&task(SOURCE_CLAUDE, Some("cli"))).unwrap();
         assert_eq!(claude.channel, ContinueHintChannel::App);
-        assert_eq!(claude.label, "仅激活 App");
-        assert!(!claude.locates_session);
 
         let qoder = describe_continue(&task(SOURCE_QODER, None)).unwrap();
         assert_eq!(qoder.channel, ContinueHintChannel::Deeplink);
-        assert!(qoder.locates_session);
 
         let uuid = "01a0f16e-6064-7033-a99a-f0800a7f5477";
         for kind in ["desktop", "automation"] {
             let codex = describe_continue(&codex_task(Some(kind), uuid)).unwrap();
             assert_eq!(codex.channel, ContinueHintChannel::Deeplink, "{kind}");
-            assert!(codex.locates_session, "{kind}");
         }
         for kind in [None, Some("cli")] {
             let codex = describe_continue(&codex_task(kind, uuid)).unwrap();
             assert_eq!(codex.channel, ContinueHintChannel::App);
-            assert!(!codex.locates_session);
         }
 
         for source in [
@@ -346,7 +301,6 @@ mod tests {
         ] {
             let hint = describe_continue(&task(source, None)).unwrap();
             assert_eq!(hint.channel, ContinueHintChannel::App, "{source}");
-            assert!(!hint.locates_session, "{source}");
         }
 
         let mut unknown = task(SOURCE_CLAUDE, None);
@@ -367,7 +321,6 @@ mod tests {
             );
             let hint = describe_continue(&qoder).unwrap();
             assert_eq!(hint.channel, ContinueHintChannel::App, "{source_id}");
-            assert!(!hint.locates_session, "{source_id}");
 
             assert_eq!(
                 plan_continue(&codex_task(Some("desktop"), source_id))

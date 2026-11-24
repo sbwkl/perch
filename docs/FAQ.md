@@ -44,7 +44,7 @@ workspace 名从编码目录名启发式还原，不伪造完整路径。
 能。Qoder 注册了 `qoder://`，并支持会话级深链 `qoder://chat/open?sessionId=<id>`。
 Perch 固定生成该链接，点击后切到目标会话。旧的 `qoder://chat/<id>` 不受支持
 （Qoder 日志报 `DEEP_LINK_ROUTE_UNSUPPORTED`），Perch 不使用它。
-会话 ID 不合法或超过 128 字符时，Perch 回退为仅激活 Qoder App，并提示“无法定位到具体会话”。
+会话 ID 不合法或超过 128 字符时，Perch 回退为仅激活 Qoder App，按钮相应显示「激活 Qoder」。
 证据见 [agent-session-deeplinks.md](references/agent-session-deeplinks.md)。
 
 ## Claude Code 的运行状态是怎么来的？
@@ -80,11 +80,12 @@ Perch 不臆造 `done`。待办进度来自 `~/.claude/tasks/<sessionId>/`。
 如果来源上次有超过 20 个任务、本次结果不足一半，Perch 会认为可能异常，降级为部分扫描并保留旧快照，
 不会把大量任务标记为缺失。确认源数据正常后再手动刷新一次即可。
 
-## “打开”按钮会执行什么？
+## 详情面板的“打开 / 激活”按钮会执行什么？
 
 见 [ARCHITECTURE.md](../ARCHITECTURE.md) 的“继续工作”一节。动作由 Rust 侧按来源固定模板生成，
-session id 会做字符集校验，前端不能传入任意命令。Qoder 会话与 Codex 桌面会话使用会话级深链；
-其他来源只激活对应 App，目前不会启动终端或 CLI 恢复。
+session id 会做字符集校验，前端不能传入任意命令。Qoder 会话与 Codex 桌面会话使用会话级深链，
+按钮写作「打开 X」；其他来源只激活对应 App，按钮写作「激活 X」，目前不会启动终端或 CLI 恢复。
+按钮文案的含义见 [GLOSSARY.md](../GLOSSARY.md)。
 
 ## 支持 Windows / Linux 吗？
 

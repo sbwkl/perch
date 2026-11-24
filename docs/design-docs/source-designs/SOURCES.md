@@ -81,7 +81,7 @@
 
 `qoder://chat/open?sessionId=<session_id>`。Qoder 主进程只解析 host `chat` + path `/open`，
 并把 `sessionId` 限制为 `^[A-Za-z0-9_-]{1,128}$`，因此 Perch 对 `source_id` 做同样校验；
-不合法或超长时回退 `open -b com.qoder.app`，提示“无法定位到具体会话”。
+不合法或超长时回退 `open -b com.qoder.app`，界面按钮相应从「打开 Qoder」变为「激活 Qoder」。
 `requestSetId`、`qoder-app://` 与旧的 `qoder://chat/<id>`（`DEEP_LINK_ROUTE_UNSUPPORTED`）不使用。
 证据与实机验证见 [docs/references/agent-session-deeplinks.md](../../references/agent-session-deeplinks.md)。
 
@@ -130,7 +130,7 @@ Claude Code 在 `~/.claude/sessions/<pid>.json` 写入运行中进程的实时�
 **继续工作**
 
 激活 `com.anthropic.claudefordesktop`。Claude 桌面 App 不能恢复指定会话，Perch 不启动终端，
-界面提示“无法定位到具体会话”。
+界面按钮显示「激活 Claude Code」，不另设通道说明。
 
 **已知限制**
 
@@ -378,7 +378,7 @@ Trae CN 没有确认的会话级深链，只能 `open -b cn.trae.app` 激活窗�
 **继续工作**
 
 激活 `bot.cline.app`。Cline 桌面 App 没有 URL scheme，Perch 也不启动终端 `cline --id`；
-界面提示“无法定位到具体会话”。
+界面按钮显示「激活 Cline」。
 
 **已知限制**
 

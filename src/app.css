@@ -964,15 +964,27 @@ kbd {
   margin-top: 14px;
 }
 
+/* Only one control: the verb states the channel, the fill states the source.
+   The inset ring has to sit on the far side of the fill from the pane: on the
+   light pane a dark ring rescues white (Codex) and near-white (Cline) fills, on
+   the dark pane a light ring rescues the near-black OpenCode fill, whose own
+   luminance is only 1.02:1 against `--pane`. */
 .continue-button {
   padding: 6px 14px;
   border: none;
   border-radius: 7px;
-  background: var(--accent);
-  color: var(--bg);
+  background: var(--source, var(--accent));
+  color: var(--on-source, var(--bg));
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.14);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
+}
+
+@media (prefers-color-scheme: dark) {
+  .continue-button {
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+  }
 }
 
 .continue-button:hover:not(:disabled) {
@@ -990,35 +1002,8 @@ kbd {
   word-break: break-word;
 }
 
-.continue-channel {
-  flex: none;
-  padding: 3px 7px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--bg);
-  color: var(--text-secondary);
-  font-size: 10px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.continue-channel.deeplink {
-  color: var(--ok);
-  border-color: rgba(15, 159, 110, 0.25);
-  background: rgba(15, 159, 110, 0.1);
-}
-
-.continue-channel.app {
-  color: var(--warn);
-  border-color: rgba(164, 106, 18, 0.25);
-  background: rgba(164, 106, 18, 0.1);
-}
-
-.continue-detail {
-  margin: 7px 0 0;
-  font-size: 10.5px;
-  line-height: 1.5;
-  color: var(--text-tertiary);
+.continue-note.error {
+  color: var(--danger);
 }
 
 .detail-block {

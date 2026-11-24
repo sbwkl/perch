@@ -365,8 +365,6 @@ fn bootstrap_exposes_continue_hint_and_source_trigger() {
         qoder_hint.channel,
         perch_core::continue_work::ContinueHintChannel::Deeplink
     );
-    assert_eq!(qoder_hint.label, "深链打开");
-    assert!(qoder_hint.locates_session);
 
     let claude = tasks.iter().find(|task| task.source == "claude").unwrap();
     let claude_hint = claude.continue_hint.as_ref().expect("claude continue hint");
@@ -374,8 +372,6 @@ fn bootstrap_exposes_continue_hint_and_source_trigger() {
         claude_hint.channel,
         perch_core::continue_work::ContinueHintChannel::App
     );
-    assert_eq!(claude_hint.label, "仅激活 App");
-    assert!(!claude_hint.locates_session);
 
     let codex = tasks
         .iter()
@@ -386,7 +382,6 @@ fn bootstrap_exposes_continue_hint_and_source_trigger() {
         codex_hint.channel,
         perch_core::continue_work::ContinueHintChannel::Deeplink
     );
-    assert!(codex_hint.locates_session);
 
     let codex_plain = tasks
         .iter()
@@ -400,7 +395,6 @@ fn bootstrap_exposes_continue_hint_and_source_trigger() {
         plain_hint.channel,
         perch_core::continue_work::ContinueHintChannel::App
     );
-    assert!(!plain_hint.locates_session);
 
     let source = payload
         .sources
