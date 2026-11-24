@@ -119,7 +119,7 @@ function makeTask(seed: TaskSeed): TaskView {
     resume_cmd: seed.resume_cmd ?? null,
     is_recent: updated >= NOW - 7 * DAY,
     todos,
-    continue_hint: continueHint(seed.source, seed.agent_kind, sourceId),
+    continue_hint: demoContinueHint(seed.source, seed.agent_kind, sourceId),
     usage: seed.usage,
   };
 }
@@ -476,8 +476,9 @@ function buildWorkspaces(): WorkspaceGroup[] {
     );
 }
 
-// Mirrors perch_core::continue_work::describe_continue.
-function continueHint(
+// Mirrors perch_core::continue_work::describe_continue. The naming is demo-local
+// because the fixture's seed only carries the fields that decide the channel.
+function demoContinueHint(
   source: string,
   agentKind?: string,
   sourceId?: string,
