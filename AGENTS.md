@@ -120,3 +120,17 @@ cargo clippy -p perch-core --all-targets -- -D warnings
 cargo test -p perch-core
 cargo run -p perch-core --example scan   # 用覆盖变量扫描并打印结果
 ```
+
+## Agent skills
+
+### Issue tracker
+
+issue 与规格存放在 GitHub Issues（`sbwkl/perch`），用 `gh` CLI 读写。详见 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+使用默认五个 triage 标签：`needs-triage`、`needs-info`、`ready-for-agent`、`ready-for-human`、`wontfix`。详见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+单上下文：根目录 `GLOSSARY.md` + `docs/design-docs/adr/`。详见 `docs/agents/domain.md`。
