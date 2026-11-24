@@ -80,11 +80,12 @@ Perch 不臆造 `done`。待办进度来自 `~/.claude/tasks/<sessionId>/`。
 如果来源上次有超过 20 个任务、本次结果不足一半，Perch 会认为可能异常，降级为部分扫描并保留旧快照，
 不会把大量任务标记为缺失。确认源数据正常后再手动刷新一次即可。
 
-## “打开”按钮会执行什么？
+## 详情面板的“打开 / 激活”按钮会执行什么？
 
 见 [ARCHITECTURE.md](../ARCHITECTURE.md) 的“继续工作”一节。动作由 Rust 侧按来源固定模板生成，
-session id 会做字符集校验，前端不能传入任意命令。Qoder 会话与 Codex 桌面会话使用会话级深链；
-其他来源只激活对应 App，目前不会启动终端或 CLI 恢复。
+session id 会做字符集校验，前端不能传入任意命令。Qoder 会话与 Codex 桌面会话使用会话级深链，
+按钮写作「打开 X」；其他来源只激活对应 App，按钮写作「激活 X」，目前不会启动终端或 CLI 恢复。
+按钮文案的含义见 [GLOSSARY.md](../GLOSSARY.md)。
 
 ## 支持 Windows / Linux 吗？
 

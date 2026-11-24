@@ -25,6 +25,7 @@
 ### Fixed
 
 - 详情面板通道胶囊被全局 `.app` 网格样式撑满面板（实测 542×694 px），把详情内容挤出首屏；随入口收敛一并移除该元素。
+- `npm run demo` 因 `demo/fixture.ts` 的 `UUID_PATTERN` 在初始化前被读取而白屏（独立变更 [2026-11-24-demo-fixture-tdz.md](docs/exec-plans/completed/2026-11-24-demo-fixture-tdz.md)）。
 
 ### Planned
 

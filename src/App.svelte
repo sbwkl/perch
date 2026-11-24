@@ -308,8 +308,10 @@
   // "激活" means the app only comes forward. Wording lives here, not in Rust.
   // A missing hint means a source was never registered in `plan_continue`; the
   // button still renders so the click surfaces that error instead of hiding the
-  // action, and the neutral verb makes no locating promise.
-  const continueVerb = $derived(continueHint?.channel === "app" ? "激活" : "打开");
+  // action, and the neutral verb promises neither locating nor activating.
+  const continueVerb = $derived(
+    continueHint === null ? "继续" : continueHint.channel === "app" ? "激活" : "打开",
+  );
   const continueButtonLabel = $derived(
     continuing
       ? `${continueVerb}中…`
@@ -709,9 +711,11 @@
   }
 
   // Picks the label colour with the better WCAG contrast against the source
-  // brand fill: light brands (Codex white, Cline grey, Kilo yellow) take the
-  // dark ink, mid and dark brands take white. Every current source clears 4.5:1
-  // this way, so the brand colour itself never has to be darkened.
+  // brand fill. Almost every brand is light enough for the dark ink — Codex
+  // white, Cline grey, Kilo yellow, but also Claude's brown and CodeArts'
+  // magenta; only the near-black OpenCode fill and MiniMax's dark magenta take
+  // white. Every current source clears 4.5:1 this way, so the brand colour
+  // itself never has to be darkened.
   function contrastText(hex: string): string {
     const value = hex.replace("#", "");
     const channels = [0, 2, 4].map((offset) => {
