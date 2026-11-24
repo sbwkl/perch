@@ -78,3 +78,14 @@ Perch 以“先找到任务，再回 agent 继续”为核心。里程碑沿用
 - Claude 桌面 App 不能恢复指定会话；Codex 桌面以外的会话与其余来源只激活 App，不能定位具体会话。这是上游限制。
 - Qoder 会话深链依赖私有路由 `qoder://chat/open`，上游改版可能失效；失效时 App 自行报错，Perch 不预判。
 - 未签名构建在他人机器上可能被 Gatekeeper 拦截。
+- 继续工作按钮的对比度选择硬编码深色字亮度 `0.0104`（`#1d1d1f` 实际约 `0.01239`），代码阈值与
+  [2026-11-24-continue-work-affordance.md](docs/exec-plans/completed/2026-11-24-continue-work-affordance.md)
+  的验证表不一致；当前 11 个来源的前景选择结果不变。
+- 继续工作按钮只在白色与深色字之间取更优对比度，没有 4.5:1 下限；未来新增中间调品牌色的来源可能达不到 AA。
+- 继续工作请求在途时切换选中任务，加载文案与失败原因会显示到新任务上（`continuing` 是全局布尔，
+  `catch` 未校验 `selectedKey`）；失败提示未使用 `aria-live`，读屏用户可能感知不到。
+- CI 只对 `src-tauri` 执行 `cargo fmt`，不编译该 crate；Tauri 壳的类型错误需本地 `cargo check -p perch` 发现。
+- `demo/fixture.ts` 在模块顶层构造数据，依赖被引用的常量全部声明在其上方；`npm run check` 无法捕获 TDZ，
+  回归仍需实跑 `npm run demo`。
+- `docs/references/agent-session-deeplinks.md` 的验证建议仍写「在 UI 明示无法定位」，当前由按钮动词与
+  [GLOSSARY.md](GLOSSARY.md) 表达。
