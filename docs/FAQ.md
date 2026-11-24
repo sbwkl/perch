@@ -44,7 +44,7 @@ workspace 名从编码目录名启发式还原，不伪造完整路径。
 能。Qoder 注册了 `qoder://`，并支持会话级深链 `qoder://chat/open?sessionId=<id>`。
 Perch 固定生成该链接，点击后切到目标会话。旧的 `qoder://chat/<id>` 不受支持
 （Qoder 日志报 `DEEP_LINK_ROUTE_UNSUPPORTED`），Perch 不使用它。
-会话 ID 不合法或超过 128 字符时，Perch 回退为仅激活 Qoder App，并提示“无法定位到具体会话”。
+会话 ID 不合法或超过 128 字符时，Perch 回退为仅激活 Qoder App，按钮相应显示「激活 Qoder」。
 证据见 [agent-session-deeplinks.md](references/agent-session-deeplinks.md)。
 
 ## Claude Code 的运行状态是怎么来的？

@@ -5,7 +5,6 @@
   import type {
     BootstrapPayload,
     ContinueHint,
-    ContinueOutcome,
     SearchHit,
     SourceView,
     SearchResponse,
@@ -96,7 +95,7 @@
   let sourceFilter = $state<string | null>(null);
   let selectedKey = $state<string | null>(null);
   let continuing = $state(false);
-  let continueNotice = $state("");
+  let continueError = $state("");
   let showAllWorkspaces = $state(false);
   let showAllSources = $state(false);
   let reportOpen = $state(false);
@@ -305,12 +304,15 @@
 
   const continueHint = $derived<ContinueHint | null>(selected?.continue_hint ?? null);
 
+  // The verb carries the channel: "打开" means the session is located,
+  // "激活" means the app only comes forward. Wording lives here, not in Rust.
+  const continueVerb = $derived(
+    continueHint?.channel === "app" ? "激活" : "打开",
+  );
   const continueButtonLabel = $derived(
     continuing
-      ? "打开中…"
-      : continueHint
-        ? `${continueHint.label} ${selected?.source_label ?? ""}`.trim()
-        : `打开 ${selected?.source_label ?? ""}`.trim(),
+      ? `${continueVerb}中…`
+      : `${continueVerb} ${selected?.source_label ?? "App"}`.trim(),
   );
 
   const searchScope = $derived.by(() => {
@@ -520,24 +522,24 @@
 
   function clearSelection() {
     selectedKey = null;
-    continueNotice = "";
+    continueError = "";
   }
 
   function selectTask(key: string) {
     selectedKey = key;
-    continueNotice = "";
+    continueError = "";
   }
 
   async function continueTask() {
     if (!selected || continuing) return;
     const taskKey = selected.key;
     continuing = true;
-    continueNotice = "";
+    continueError = "";
     try {
-      const outcome = await invoke<ContinueOutcome>("continue_task", { taskKey });
-      continueNotice = outcome.message;
+      // Success stays silent: the button already states the fixed channel.
+      await invoke("continue_task", { taskKey });
     } catch (error) {
-      continueNotice = error instanceof Error ? error.message : String(error);
+      continueError = error instanceof Error ? error.message : String(error);
     } finally {
       continuing = false;
     }
@@ -703,6 +705,24 @@
 
   function sourceColor(source: string): string {
     return SOURCE_COLORS[source] ?? "#8e8e93";
+  }
+
+  /// Picks the label colour with the better WCAG contrast against the source
+/// brand fill: light brands (Codex white, Cline grey, Kilo yellow) take the
+/// dark ink, mid and dark brands take white. Every current source clears 4.5:1
+/// this way, so the brand colour itself never has to be darkened.
+  function contrastText(hex: string): string {
+    const value = hex.replace("#", "");
+    const channels = [0, 2, 4].map((offset) => {
+      const channel = parseInt(value.slice(offset, offset + 2), 16) / 255;
+      return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+    });
+    const luminance = 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+    const dark = 0.0104; // #1d1d1f
+    const light = 1;
+    return (light + 0.05) / (luminance + 0.05) > (luminance + 0.05) / (dark + 0.05)
+      ? "#ffffff"
+      : "#1d1d1f";
   }
 
   function statusLabel(task: TaskView): string {
@@ -1236,30 +1256,16 @@
         </header>
 
         <div class="continue-row">
-          {#if continueHint}
-            <span
-              class="continue-channel {continueHint.channel}"
-              title={continueHint.detail}
-              aria-label={`继续工作通道：${continueHint.label}；${continueHint.detail}`}
-            >
-              {continueHint.label}
-            </span>
-          {/if}
           <button
             class="continue-button"
+            style={`--source:${sourceColor(selected.source)};--on-source:${contrastText(sourceColor(selected.source))}`}
             onclick={() => void continueTask()}
             disabled={continuing}
-            title={continueHint?.detail ?? "按来源固定模板打开"}
           >
             {continueButtonLabel}
           </button>
-          {#if continueNotice}<span class="continue-note">{continueNotice}</span>{/if}
+          {#if continueError}<span class="continue-note error">{continueError}</span>{/if}
         </div>
-        {#if continueHint}
-          <p class="continue-detail">
-            {continueHint.detail}{#if !continueHint.locates_session}；点击前请确认当前 App 中的会话。{/if}
-          </p>
-        {/if}
 
         <section class="detail-block">
           <h3>任务信息</h3>

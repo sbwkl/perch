@@ -482,14 +482,8 @@ function continueHint(
   agentKind?: string,
   sourceId?: string,
 ): ContinueHint {
-  const label = SOURCE_LABELS[source];
   if (source === "qoder" && sourceId && /^[A-Za-z0-9_-]{1,128}$/.test(sourceId)) {
-    return {
-      channel: "deeplink",
-      label: "深链打开",
-      detail: "通过会话深链打开 Qoder",
-      locates_session: true,
-    };
+    return { channel: "deeplink" };
   }
   if (
     source === "codex" &&
@@ -497,19 +491,9 @@ function continueHint(
     sourceId !== undefined &&
     UUID_PATTERN.test(sourceId)
   ) {
-    return {
-      channel: "deeplink",
-      label: "深链打开",
-      detail: "通过会话深链打开 Codex App",
-      locates_session: true,
-    };
+    return { channel: "deeplink" };
   }
-  return {
-    channel: "app",
-    label: "仅激活 App",
-    detail: `激活 ${label}，无法定位到具体会话`,
-    locates_session: false,
-  };
+  return { channel: "app" };
 }
 
 function buildSources(): SourceView[] {

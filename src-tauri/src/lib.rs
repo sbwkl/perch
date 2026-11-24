@@ -169,14 +169,10 @@ fn search_tasks(
     .map_err(|error| error.to_string())
 }
 
-#[derive(serde::Serialize)]
-struct ContinueOutcome {
-    target: String,
-    message: String,
-}
-
+/// Continue-work succeeds silently: the fixed channel is already visible on the
+/// button, so a success banner would restate it. Failures travel as `Err`.
 #[tauri::command]
-fn continue_task(state: State<'_, AppState>, task_key: String) -> Result<ContinueOutcome, String> {
+fn continue_task(state: State<'_, AppState>, task_key: String) -> Result<(), String> {
     let task = {
         let engine = state.engine.lock().map_err(|error| error.to_string())?;
         engine
@@ -186,16 +182,7 @@ fn continue_task(state: State<'_, AppState>, task_key: String) -> Result<Continu
             .ok_or_else(|| format!("任务不存在：{task_key}"))?
     };
     let plan = plan_continue(&task).map_err(|error| error.to_string())?;
-    execute_plan(&plan)?;
-    Ok(ContinueOutcome {
-        target: plan.target.clone(),
-        message: match &plan.action {
-            ContinueAction::ActivateApp(_) => {
-                format!("已切换到 {}（无法定位到具体会话）", plan.target)
-            }
-            ContinueAction::OpenUrl(_) => format!("已打开 {}", plan.target),
-        },
-    })
+    execute_plan(&plan)
 }
 
 fn execute_plan(plan: &ContinuePlan) -> Result<(), String> {

@@ -40,9 +40,6 @@ export type ContinueHintChannel = "deeplink" | "app";
 
 export interface ContinueHint {
   channel: ContinueHintChannel;
-  label: string;
-  detail: string;
-  locates_session: boolean;
 }
 
 export interface TaskUsage {
@@ -167,9 +164,4 @@ export interface SyncReport {
     duration_ms: number;
     error: string | null;
   }>;
-}
-
-export interface ContinueOutcome {
-  target: string;
-  message: string;
 }

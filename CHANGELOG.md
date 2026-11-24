@@ -7,6 +7,7 @@
 
 ### Added
 
+- 继续工作入口收敛为一个按钮：动词表明通道（`打开 Qoder` / `打开 Codex` 能定位到具体会话，`激活 Trae CN` 等只把 App 切到前台），按钮用来源品牌色填充，删除重复的通道胶囊与说明段；点击成功不再弹出提示，失败显示危险色错误。
 - Qoder 会话深链：`qoder://chat/open?sessionId=<id>` 精确打开目标会话；session id 按 `^[A-Za-z0-9_-]{1,128}$` 校验，不合法时回退激活 Qoder App。
 - 继续工作收敛为 App 通道：Qoder 与 Codex 桌面会话走会话级深链，其余来源（含 Claude、OpenCode、Kilo、Cline、Trae CN 等）只激活对应 App，不再启动终端或 CLI 恢复。
 
@@ -23,7 +24,7 @@
 
 ### Fixed
 
-- `npm run demo` 因 `demo/fixture.ts` 的 `UUID_PATTERN` 在初始化前被读取而白屏。
+- 详情面板通道胶囊被全局 `.app` 网格样式撑满面板（实测 542×694 px），把详情内容挤出首屏；随入口收敛一并移除该元素。
 
 ### Planned
 

@@ -102,11 +102,9 @@ export async function invoke<T>(
       const task = payload.workspaces
         .flatMap((group) => group.tasks)
         .find((item) => item.key === taskKey);
-      const hint = task?.continue_hint;
-      return {
-        target: hint?.label ?? taskKey,
-        message: `已按「${hint?.label ?? "打开"}」演示（不会启动任何应用）`,
-      } as T;
+      if (!task) throw new Error(`任务不存在：${taskKey}`);
+      // Success is silent in the real command, so the demo stays silent too.
+      return undefined as T;
     }
     default:
       throw new Error(`demo 未实现命令：${command}`);
