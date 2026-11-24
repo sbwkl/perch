@@ -22,23 +22,8 @@ pub enum ContinueAction {
     ActivateApp(String),
 }
 
-/// 继续工作已收敛为单一 App 通道：深链与激活 App 都通过 `open` 交给 macOS 处理。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ContinueChannel {
-    App,
-}
-
-impl ContinueChannel {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::App => "app",
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContinuePlan {
-    pub channel: ContinueChannel,
     pub action: ContinueAction,
     pub target: String,
 }
@@ -95,7 +80,7 @@ fn app_hint(source_label: &str) -> ContinueHint {
 pub fn describe_continue(task: &TaskSnapshot) -> Option<ContinueHint> {
     let label = crate::models::source_label(&task.source);
     let hint = match task.source.as_str() {
-        SOURCE_QODER if valid_qoder_session_id(&task.source_id) => deeplink_hint("Qoder"),
+        SOURCE_QODER if valid_deeplink_id(&task.source_id, 128) => deeplink_hint("Qoder"),
         SOURCE_CODEX if codex_deeplink_id(task).is_some() => deeplink_hint("Codex App"),
         SOURCE_CLAUDE | SOURCE_CODEX | SOURCE_QODER | SOURCE_OPENCODE | SOURCE_KILO
         | SOURCE_TRAE_CN | SOURCE_CLINE | SOURCE_ANTIGRAVITY | SOURCE_MINIMAX | SOURCE_CODEARTS
@@ -111,7 +96,7 @@ pub fn describe_continue(task: &TaskSnapshot) -> Option<ContinueHint> {
 pub fn plan_continue(task: &TaskSnapshot) -> crate::Result<ContinuePlan> {
     match task.source.as_str() {
         // Qoder App 只解析 chat/open；路由会把 sessionId 限制为 [A-Za-z0-9_-]{1,128}。
-        SOURCE_QODER if valid_qoder_session_id(&task.source_id) => Ok(app_url_plan(
+        SOURCE_QODER if valid_deeplink_id(&task.source_id, 128) => Ok(app_url_plan(
             format!("qoder://chat/open?sessionId={}", task.source_id),
             "Qoder",
         )),
@@ -141,15 +126,15 @@ pub fn plan_continue(task: &TaskSnapshot) -> crate::Result<ContinuePlan> {
     }
 }
 
-/// Codex 桌面深链只接受可安全拼进 URL 的 `source_id`；其余 `agent_kind` 不构造 URL。
+/// Codex 桌面深链只接受 UUID 形态的 `source_id`（App 解析器拒绝其它形式）；
+/// 其他 `agent_kind` 与非 UUID id 都不构造 URL。
 fn codex_deeplink_id(task: &TaskSnapshot) -> Option<&str> {
     let is_desktop = matches!(task.agent_kind.as_deref(), Some("desktop" | "automation"));
-    (is_desktop && valid_session_id(&task.source_id)).then_some(task.source_id.as_str())
+    (is_desktop && is_uuid(&task.source_id)).then_some(task.source_id.as_str())
 }
 
 fn app_url_plan(url: String, target: &str) -> ContinuePlan {
     ContinuePlan {
-        channel: ContinueChannel::App,
         action: ContinueAction::OpenUrl(url),
         target: target.to_owned(),
     }
@@ -157,24 +142,27 @@ fn app_url_plan(url: String, target: &str) -> ContinuePlan {
 
 fn activate_plan(bundle_id: &str, target: &str) -> ContinuePlan {
     ContinuePlan {
-        channel: ContinueChannel::App,
         action: ContinueAction::ActivateApp(bundle_id.to_owned()),
         target: target.to_owned(),
     }
 }
 
-fn valid_qoder_session_id(value: &str) -> bool {
-    (1..=128).contains(&value.len())
+/// Qoder 的 `chat/open` 路由只接受 `[A-Za-z0-9_-]` 且长度不超过 128 的 sessionId。
+fn valid_deeplink_id(value: &str, max_len: usize) -> bool {
+    (1..=max_len).contains(&value.len())
         && value
             .chars()
             .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
 }
 
-fn valid_session_id(value: &str) -> bool {
-    !value.is_empty()
-        && value
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+/// Codex 桌面 App 的 `codex://threads/<id>` 解析器要求标准 UUID（大小写不敏感）。
+fn is_uuid(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 36
+        && bytes.iter().enumerate().all(|(index, byte)| match index {
+            8 | 13 | 18 | 23 => *byte == b'-',
+            _ => byte.is_ascii_hexdigit(),
+        })
 }
 
 #[cfg(test)]
@@ -183,6 +171,13 @@ mod tests {
 
     fn task(source: &str, agent_kind: Option<&str>) -> TaskSnapshot {
         let mut task = TaskSnapshot::new(source, "ses_abc123");
+        task.project_path = Some("/Users/x/work/gamma".to_owned());
+        task.agent_kind = agent_kind.map(str::to_owned);
+        task
+    }
+
+    fn codex_task(agent_kind: Option<&str>, source_id: &str) -> TaskSnapshot {
+        let mut task = TaskSnapshot::new(SOURCE_CODEX, source_id);
         task.project_path = Some("/Users/x/work/gamma".to_owned());
         task.agent_kind = agent_kind.map(str::to_owned);
         task
@@ -197,7 +192,6 @@ mod tests {
         assert!(hint.locates_session);
 
         let plan = plan_continue(&task(SOURCE_QODER, None)).unwrap();
-        assert_eq!(plan.channel, ContinueChannel::App);
         assert_eq!(
             plan.action,
             ContinueAction::OpenUrl("qoder://chat/open?sessionId=ses_abc123".to_owned())
@@ -233,7 +227,6 @@ mod tests {
         assert!(hint.detail.contains("无法定位"));
 
         let plan = plan_continue(&task).unwrap();
-        assert_eq!(plan.channel, ContinueChannel::App);
         assert_eq!(
             plan.action,
             ContinueAction::ActivateApp(QODER_BUNDLE_ID.to_owned())
@@ -247,6 +240,7 @@ mod tests {
             (SOURCE_CLAUDE, CLAUDE_BUNDLE_ID, "Claude App"),
             (SOURCE_OPENCODE, OPENCODE_BUNDLE_ID, "OpenCode App"),
             (SOURCE_KILO, KILO_BUNDLE_ID, "Kilo App"),
+            (SOURCE_TRAE_CN, TRAE_CN_BUNDLE_ID, "Trae CN App"),
             (SOURCE_CLINE, CLINE_BUNDLE_ID, "Cline App"),
             (SOURCE_ANTIGRAVITY, ANTIGRAVITY_BUNDLE_ID, "Antigravity App"),
             (SOURCE_MINIMAX, MINIMAX_BUNDLE_ID, "MiniMax Code App"),
@@ -257,7 +251,6 @@ mod tests {
             for kind in [None, Some("desktop"), Some("cli")] {
                 let plan = plan_continue(&task(source, kind))
                     .unwrap_or_else(|error| panic!("{source}: {error}"));
-                assert_eq!(plan.channel, ContinueChannel::App, "{source}");
                 assert_eq!(
                     plan.action,
                     ContinueAction::ActivateApp(bundle_id.to_owned()),
@@ -270,24 +263,52 @@ mod tests {
 
     #[test]
     fn codex_desktop_uses_deeplink_other_kinds_activate_app() {
+        let uuid = "01a0f16e-6064-7033-a99a-f0800a7f5477";
         for kind in ["desktop", "automation"] {
-            let plan = plan_continue(&task(SOURCE_CODEX, Some(kind))).unwrap();
+            let plan = plan_continue(&codex_task(Some(kind), uuid)).unwrap();
             assert_eq!(
                 plan.action,
-                ContinueAction::OpenUrl("codex://threads/ses_abc123".to_owned()),
+                ContinueAction::OpenUrl(format!("codex://threads/{uuid}")),
                 "{kind}"
             );
             assert_eq!(plan.target, "Codex App");
         }
 
         for kind in [None, Some("cli")] {
-            let plan = plan_continue(&task(SOURCE_CODEX, kind)).unwrap();
-            assert_eq!(plan.channel, ContinueChannel::App);
+            let plan = plan_continue(&codex_task(kind, uuid)).unwrap();
             assert_eq!(
                 plan.action,
                 ContinueAction::ActivateApp(CODEX_BUNDLE_ID.to_owned())
             );
         }
+    }
+
+    #[test]
+    fn codex_desktop_non_uuid_ids_fall_back_to_app() {
+        for id in [
+            "ses_abc123",
+            "plugins_0123456789abcdef0123456789abcdef",
+            "01a0f16e-6064-7033-a99a",
+            "01a0f16e_6064_7033_a99a_f0800a7f5477",
+        ] {
+            let task = codex_task(Some("desktop"), id);
+            assert_eq!(
+                plan_continue(&task).unwrap().action,
+                ContinueAction::ActivateApp(CODEX_BUNDLE_ID.to_owned()),
+                "{id} must not become a codex:// URL"
+            );
+            let hint = describe_continue(&task).unwrap();
+            assert_eq!(hint.channel, ContinueHintChannel::App, "{id}");
+            assert!(!hint.locates_session, "{id}");
+        }
+
+        let upper = codex_task(Some("desktop"), "01A0F16E-6064-7033-A99A-F0800A7F5477");
+        assert_eq!(
+            plan_continue(&upper).unwrap().action,
+            ContinueAction::OpenUrl(
+                "codex://threads/01A0F16E-6064-7033-A99A-F0800A7F5477".to_owned()
+            )
+        );
     }
 
     #[test]
@@ -301,13 +322,14 @@ mod tests {
         assert_eq!(qoder.channel, ContinueHintChannel::Deeplink);
         assert!(qoder.locates_session);
 
+        let uuid = "01a0f16e-6064-7033-a99a-f0800a7f5477";
         for kind in ["desktop", "automation"] {
-            let codex = describe_continue(&task(SOURCE_CODEX, Some(kind))).unwrap();
+            let codex = describe_continue(&codex_task(Some(kind), uuid)).unwrap();
             assert_eq!(codex.channel, ContinueHintChannel::Deeplink, "{kind}");
             assert!(codex.locates_session, "{kind}");
         }
         for kind in [None, Some("cli")] {
-            let codex = describe_continue(&task(SOURCE_CODEX, kind)).unwrap();
+            let codex = describe_continue(&codex_task(kind, uuid)).unwrap();
             assert_eq!(codex.channel, ContinueHintChannel::App);
             assert!(!codex.locates_session);
         }
@@ -347,15 +369,17 @@ mod tests {
             assert_eq!(hint.channel, ContinueHintChannel::App, "{source_id}");
             assert!(!hint.locates_session, "{source_id}");
 
-            let mut codex = task(SOURCE_CODEX, Some("desktop"));
-            codex.source_id = source_id.to_owned();
             assert_eq!(
-                plan_continue(&codex).unwrap().action,
+                plan_continue(&codex_task(Some("desktop"), source_id))
+                    .unwrap()
+                    .action,
                 ContinueAction::ActivateApp(CODEX_BUNDLE_ID.to_owned()),
                 "{source_id}"
             );
             assert_eq!(
-                describe_continue(&codex).unwrap().channel,
+                describe_continue(&codex_task(Some("desktop"), source_id))
+                    .unwrap()
+                    .channel,
                 ContinueHintChannel::App,
                 "{source_id}"
             );

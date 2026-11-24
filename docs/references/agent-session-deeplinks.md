@@ -70,7 +70,7 @@
 ## 5. Cline
 
 - **注册 scheme**（`/Applications/Cline.app/Contents/Info.plist`）：**无 `CFBundleURLTypes`**。包内也没有 Electron 主进程 deep-link handler（App 不是 Electron 主包结构）。
-- **会话级判定**：**明确无 App 深链**。CLI `/Users/wayne/.nvm/versions/node/v24.16.0/bin/cline --help` 显示 `--id <session-id>  Resume an existing session by ID`；Perch 不使用终端通道。
+- **会话级判定**：**明确无 App 深链**。CLI `cline --help` 显示 `--id <session-id>  Resume an existing session by ID`；Perch 不使用终端通道。
 - **可由 Perch TaskView 构造**：深链**不可**；终端命令**可**，但不在当前继续工作范围内。
 - **验证建议**：无需进一步验证 App 深链；保持仅激活 App 并在 UI 明示无法定位。
 
@@ -91,7 +91,7 @@
 
 - **注册 scheme**（`/Applications/Antigravity.app/Contents/Info.plist`）：`antigravity`（bundle `com.google.antigravity`）；`Antigravity IDE.app`：`antigravity-ide`。
 - **包内证据**：`app.asar` 的 `/dist/*.js` 中未出现 `antigravity://` 字面量；`customScheme.js` 只注册内部 `plugin`、`agy-favicon`、`agy-browser-stream`，`externalUrl.js` 只做出站 URL 分类。`open-url` / `second-instance` 监听存在但未发现会话路由。标 **C**。
-- **等价机制**：`/Users/wayne/.local/bin/agy --help` 显示 `--conversation  Resume a previous conversation by ID`（以及 `-c/--continue` 只续最近一次）。这是**终端精确恢复**，Perch 当前只用 App 激活。
+- **等价机制**：`agy --help` 显示 `--conversation  Resume a previous conversation by ID`（以及 `-c/--continue` 只续最近一次）。这是**终端精确恢复**，Perch 当前只用 App 激活。
 - **可由 Perch TaskView 构造**：深链**不可**；终端命令**可**（`agy --conversation <source_id>`）。
 - **验证建议**：用合成 ID 验证 `agy --conversation` 的退出码/行为后再考虑替换 App 分支；注意该 CLI ID 可能与 Perch 采集的 session key 不同，需要字段映射验证。
 

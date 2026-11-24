@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 | --- | --- |
-| 状态 | 开发中 |
+| 状态 | 已验证 |
 | 类型 | 变更文档 |
 | 关联产品规格 | [agent-sources.md R3](../../product-specs/agent-sources.md) |
 | 关联设计 | [SOURCES.md](../../design-docs/source-designs/SOURCES.md)、[深链调研](../../references/agent-session-deeplinks.md) |
@@ -43,7 +43,8 @@ Perch 当前对 Qoder 会话的“打开”只激活 App，不能回到指定会
 - 2026-11-23：用本机 `cache.db` 的只读副本核对真实任务（822 条，全部 `source_id` 通过字符集与长度校验）：Qoder 生成 `qoder://chat/open?sessionId=<uuid>`、Codex `desktop` 生成 `codex://threads/<uuid>`，其余来源（含 Codex `cli` / `automation` 之外的 kind、Claude、OpenCode、Kilo、Trae CN、Cline、Antigravity、MiniMax、CodeArts、CodeBuddy）全部为 `ActivateApp`；未打开任何 App。
 - 2026-11-23：限制：本机屏幕锁定，`npm run tauri dev` 可启动并完成首次扫描，但无法在真实窗口点击“继续工作”验证 Qoder 深链的实际跳转；该跳转已有两次独立实机验证记录（见深链调研），本次未重复执行。
 - 2026-11-24：屏幕解锁后补做真实窗口点击验证（`npm run tauri dev` 实机，真实 `cache.db`）：
-  - Qoder：把 Qoder 切到「审查当前项目更新」→ 在 Perch 选中「检查金渐成同步进度」并点击「深链打开 Qoder」→ Qoder 切到该会话，提示「已打开 Qoder」；再切到「审查 20 个文件」→ 在 Perch 点击「Usage-Ledger 代码审核」→ Qoder 切到目标会话。两次独立交叉验证均定位成功。
-  - Codex 桌面：选中「微信消息巡检」（`agent_kind = desktop`）点击后 ChatGPT App 切到前台，提示「已打开 Codex App」。
+  - Qoder：先把 Qoder 切到一个非目标会话（记为会话 B，不记录标题）→ 在 Perch 选中一个目标 Qoder 任务并点击「深链打开 Qoder」→ Qoder 切到该任务对应会话，提示「已打开 Qoder」；再切到另一个非目标会话（记为会话 C）→ 在 Perch 点击第二个目标 Qoder 任务 → Qoder 切到该任务对应会话。两次独立交叉验证均定位成功。
+  - Codex 桌面：选中一个 `agent_kind = desktop` 的任务点击后 ChatGPT App 切到前台，提示「已打开 Codex App」。
   - App-only：Claude 任务提示「仅激活 App Claude Code」，点击后 Claude App 切到前台，提示「已切换到 Claude App（无法定位到具体会话）」，Terminal 窗口数保持 23 不变；Codex CLI 任务（`新会话`）提示「仅激活 App Codex」，点击后 ChatGPT 切到前台，提示「已切换到 Codex App（无法定位到具体会话）」，Terminal 窗口数仍为 23。确认不再启动终端或 CLI 恢复。
 - 2026-11-23：`cargo fmt --all --check`、`cargo clippy -p perch-core --all-targets -- -D warnings`（另含 `cargo clippy -p perch --all-targets -- -D warnings`）、`cargo test -p perch-core`、`npm run check`、`npm run build`、Markdown 本地链接检查（38 个文件，0 missing）全部通过。
+- 2026-11-24：PR #11 审核修复。Codex 桌面深链改为要求 UUID 形态（非 UUID 回退激活 App，新增单测）；`plan_continue` 的 App-only 用例补齐 Trae CN；`ContinueChannel` 与 `ContinueOutcome.channel` 因恒为 `app` 已删除；文档中的真实会话标题与家目录路径已脱敏；CHANGELOG 的 Cline CLI 描述已与 App-only 行为对齐。修复后重跑四条门禁与集成临时分支，全部通过。

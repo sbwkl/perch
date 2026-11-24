@@ -195,7 +195,7 @@ Claude Code 在 `~/.claude/sessions/<pid>.json` 写入运行中进程的实时�
 **继续工作**
 
 - `desktop` / `automation`：`codex://threads/<id>`。
-- 其他 `agent_kind`（含 `cli`）：激活 `com.openai.codex`；Perch 不再启动终端 `codex resume`。
+- 其他 `agent_kind`（含 `cli`）或非 UUID 的 `source_id`：激活 `com.openai.codex`；Perch 不再启动终端 `codex resume`。
 
 **已知限制**
 

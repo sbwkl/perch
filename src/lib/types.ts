@@ -170,7 +170,6 @@ export interface SyncReport {
 }
 
 export interface ContinueOutcome {
-  channel: "app";
   target: string;
   message: string;
 }

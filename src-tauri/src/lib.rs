@@ -171,7 +171,6 @@ fn search_tasks(
 
 #[derive(serde::Serialize)]
 struct ContinueOutcome {
-    channel: String,
     target: String,
     message: String,
 }
@@ -189,7 +188,6 @@ fn continue_task(state: State<'_, AppState>, task_key: String) -> Result<Continu
     let plan = plan_continue(&task).map_err(|error| error.to_string())?;
     execute_plan(&plan)?;
     Ok(ContinueOutcome {
-        channel: plan.channel.as_str().to_owned(),
         target: plan.target.clone(),
         message: match &plan.action {
             ContinueAction::ActivateApp(_) => {
