@@ -2,6 +2,13 @@ use perch_core::models::{SourceResult, TaskSnapshot, TodoSnapshot};
 use perch_core::query::build_bootstrap;
 use perch_core::store::CacheStore;
 
+fn codex_task(id: &str, agent_kind: &str, workspace: &str, updated_at: f64) -> TaskSnapshot {
+    let mut task = make_task("codex", id, workspace, updated_at);
+    task.agent_kind = Some(agent_kind.to_owned());
+    task.refresh_fingerprint();
+    task
+}
+
 fn make_task(source: &str, id: &str, workspace: &str, updated_at: f64) -> TaskSnapshot {
     let mut task = TaskSnapshot::new(source, id);
     task.title = format!("任务 {id}");
@@ -319,7 +326,17 @@ fn bootstrap_exposes_continue_hint_and_source_trigger() {
         .save_result(
             &SourceResult::ok(
                 "qoder",
-                vec![make_task("qoder", "a", "alpha", 1_000.0)],
+                vec![
+                    make_task("qoder", "a", "alpha", 1_000.0),
+                    make_task("claude", "b", "alpha", 1_000.0),
+                    codex_task(
+                        "01a0f16e-6064-7033-a99a-f0800a7f5477",
+                        "desktop",
+                        "alpha",
+                        1_000.0,
+                    ),
+                    codex_task("ses_not_a_uuid", "desktop", "alpha", 1_000.0),
+                ],
                 Vec::new(),
             ),
             scan,
@@ -341,10 +358,50 @@ fn bootstrap_exposes_continue_hint_and_source_trigger() {
         .unwrap();
 
     let payload = build_bootstrap(&store, 1_000.0).unwrap();
-    let task = &payload.workspaces[0].tasks[0];
-    let hint = task.continue_hint.as_ref().expect("continue hint");
-    assert_eq!(hint.label, "仅激活 App");
-    assert!(!hint.locates_session);
+    let tasks = &payload.workspaces[0].tasks;
+    let qoder = tasks.iter().find(|task| task.source == "qoder").unwrap();
+    let qoder_hint = qoder.continue_hint.as_ref().expect("qoder continue hint");
+    assert_eq!(
+        qoder_hint.channel,
+        perch_core::continue_work::ContinueHintChannel::Deeplink
+    );
+    assert_eq!(qoder_hint.label, "深链打开");
+    assert!(qoder_hint.locates_session);
+
+    let claude = tasks.iter().find(|task| task.source == "claude").unwrap();
+    let claude_hint = claude.continue_hint.as_ref().expect("claude continue hint");
+    assert_eq!(
+        claude_hint.channel,
+        perch_core::continue_work::ContinueHintChannel::App
+    );
+    assert_eq!(claude_hint.label, "仅激活 App");
+    assert!(!claude_hint.locates_session);
+
+    let codex = tasks
+        .iter()
+        .find(|task| task.source_id == "01a0f16e-6064-7033-a99a-f0800a7f5477")
+        .unwrap();
+    let codex_hint = codex.continue_hint.as_ref().expect("codex uuid hint");
+    assert_eq!(
+        codex_hint.channel,
+        perch_core::continue_work::ContinueHintChannel::Deeplink
+    );
+    assert!(codex_hint.locates_session);
+
+    let codex_plain = tasks
+        .iter()
+        .find(|task| task.source_id == "ses_not_a_uuid")
+        .unwrap();
+    let plain_hint = codex_plain
+        .continue_hint
+        .as_ref()
+        .expect("codex non-uuid hint");
+    assert_eq!(
+        plain_hint.channel,
+        perch_core::continue_work::ContinueHintChannel::App
+    );
+    assert!(!plain_hint.locates_session);
+
     let source = payload
         .sources
         .iter()

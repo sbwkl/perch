@@ -24,12 +24,12 @@ Perch 只读取各 agent 已落盘的会话元数据，把散落在不同侧边�
 - **搜索**：`⌘F` 或侧边栏入口打开搜索弹层，即时搜索标题、项目、路径、待办、模型、分支、状态、来源、类型与会话 ID；
   支持中文、拼音与拉丁模糊匹配；忽略当前任务视图、默认包含归档，当前 workspace / 来源筛选会叠加并显示作用域；返回全部命中并在弹层分页展示，`↑`/`↓` 选择、`Enter` 打开。
 - **实时感知**：窗口可见时检查 SQLite 变化、节流计算 JSONL / 日志签名；变化经去抖与冷却后重扫，界面显示扫描来源 / 耗时并允许暂停实时刷新；`⌘R` 手动刷新优先。
-- **详情面板**：展示模型、分支、消息数、待办进度、继续工作通道与恢复命令。
+- **详情面板**：展示模型、分支、消息数、待办进度、继续工作通道与恢复命令（只读展示，Perch 不执行）。
 - **用量附加（可选）**：按会话关联 usage-ledger 的 token 真值、Qoder credits 与 est 估算，
   四轨分开展示、永不相加；选中单一来源时，顶部显示该来源的摘要（不同来源单位不同，
   不做跨来源汇总）。侧边栏页脚的用量报告图标调用 usage-ledger 自己的 `usage html`，
   在应用内嵌视图展示完整的 HTML 报告；报告是全局的，不随任务筛选变化。
-- **继续工作**：点击前显示终端恢复 / 深链打开 / 仅激活 App 通道；按来源决定动作，命令由 Rust 侧固定模板生成。
+- **继续工作**：点击前显示深链打开 / 仅激活 App 通道；按来源决定动作，URL 由 Rust 侧固定模板生成。
 - **只读保证**：SQLite 只读连接 + 只读 JSONL；详情面板标注数据边界，侧边栏不展示只读说明。
 
 ### 界面预览
@@ -42,13 +42,13 @@ Perch 只读取各 agent 已落盘的会话元数据，把散落在不同侧边�
 
 | 来源 | 读取位置（默认） | 继续工作的方式 |
 | --- | --- | --- |
-| Qoder | `~/Library/Application Support/com.qoder.app.stable/main.sqlite` | 激活 Qoder App（官方暂不支持会话级深链） |
-| Claude Code | `~/.claude/projects/**/*.jsonl` 与 `~/.claude/tasks/` | 打开终端执行 `claude --resume <session-id>` |
-| Codex | `~/.codex/sessions`、`archived_sessions`、`session_index.jsonl` | App 会话用 `codex://threads/<id>`；CLI 会话用终端 `codex resume <id>` |
-| OpenCode | `~/.local/share/opencode/opencode.db` | App 运行中则激活 App；否则终端 `opencode --session <id>` |
-| Kilo | `~/.local/share/kilo/kilo.db` | App 运行中则激活 App；否则终端 `kilo` |
+| Qoder | `~/Library/Application Support/com.qoder.app.stable/main.sqlite` | 会话深链 `qoder://chat/open?sessionId=<id>`；ID 不合法时激活 App |
+| Claude Code | `~/.claude/projects/**/*.jsonl` 与 `~/.claude/tasks/` | 激活 Claude App（无会话级深链） |
+| Codex | `~/.codex/sessions`、`archived_sessions`、`session_index.jsonl` | 桌面会话且 id 为 UUID 用 `codex://threads/<id>`；其余激活 Codex App |
+| OpenCode | `~/.local/share/opencode/opencode.db` | 激活 OpenCode App（无会话级深链） |
+| Kilo | `~/.local/share/kilo/kilo.db` | 激活 Kilo App（无会话级深链） |
 | Trae CN | `~/.local/share/usage-ledger/trae-cn/events-*.jsonl` 与 `~/.trae-cn/memory/projects/**/session_memory_*.jsonl` | 激活 Trae CN App（无会话级深链） |
-| Cline | `~/.cline/data/db/sessions.db` | App 会话激活 Cline App；CLI 会话终端 `cline --id <id>` |
+| Cline | `~/.cline/data/db/sessions.db` | 激活 Cline App（无会话级深链） |
 | Antigravity | `~/.gemini/antigravity/`、`~/.gemini/antigravity-cli/` | 激活 Antigravity App（无确认的会话级恢复方式） |
 | MiniMax Code | `~/.minimax/v2/sessions/`、`runtime-state.sqlite` | 激活 MiniMax Code App（无确认的会话级恢复方式） |
 | CodeArts | `~/.codeartsdoer/codearts-data/opencode.db` | 激活 CodeArts App（无确认的会话级恢复方式） |
@@ -146,6 +146,7 @@ npm run tauri build
 | [docs/design-docs/](docs/design-docs/) | 设计知识库：状态索引、核心信念、ADR / RFC、来源设计、历史 |
 | [docs/exec-plans/](docs/exec-plans/) | 进行中 / 已完成变更记录与技术债账本 |
 | [docs/references/DATA-PROBE.md](docs/references/DATA-PROBE.md) | 本机只读数据探针证据 |
+| [docs/references/agent-session-deeplinks.md](docs/references/agent-session-deeplinks.md) | 各来源会话级深链调研与证据等级 |
 | [docs/FAQ.md](docs/FAQ.md) | 常见问题（深链限制、数据位置、卸载等） |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | 开发环境、命令、环境变量、演示模式 |
 | [ROADMAP.md](ROADMAP.md) | 里程碑与当前进度 |

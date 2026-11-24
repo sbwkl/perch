@@ -28,8 +28,8 @@ Perch 是本机单用户的只读查看器：
 - 所有源读取在 Rust core 中完成；源 SQLite 使用只读连接和 `PRAGMA query_only=ON`，
   JSONL 只读打开。usage-ledger 的 `usage.db` 同样只读打开，Perch 不写入、不迁移、
   不触发它的 sync。
-- `continue_task` 只接受任务 key，由 Rust 侧按来源固定模板决定 `open`、URL scheme 或终端命令；
-  session id 先经过字符集校验，前端不能传入任意命令。
+- `continue_task` 只接受任务 key，由 Rust 侧按来源固定模板决定 `open` 的会话深链或 App 激活；
+  session id 先经过字符集校验，前端不能传入任意命令或 URL。
 - 页面不加载远程页面、字体、图片或脚本；`{@html}` 只用于内联的固定来源图标常量，
   不渲染任务字段。
 
@@ -56,8 +56,8 @@ memory 的 `actions`、`outcome`、`learned` 与消息正文也不读取。
 - 当前未启用 CSP（`tauri.conf.json` 中 `csp: null`）。前端没有远程资源，但加固仍在
   [ROADMAP](ROADMAP.md) 中。
 - 本地构建未 codesign / notarize；从源码构建时应自行确认来源。
-- 终端恢复依赖 `osascript` 调用 Terminal；命令模板是固定的，但仍会在用户终端中执行，
-  请确认 session id 与项目路径来自可信的本地 agent 数据。
+- 继续工作只通过 `/usr/bin/open` 打开固定模板的会话深链或 App；不调用终端，
+  也不执行 CLI 恢复命令。URL 中的 session id 先做字符集校验。
 - 第三方 agent 的本地 schema 可能变化；采集失败时 Perch 保留旧快照，不会写源。
 
 ## 不在范围内

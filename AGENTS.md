@@ -19,7 +19,7 @@
 2. **只写自己的缓存**：扫描路径只写 Perch 自己的 `cache.db`，不持有任何源写连接；删除 `cache.db` 只能导致重建，不能影响 agent。
 3. **元数据最小化**：不读取 / 存储消息正文、prompt、tool 输入 / 输出、附件、思考过程或凭据；Claude todo 只读 `subject/status`。usage-ledger 的 `usage.db` 同样只读，不迁移、不 sync、不写表。
 4. **口径不可混加**：token / credits / est / activity 四轨分表分示，任何两轨都不相加；不同来源不做跨来源汇总。
-5. **命令边界固定**：`continue_task` 只接受任务 key，由 Rust 侧固定模板决定 `open` / URL scheme / 终端命令；session id 必须先做字符集校验，前端不能传入任意 shell 命令或 URL。
+5. **命令边界固定**：`continue_task` 只接受任务 key，由 Rust 侧固定模板决定 `open` 的会话深链 / App 激活；session id 必须先做字符集校验，前端不能传入任意 shell 命令或 URL；继续工作不启动终端。
 6. **状态推断要有证据**：无上游证据不得臆造状态（例如不要把 Claude idle 写成“已完成”）；采集失败要隔离且保留旧快照，不误标 `source_missing`。
 7. **最小 IPC**：前端只调用窄命令；不引入远程页面 / 字体 / 图片 / 脚本，不启用 Tauri `fs` / `shell` / `http` 插件；`{@html}` 仅用于内联固定来源图标。
 8. **隐私与 fixture**：测试与文档截图只能用合成数据；不得提交真实会话标题、项目路径、数据库或日志。日志 / PR 贴出前先脱敏。
@@ -76,6 +76,7 @@
 | `docs/exec-plans/completed/` | 已验证变更记录；历史编号文档与语义化主题文档并存，状态以文档头为准 | 开发 / 评审时读本次变更文档 |
 | `docs/exec-plans/tech-debt-tracker.md` | 技术债账本索引；权威清单见 ARCHITECTURE 与 ROADMAP | 评审、重构、排期时 |
 | `docs/references/DATA-PROBE.md` | 本机只读数据探针证据 | 查数据可得性 / schema 边界时 |
+| `docs/references/agent-session-deeplinks.md` | 各来源会话级深链调研与证据等级 | 改“继续工作”深链 / App 激活行为时 |
 | `docs/FAQ.md` | 常见问题（深链限制、数据位置、卸载等） | 写用户文档或答疑前 |
 | `README.md` | 项目定位、覆盖能力、文档与开发约定、门禁 | 首次了解项目、开发前核对约定 |
 | `DEVELOPMENT.md` | 环境、命令、数据路径、环境变量、演示模式、调试 | 本地构建 / 测试 / 排障时 |

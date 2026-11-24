@@ -48,7 +48,7 @@ crates/perch-core/       采集、缓存、查询、继续工作决策
   src/query.rs           任务视图与 BootstrapPayload
   src/usage.rs           只读 usage-ledger，按会话聚合 token / credits / est
   src/probe.rs           SQLite data_version / JSONL 签名探测
-  src/continue_work.rs   打开 App / 终端恢复的决策
+  src/continue_work.rs   会话深链 / 激活 App 的继续工作决策
 demo/                    开发专用演示模式与截图夹具
 docs/                    产品规格、设计知识库、执行计划、探针证据、FAQ、截图
   product-specs/         产品规格与验收事实源
@@ -164,10 +164,12 @@ macOS 打包与 Tauri 壳的实机行为目前靠手工冒烟验证。
 
 本地构建未签名/未公证，右键 → 打开，或在“系统设置 → 隐私与安全性”中允许。
 
-**Qoder 的“打开”只把 App 切到前台**
+**Qoder 的“打开”没有切到目标会话**
 
-Qoder 不支持会话级深链（`qoder://chat/<id>` 返回 `DEEP_LINK_ROUTE_UNSUPPORTED`），
-这是上游限制，详见 [docs/FAQ.md](docs/FAQ.md)。
+Qoder 使用会话深链 `qoder://chat/open?sessionId=<id>`；如果 App 停在前一个会话，
+先确认 Perch 缓存里的 `source_id` 是合法 session id（`[A-Za-z0-9_-]`、≤128 字符）。
+不合法时 Perch 只激活 App 并提示“无法定位到具体会话”。旧的 `qoder://chat/<id>`
+返回 `DEEP_LINK_ROUTE_UNSUPPORTED`，Perch 不使用它。详见 [docs/FAQ.md](docs/FAQ.md)。
 
 **如何清空 Perch 数据**
 

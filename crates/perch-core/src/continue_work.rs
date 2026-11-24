@@ -1,6 +1,3 @@
-use std::path::Path;
-use std::process::Command;
-
 use crate::models::{
     TaskSnapshot, SOURCE_ANTIGRAVITY, SOURCE_CLAUDE, SOURCE_CLINE, SOURCE_CODEARTS,
     SOURCE_CODEBUDDY, SOURCE_CODEX, SOURCE_KILO, SOURCE_MINIMAX, SOURCE_OPENCODE, SOURCE_QODER,
@@ -8,6 +5,7 @@ use crate::models::{
 };
 
 pub const QODER_BUNDLE_ID: &str = "com.qoder.app";
+pub const CLAUDE_BUNDLE_ID: &str = "com.anthropic.claudefordesktop";
 pub const CODEX_BUNDLE_ID: &str = "com.openai.codex";
 pub const OPENCODE_BUNDLE_ID: &str = "ai.opencode.desktop";
 pub const KILO_BUNDLE_ID: &str = "ai.kilo.desktop";
@@ -18,57 +16,23 @@ pub const MINIMAX_BUNDLE_ID: &str = "com.minimax.agent.cn";
 pub const CODEARTS_BUNDLE_ID: &str = "com.huawei.codearts.agent";
 pub const CODEBUDDY_BUNDLE_ID: &str = "com.tencent.codebuddycn";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ContinueChannel {
-    App,
-    Cli,
-}
-
-impl ContinueChannel {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::App => "app",
-            Self::Cli => "cli",
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContinueAction {
     OpenUrl(String),
     ActivateApp(String),
-    Terminal {
-        cwd: Option<String>,
-        command: String,
-    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContinuePlan {
-    pub channel: ContinueChannel,
     pub action: ContinueAction,
     pub target: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CliPresence {
-    None,
-    Agent,
-    Session,
-}
-
-pub trait ChannelProbe {
-    fn app_running(&self, bundle_id: &str) -> bool;
-    fn cli_presence(&self, source: &str, session_id: &str) -> CliPresence;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ContinueHintChannel {
-    Terminal,
     Deeplink,
     App,
-    Dynamic,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -93,20 +57,11 @@ fn continue_hint(
     }
 }
 
-fn terminal_hint(source_label: &str, locates_session: bool) -> ContinueHint {
-    continue_hint(
-        ContinueHintChannel::Terminal,
-        "终端恢复",
-        format!("在 Terminal 中恢复 {source_label} 会话"),
-        locates_session,
-    )
-}
-
-fn deeplink_hint() -> ContinueHint {
+fn deeplink_hint(app_label: &str) -> ContinueHint {
     continue_hint(
         ContinueHintChannel::Deeplink,
         "深链打开",
-        "通过会话深链打开 Codex App".to_owned(),
+        format!("通过会话深链打开 {app_label}"),
         true,
     )
 }
@@ -120,318 +75,99 @@ fn app_hint(source_label: &str) -> ContinueHint {
     )
 }
 
-fn dynamic_hint(source_label: &str) -> ContinueHint {
-    continue_hint(
-        ContinueHintChannel::Dynamic,
-        "按运行状态决定",
-        format!("根据 {source_label} App / CLI 运行状态选择激活 App 或终端恢复；激活 App 无法定位具体会话"),
-        false,
-    )
-}
-
 /// Describes the fixed continue-work decision using snapshot metadata only.
 /// The actual action stays in Rust; the UI must never send a command or URL.
 pub fn describe_continue(task: &TaskSnapshot) -> Option<ContinueHint> {
     let label = crate::models::source_label(&task.source);
     let hint = match task.source.as_str() {
-        SOURCE_CLAUDE => terminal_hint(label, true),
-        SOURCE_CODEX => match task.agent_kind.as_deref() {
-            Some("desktop" | "automation") => deeplink_hint(),
-            Some("cli") => terminal_hint(label, true),
-            _ => dynamic_hint(label),
-        },
-        // OpenCode / Kilo always use probed_plan, regardless of agent_kind.
-        SOURCE_OPENCODE | SOURCE_KILO => dynamic_hint(label),
-        // Cline has explicit desktop / cli branches; unknown uses probed_plan.
-        SOURCE_CLINE => match task.agent_kind.as_deref() {
-            Some("desktop") => app_hint(label),
-            Some("cli") => terminal_hint(label, true),
-            _ => dynamic_hint(label),
-        },
-        SOURCE_QODER | SOURCE_TRAE_CN | SOURCE_ANTIGRAVITY | SOURCE_MINIMAX | SOURCE_CODEARTS
+        SOURCE_QODER if valid_qoder_session_id(&task.source_id) => deeplink_hint("Qoder"),
+        SOURCE_CODEX if codex_deeplink_id(task).is_some() => deeplink_hint("Codex App"),
+        SOURCE_CLAUDE | SOURCE_CODEX | SOURCE_QODER | SOURCE_OPENCODE | SOURCE_KILO
+        | SOURCE_TRAE_CN | SOURCE_CLINE | SOURCE_ANTIGRAVITY | SOURCE_MINIMAX | SOURCE_CODEARTS
         | SOURCE_CODEBUDDY => app_hint(label),
         _ => return None,
     };
     Some(hint)
 }
 
-/// 无法从数据判断执行通道时：App 在运行优先 App；否则有 CLI 进程走终端；
-/// 两者都没有时仍按用户偏好优先打开 App。
-pub fn plan_continue(task: &TaskSnapshot, probe: &dyn ChannelProbe) -> crate::Result<ContinuePlan> {
-    if !valid_session_id(&task.source_id) {
-        return Err(crate::PerchError::message(format!(
-            "会话 ID 含有不支持的字符：{}",
-            task.source_id
-        )));
-    }
+/// 继续工作只使用固定模板：Qoder 与 Codex 桌面会话走会话级深链，其余来源只激活对应 App。
+/// 终端恢复不在此范围内；前端只传任务 key，命令 / URL 不能来自前端。
+/// 会话 ID 不满足深链格式时不构造 URL，回退激活 App。
+pub fn plan_continue(task: &TaskSnapshot) -> crate::Result<ContinuePlan> {
     match task.source.as_str() {
-        // Qoder App 不解析 qoder://chat/<id>（main.log 报 DEEP_LINK_ROUTE_UNSUPPORTED），只能激活窗口。
-        SOURCE_QODER => Ok(ContinuePlan {
-            channel: ContinueChannel::App,
-            action: ContinueAction::ActivateApp(QODER_BUNDLE_ID.to_owned()),
-            target: "Qoder App".to_owned(),
-        }),
-        // Claude Code 的 App 只负责打开新会话，不能恢复指定会话，只能走终端。
-        SOURCE_CLAUDE => Ok(terminal_plan(
-            task,
-            format!("claude --resume {}", task.source_id),
+        // Qoder App 只解析 chat/open；路由会把 sessionId 限制为 [A-Za-z0-9_-]{1,128}。
+        SOURCE_QODER if valid_qoder_session_id(&task.source_id) => Ok(app_url_plan(
+            format!("qoder://chat/open?sessionId={}", task.source_id),
+            "Qoder",
         )),
-        SOURCE_CODEX => match task.agent_kind.as_deref() {
-            Some("desktop" | "automation") => Ok(app_url_plan(
-                format!("codex://threads/{}", task.source_id),
-                "Codex App",
-            )),
-            Some("cli") => Ok(terminal_plan(
-                task,
-                format!("codex resume {}", task.source_id),
-            )),
-            _ => Ok(probed_plan(
-                task,
-                probe,
-                CODEX_BUNDLE_ID,
-                ContinueAction::OpenUrl(format!("codex://threads/{}", task.source_id)),
-                format!("codex resume {}", task.source_id),
-                "Codex App",
-            )),
+        SOURCE_QODER => Ok(activate_plan(QODER_BUNDLE_ID, "Qoder App")),
+        SOURCE_CLAUDE => Ok(activate_plan(CLAUDE_BUNDLE_ID, "Claude App")),
+        SOURCE_CODEX => match codex_deeplink_id(task) {
+            Some(id) => Ok(app_url_plan(format!("codex://threads/{id}"), "Codex App")),
+            None => Ok(activate_plan(CODEX_BUNDLE_ID, "Codex App")),
         },
-        SOURCE_OPENCODE => Ok(probed_plan(
-            task,
-            probe,
-            OPENCODE_BUNDLE_ID,
-            ContinueAction::ActivateApp(OPENCODE_BUNDLE_ID.to_owned()),
-            format!("opencode --session {}", task.source_id),
-            "OpenCode App",
-        )),
-        SOURCE_KILO => Ok(probed_plan(
-            task,
-            probe,
-            KILO_BUNDLE_ID,
-            ContinueAction::ActivateApp(KILO_BUNDLE_ID.to_owned()),
-            "kilo".to_owned(),
-            "Kilo App",
-        )),
+        SOURCE_OPENCODE => Ok(activate_plan(OPENCODE_BUNDLE_ID, "OpenCode App")),
+        SOURCE_KILO => Ok(activate_plan(KILO_BUNDLE_ID, "Kilo App")),
         // Trae CN 的 hook 只记录项目名，且没有确认的会话级深链，只能激活窗口。
-        SOURCE_TRAE_CN => Ok(ContinuePlan {
-            channel: ContinueChannel::App,
-            action: ContinueAction::ActivateApp(TRAE_CN_BUNDLE_ID.to_owned()),
-            target: "Trae CN App".to_owned(),
-        }),
-        // Cline 桌面版没有会话级深链；CLI 会话可用 `cline --id` 精确恢复。
-        SOURCE_CLINE => match task.agent_kind.as_deref() {
-            Some("desktop") => Ok(ContinuePlan {
-                channel: ContinueChannel::App,
-                action: ContinueAction::ActivateApp(CLINE_BUNDLE_ID.to_owned()),
-                target: "Cline App".to_owned(),
-            }),
-            Some("cli") => Ok(terminal_plan(
-                task,
-                format!("cline --id {}", task.source_id),
-            )),
-            _ => Ok(probed_plan(
-                task,
-                probe,
-                CLINE_BUNDLE_ID,
-                ContinueAction::ActivateApp(CLINE_BUNDLE_ID.to_owned()),
-                format!("cline --id {}", task.source_id),
-                "Cline App",
-            )),
-        },
+        SOURCE_TRAE_CN => Ok(activate_plan(TRAE_CN_BUNDLE_ID, "Trae CN App")),
+        // Cline 桌面 / CLI 都没有确认的会话级深链；按要求只激活 App。
+        SOURCE_CLINE => Ok(activate_plan(CLINE_BUNDLE_ID, "Cline App")),
         // Antigravity IDE / agy CLI 均无确认的会话级恢复方式，只能激活窗口。
-        SOURCE_ANTIGRAVITY => Ok(ContinuePlan {
-            channel: ContinueChannel::App,
-            action: ContinueAction::ActivateApp(ANTIGRAVITY_BUNDLE_ID.to_owned()),
-            target: "Antigravity App".to_owned(),
-        }),
+        SOURCE_ANTIGRAVITY => Ok(activate_plan(ANTIGRAVITY_BUNDLE_ID, "Antigravity App")),
         // MiniMax Code 无确认的会话级深链，只能激活窗口。
-        SOURCE_MINIMAX => Ok(ContinuePlan {
-            channel: ContinueChannel::App,
-            action: ContinueAction::ActivateApp(MINIMAX_BUNDLE_ID.to_owned()),
-            target: "MiniMax Code App".to_owned(),
-        }),
+        SOURCE_MINIMAX => Ok(activate_plan(MINIMAX_BUNDLE_ID, "MiniMax Code App")),
         // CodeArts（码道）桌面 Agent 无会话级恢复命令，只能激活窗口。
-        SOURCE_CODEARTS => Ok(ContinuePlan {
-            channel: ContinueChannel::App,
-            action: ContinueAction::ActivateApp(CODEARTS_BUNDLE_ID.to_owned()),
-            target: "CodeArts App".to_owned(),
-        }),
+        SOURCE_CODEARTS => Ok(activate_plan(CODEARTS_BUNDLE_ID, "CodeArts App")),
         // CodeBuddy CN（VSCode 系 IDE）无会话级深链，只能激活窗口。
-        SOURCE_CODEBUDDY => Ok(ContinuePlan {
-            channel: ContinueChannel::App,
-            action: ContinueAction::ActivateApp(CODEBUDDY_BUNDLE_ID.to_owned()),
-            target: "CodeBuddy App".to_owned(),
-        }),
+        SOURCE_CODEBUDDY => Ok(activate_plan(CODEBUDDY_BUNDLE_ID, "CodeBuddy App")),
         other => Err(crate::PerchError::message(format!(
             "未知来源，无法继续工作：{other}"
         ))),
     }
 }
 
-fn probed_plan(
-    task: &TaskSnapshot,
-    probe: &dyn ChannelProbe,
-    bundle_id: &str,
-    app_action: ContinueAction,
-    cli_command: String,
-    app_target: &str,
-) -> ContinuePlan {
-    if probe.app_running(bundle_id) {
-        return ContinuePlan {
-            channel: ContinueChannel::App,
-            action: app_action,
-            target: app_target.to_owned(),
-        };
-    }
-    match probe.cli_presence(&task.source, &task.source_id) {
-        CliPresence::Session | CliPresence::Agent => terminal_plan(task, cli_command),
-        CliPresence::None => ContinuePlan {
-            channel: ContinueChannel::App,
-            action: app_action,
-            target: app_target.to_owned(),
-        },
-    }
+/// Codex 桌面深链只接受 UUID 形态的 `source_id`（App 解析器拒绝其它形式）；
+/// 其他 `agent_kind` 与非 UUID id 都不构造 URL。
+fn codex_deeplink_id(task: &TaskSnapshot) -> Option<&str> {
+    let is_desktop = matches!(task.agent_kind.as_deref(), Some("desktop" | "automation"));
+    (is_desktop && is_uuid(&task.source_id)).then_some(task.source_id.as_str())
 }
 
 fn app_url_plan(url: String, target: &str) -> ContinuePlan {
     ContinuePlan {
-        channel: ContinueChannel::App,
         action: ContinueAction::OpenUrl(url),
         target: target.to_owned(),
     }
 }
 
-fn terminal_plan(task: &TaskSnapshot, command: String) -> ContinuePlan {
+fn activate_plan(bundle_id: &str, target: &str) -> ContinuePlan {
     ContinuePlan {
-        channel: ContinueChannel::Cli,
-        action: ContinueAction::Terminal {
-            cwd: task.project_path.clone(),
-            command,
-        },
-        target: "终端".to_owned(),
+        action: ContinueAction::ActivateApp(bundle_id.to_owned()),
+        target: target.to_owned(),
     }
 }
 
-fn valid_session_id(value: &str) -> bool {
-    !value.is_empty()
+/// Qoder 的 `chat/open` 路由只接受 `[A-Za-z0-9_-]` 且长度不超过 128 的 sessionId。
+fn valid_qoder_session_id(value: &str) -> bool {
+    (1..=128).contains(&value.len())
         && value
             .chars()
             .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
 }
 
-pub struct SystemProbe;
-
-impl SystemProbe {
-    pub fn new() -> Self {
-        Self
-    }
-}
-
-impl Default for SystemProbe {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl ChannelProbe for SystemProbe {
-    fn app_running(&self, bundle_id: &str) -> bool {
-        Command::new("/usr/bin/lsappinfo")
-            .args(["find", &format!("bundleID={bundle_id}")])
-            .output()
-            .map(|output| {
-                output.status.success()
-                    && !String::from_utf8_lossy(&output.stdout).trim().is_empty()
-            })
-            .unwrap_or(false)
-    }
-
-    fn cli_presence(&self, source: &str, session_id: &str) -> CliPresence {
-        let Ok(output) = Command::new("/bin/ps")
-            .args(["-axo", "pid=,ppid=,command="])
-            .output()
-        else {
-            return CliPresence::None;
-        };
-        if !output.status.success() {
-            return CliPresence::None;
-        }
-        parse_ps_presence(source, session_id, &String::from_utf8_lossy(&output.stdout))
-    }
-}
-
-pub fn parse_ps_presence(source: &str, session_id: &str, listing: &str) -> CliPresence {
-    let mut agent_running = false;
-    for line in listing.lines() {
-        let mut fields = line.split_whitespace();
-        if fields.next().is_none() || fields.next().is_none() {
-            continue;
-        }
-        let command = fields.collect::<Vec<_>>().join(" ");
-        if command.is_empty() {
-            continue;
-        }
-        let tokens: Vec<&str> = command.split_whitespace().collect();
-        let Some(executable) = tokens.first() else {
-            continue;
-        };
-        let name = Path::new(executable)
-            .file_name()
-            .and_then(|value| value.to_str())
-            .unwrap_or_default();
-        let is_cli = match source {
-            SOURCE_OPENCODE => {
-                matches!(name, "opencode" | "opencode-cli")
-                    // App 内嵌服务也叫 opencode-cli，但它以 serve --service 启动。
-                    && !(tokens.contains(&"serve") && tokens.contains(&"--service"))
-            }
-            SOURCE_KILO => name == "kilo",
-            SOURCE_CODEX => name == "codex",
-            SOURCE_CLAUDE => name == "claude",
-            SOURCE_CLINE => {
-                // npm 版 CLI 以 `node .../bin/cline` 启动，可执行文件名不是 cline。
-                let cline_token = tokens.iter().any(|token| {
-                    matches!(
-                        Path::new(token)
-                            .file_name()
-                            .and_then(|value| value.to_str()),
-                        Some("cline" | "cline-cli")
-                    )
-                });
-                cline_token && !tokens.contains(&"--cline-hub-daemon")
-            }
-            _ => false,
-        };
-        if !is_cli {
-            continue;
-        }
-        if tokens.contains(&session_id) {
-            return CliPresence::Session;
-        }
-        agent_running = true;
-    }
-    if agent_running {
-        CliPresence::Agent
-    } else {
-        CliPresence::None
-    }
+/// Codex 桌面 App 的 `codex://threads/<id>` 解析器要求标准 UUID（大小写不敏感）。
+fn is_uuid(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 36
+        && bytes.iter().enumerate().all(|(index, byte)| match index {
+            8 | 13 | 18 | 23 => *byte == b'-',
+            _ => byte.is_ascii_hexdigit(),
+        })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    struct FakeProbe {
-        app_running: bool,
-        cli_presence: CliPresence,
-    }
-
-    impl ChannelProbe for FakeProbe {
-        fn app_running(&self, _bundle_id: &str) -> bool {
-            self.app_running
-        }
-
-        fn cli_presence(&self, _source: &str, _session_id: &str) -> CliPresence {
-            self.cli_presence
-        }
-    }
 
     fn task(source: &str, agent_kind: Option<&str>) -> TaskSnapshot {
         let mut task = TaskSnapshot::new(source, "ses_abc123");
@@ -440,322 +176,213 @@ mod tests {
         task
     }
 
-    fn probe(app_running: bool, cli_presence: CliPresence) -> FakeProbe {
-        FakeProbe {
-            app_running,
-            cli_presence,
-        }
+    fn codex_task(agent_kind: Option<&str>, source_id: &str) -> TaskSnapshot {
+        let mut task = TaskSnapshot::new(SOURCE_CODEX, source_id);
+        task.project_path = Some("/Users/x/work/gamma".to_owned());
+        task.agent_kind = agent_kind.map(str::to_owned);
+        task
     }
 
     #[test]
-    fn qoder_activates_app_without_session_target() {
-        let plan =
-            plan_continue(&task(SOURCE_QODER, None), &probe(false, CliPresence::None)).unwrap();
-        assert_eq!(plan.channel, ContinueChannel::App);
+    fn qoder_uses_session_deeplink() {
+        let hint = describe_continue(&task(SOURCE_QODER, None)).unwrap();
+        assert_eq!(hint.channel, ContinueHintChannel::Deeplink);
+        assert_eq!(hint.label, "深链打开");
+        assert!(hint.detail.contains("Qoder"));
+        assert!(hint.locates_session);
+
+        let plan = plan_continue(&task(SOURCE_QODER, None)).unwrap();
+        assert_eq!(
+            plan.action,
+            ContinueAction::OpenUrl("qoder://chat/open?sessionId=ses_abc123".to_owned())
+        );
+        assert_eq!(plan.target, "Qoder");
+    }
+
+    #[test]
+    fn qoder_accepts_uuid_style_session_ids() {
+        let mut snapshot = TaskSnapshot::new(SOURCE_QODER, "0b53f3a2-7f1c-4c6b-9d3e-2f5c8a1b7e40");
+        assert_eq!(
+            plan_continue(&snapshot).unwrap().action,
+            ContinueAction::OpenUrl(
+                "qoder://chat/open?sessionId=0b53f3a2-7f1c-4c6b-9d3e-2f5c8a1b7e40".to_owned()
+            )
+        );
+
+        snapshot.source_id = "s_abc_123".to_owned();
+        assert_eq!(
+            plan_continue(&snapshot).unwrap().action,
+            ContinueAction::OpenUrl("qoder://chat/open?sessionId=s_abc_123".to_owned())
+        );
+    }
+
+    #[test]
+    fn qoder_session_id_over_limit_falls_back_to_app() {
+        let mut task = task(SOURCE_QODER, None);
+        task.source_id = "a".repeat(129);
+
+        let hint = describe_continue(&task).unwrap();
+        assert_eq!(hint.channel, ContinueHintChannel::App);
+        assert!(!hint.locates_session);
+        assert!(hint.detail.contains("无法定位"));
+
+        let plan = plan_continue(&task).unwrap();
         assert_eq!(
             plan.action,
             ContinueAction::ActivateApp(QODER_BUNDLE_ID.to_owned())
         );
+        assert_eq!(plan.target, "Qoder App");
     }
 
     #[test]
     fn app_only_sources_activate_their_desktop_apps() {
         let cases = [
+            (SOURCE_CLAUDE, CLAUDE_BUNDLE_ID, "Claude App"),
+            (SOURCE_OPENCODE, OPENCODE_BUNDLE_ID, "OpenCode App"),
+            (SOURCE_KILO, KILO_BUNDLE_ID, "Kilo App"),
+            (SOURCE_TRAE_CN, TRAE_CN_BUNDLE_ID, "Trae CN App"),
+            (SOURCE_CLINE, CLINE_BUNDLE_ID, "Cline App"),
             (SOURCE_ANTIGRAVITY, ANTIGRAVITY_BUNDLE_ID, "Antigravity App"),
             (SOURCE_MINIMAX, MINIMAX_BUNDLE_ID, "MiniMax Code App"),
             (SOURCE_CODEARTS, CODEARTS_BUNDLE_ID, "CodeArts App"),
             (SOURCE_CODEBUDDY, CODEBUDDY_BUNDLE_ID, "CodeBuddy App"),
         ];
         for (source, bundle_id, target) in cases {
-            let plan = plan_continue(&task(source, None), &probe(true, CliPresence::None))
-                .unwrap_or_else(|error| panic!("{source}: {error}"));
-            assert_eq!(plan.channel, ContinueChannel::App, "{source}");
-            assert_eq!(
-                plan.action,
-                ContinueAction::ActivateApp(bundle_id.to_owned()),
-                "{source}"
-            );
-            assert_eq!(plan.target, target, "{source}");
+            for kind in [None, Some("desktop"), Some("cli")] {
+                let plan = plan_continue(&task(source, kind))
+                    .unwrap_or_else(|error| panic!("{source}: {error}"));
+                assert_eq!(
+                    plan.action,
+                    ContinueAction::ActivateApp(bundle_id.to_owned()),
+                    "{source}"
+                );
+                assert_eq!(plan.target, target, "{source}");
+            }
         }
     }
 
     #[test]
-    fn claude_uses_terminal_resume() {
-        let plan = plan_continue(
-            &task(SOURCE_CLAUDE, Some("cli")),
-            &probe(true, CliPresence::Agent),
-        )
-        .unwrap();
-        assert_eq!(plan.channel, ContinueChannel::Cli);
-        assert_eq!(
-            plan.action,
-            ContinueAction::Terminal {
-                cwd: Some("/Users/x/work/gamma".to_owned()),
-                command: "claude --resume ses_abc123".to_owned(),
-            }
-        );
+    fn codex_desktop_uses_deeplink_other_kinds_activate_app() {
+        let uuid = "01a0f16e-6064-7033-a99a-f0800a7f5477";
+        for kind in ["desktop", "automation"] {
+            let plan = plan_continue(&codex_task(Some(kind), uuid)).unwrap();
+            assert_eq!(
+                plan.action,
+                ContinueAction::OpenUrl(format!("codex://threads/{uuid}")),
+                "{kind}"
+            );
+            assert_eq!(plan.target, "Codex App");
+        }
+
+        for kind in [None, Some("cli")] {
+            let plan = plan_continue(&codex_task(kind, uuid)).unwrap();
+            assert_eq!(
+                plan.action,
+                ContinueAction::ActivateApp(CODEX_BUNDLE_ID.to_owned())
+            );
+        }
     }
 
     #[test]
-    fn codex_channel_comes_from_agent_kind() {
-        let desktop = plan_continue(
-            &task(SOURCE_CODEX, Some("desktop")),
-            &probe(false, CliPresence::None),
-        )
-        .unwrap();
+    fn codex_desktop_non_uuid_ids_fall_back_to_app() {
+        for id in [
+            "ses_abc123",
+            "plugins_0123456789abcdef0123456789abcdef",
+            "01a0f16e-6064-7033-a99a",
+            "01a0f16e_6064_7033_a99a_f0800a7f5477",
+        ] {
+            let task = codex_task(Some("desktop"), id);
+            assert_eq!(
+                plan_continue(&task).unwrap().action,
+                ContinueAction::ActivateApp(CODEX_BUNDLE_ID.to_owned()),
+                "{id} must not become a codex:// URL"
+            );
+            let hint = describe_continue(&task).unwrap();
+            assert_eq!(hint.channel, ContinueHintChannel::App, "{id}");
+            assert!(!hint.locates_session, "{id}");
+        }
+
+        let upper = codex_task(Some("desktop"), "01A0F16E-6064-7033-A99A-F0800A7F5477");
         assert_eq!(
-            desktop.action,
-            ContinueAction::OpenUrl("codex://threads/ses_abc123".to_owned())
+            plan_continue(&upper).unwrap().action,
+            ContinueAction::OpenUrl(
+                "codex://threads/01A0F16E-6064-7033-A99A-F0800A7F5477".to_owned()
+            )
         );
-
-        let cli = plan_continue(
-            &task(SOURCE_CODEX, Some("cli")),
-            &probe(true, CliPresence::None),
-        )
-        .unwrap();
-        assert_eq!(cli.channel, ContinueChannel::Cli);
-        assert_eq!(
-            cli.action,
-            ContinueAction::Terminal {
-                cwd: Some("/Users/x/work/gamma".to_owned()),
-                command: "codex resume ses_abc123".to_owned(),
-            }
-        );
-    }
-
-    #[test]
-    fn codex_unknown_falls_back_to_probe() {
-        let app =
-            plan_continue(&task(SOURCE_CODEX, None), &probe(true, CliPresence::None)).unwrap();
-        assert_eq!(
-            app.action,
-            ContinueAction::OpenUrl("codex://threads/ses_abc123".to_owned())
-        );
-
-        let cli =
-            plan_continue(&task(SOURCE_CODEX, None), &probe(false, CliPresence::Agent)).unwrap();
-        assert_eq!(cli.channel, ContinueChannel::Cli);
-
-        let fallback =
-            plan_continue(&task(SOURCE_CODEX, None), &probe(false, CliPresence::None)).unwrap();
-        assert_eq!(
-            fallback.action,
-            ContinueAction::OpenUrl("codex://threads/ses_abc123".to_owned())
-        );
-    }
-
-    #[test]
-    fn opencode_prefers_running_app_then_cli_then_app() {
-        let app = plan_continue(
-            &task(SOURCE_OPENCODE, None),
-            &probe(true, CliPresence::Session),
-        )
-        .unwrap();
-        assert_eq!(app.channel, ContinueChannel::App);
-        assert_eq!(
-            app.action,
-            ContinueAction::ActivateApp(OPENCODE_BUNDLE_ID.to_owned())
-        );
-
-        let cli = plan_continue(
-            &task(SOURCE_OPENCODE, None),
-            &probe(false, CliPresence::Session),
-        )
-        .unwrap();
-        assert_eq!(cli.channel, ContinueChannel::Cli);
-        assert_eq!(
-            cli.action,
-            ContinueAction::Terminal {
-                cwd: Some("/Users/x/work/gamma".to_owned()),
-                command: "opencode --session ses_abc123".to_owned(),
-            }
-        );
-
-        let agent = plan_continue(
-            &task(SOURCE_OPENCODE, None),
-            &probe(false, CliPresence::Agent),
-        )
-        .unwrap();
-        assert_eq!(agent.channel, ContinueChannel::Cli);
-
-        let fallback = plan_continue(
-            &task(SOURCE_OPENCODE, None),
-            &probe(false, CliPresence::None),
-        )
-        .unwrap();
-        assert_eq!(
-            fallback.action,
-            ContinueAction::ActivateApp(OPENCODE_BUNDLE_ID.to_owned())
-        );
-    }
-
-    #[test]
-    fn kilo_uses_probe_and_plain_cli_command() {
-        let cli =
-            plan_continue(&task(SOURCE_KILO, None), &probe(false, CliPresence::Agent)).unwrap();
-        assert_eq!(
-            cli.action,
-            ContinueAction::Terminal {
-                cwd: Some("/Users/x/work/gamma".to_owned()),
-                command: "kilo".to_owned(),
-            }
-        );
-
-        let app = plan_continue(&task(SOURCE_KILO, None), &probe(true, CliPresence::None)).unwrap();
-        assert_eq!(
-            app.action,
-            ContinueAction::ActivateApp(KILO_BUNDLE_ID.to_owned())
-        );
-    }
-
-    #[test]
-    fn trae_cn_activates_app_without_session_target() {
-        let plan = plan_continue(
-            &task(SOURCE_TRAE_CN, Some("desktop")),
-            &probe(true, CliPresence::None),
-        )
-        .unwrap();
-        assert_eq!(plan.channel, ContinueChannel::App);
-        assert_eq!(
-            plan.action,
-            ContinueAction::ActivateApp(TRAE_CN_BUNDLE_ID.to_owned())
-        );
-    }
-
-    #[test]
-    fn cline_channels_follow_session_origin() {
-        let desktop = plan_continue(
-            &task(SOURCE_CLINE, Some("desktop")),
-            &probe(false, CliPresence::None),
-        )
-        .unwrap();
-        assert_eq!(desktop.channel, ContinueChannel::App);
-        assert_eq!(
-            desktop.action,
-            ContinueAction::ActivateApp(CLINE_BUNDLE_ID.to_owned())
-        );
-
-        let cli = plan_continue(
-            &task(SOURCE_CLINE, Some("cli")),
-            &probe(true, CliPresence::None),
-        )
-        .unwrap();
-        assert_eq!(cli.channel, ContinueChannel::Cli);
-        assert_eq!(
-            cli.action,
-            ContinueAction::Terminal {
-                cwd: Some("/Users/x/work/gamma".to_owned()),
-                command: "cline --id ses_abc123".to_owned(),
-            }
-        );
-
-        let app =
-            plan_continue(&task(SOURCE_CLINE, None), &probe(true, CliPresence::None)).unwrap();
-        assert_eq!(
-            app.action,
-            ContinueAction::ActivateApp(CLINE_BUNDLE_ID.to_owned())
-        );
-
-        let detected =
-            plan_continue(&task(SOURCE_CLINE, None), &probe(false, CliPresence::Agent)).unwrap();
-        assert_eq!(detected.channel, ContinueChannel::Cli);
     }
 
     #[test]
     fn continue_hints_expose_action_before_click() {
         let claude = describe_continue(&task(SOURCE_CLAUDE, Some("cli"))).unwrap();
-        assert_eq!(claude.channel, ContinueHintChannel::Terminal);
-        assert_eq!(claude.label, "终端恢复");
-        assert!(claude.locates_session);
-
-        let codex = describe_continue(&task(SOURCE_CODEX, Some("desktop"))).unwrap();
-        assert_eq!(codex.channel, ContinueHintChannel::Deeplink);
-        assert!(codex.locates_session);
+        assert_eq!(claude.channel, ContinueHintChannel::App);
+        assert_eq!(claude.label, "仅激活 App");
+        assert!(!claude.locates_session);
 
         let qoder = describe_continue(&task(SOURCE_QODER, None)).unwrap();
-        assert_eq!(qoder.channel, ContinueHintChannel::App);
-        assert!(!qoder.locates_session);
-        assert!(qoder.detail.contains("无法定位"));
+        assert_eq!(qoder.channel, ContinueHintChannel::Deeplink);
+        assert!(qoder.locates_session);
 
-        let cline_cli = describe_continue(&task(SOURCE_CLINE, Some("cli"))).unwrap();
-        assert_eq!(cline_cli.channel, ContinueHintChannel::Terminal);
-        assert!(cline_cli.locates_session);
-        let cline_desktop = describe_continue(&task(SOURCE_CLINE, Some("desktop"))).unwrap();
-        assert_eq!(cline_desktop.channel, ContinueHintChannel::App);
-        assert!(!cline_desktop.locates_session);
-        let cline = describe_continue(&task(SOURCE_CLINE, None)).unwrap();
-        assert_eq!(cline.channel, ContinueHintChannel::Dynamic);
-        assert!(!cline.locates_session);
+        let uuid = "01a0f16e-6064-7033-a99a-f0800a7f5477";
+        for kind in ["desktop", "automation"] {
+            let codex = describe_continue(&codex_task(Some(kind), uuid)).unwrap();
+            assert_eq!(codex.channel, ContinueHintChannel::Deeplink, "{kind}");
+            assert!(codex.locates_session, "{kind}");
+        }
+        for kind in [None, Some("cli")] {
+            let codex = describe_continue(&codex_task(kind, uuid)).unwrap();
+            assert_eq!(codex.channel, ContinueHintChannel::App);
+            assert!(!codex.locates_session);
+        }
 
-        let opencode = describe_continue(&task(SOURCE_OPENCODE, Some("cli"))).unwrap();
-        assert_eq!(opencode.channel, ContinueHintChannel::Dynamic);
-        assert!(!opencode.locates_session);
-        let kilo = describe_continue(&task(SOURCE_KILO, Some("desktop"))).unwrap();
-        assert_eq!(kilo.channel, ContinueHintChannel::Dynamic);
-        assert!(!kilo.locates_session);
+        for source in [
+            SOURCE_OPENCODE,
+            SOURCE_KILO,
+            SOURCE_TRAE_CN,
+            SOURCE_CLINE,
+            SOURCE_ANTIGRAVITY,
+            SOURCE_MINIMAX,
+            SOURCE_CODEARTS,
+            SOURCE_CODEBUDDY,
+        ] {
+            let hint = describe_continue(&task(source, None)).unwrap();
+            assert_eq!(hint.channel, ContinueHintChannel::App, "{source}");
+            assert!(!hint.locates_session, "{source}");
+        }
 
         let mut unknown = task(SOURCE_CLAUDE, None);
         unknown.source = "synthetic-unknown".to_owned();
         assert!(describe_continue(&unknown).is_none());
+        assert!(plan_continue(&unknown).is_err());
     }
 
     #[test]
-    fn rejects_unsafe_session_ids() {
-        let mut bad = task(SOURCE_QODER, None);
-        bad.source_id = "abc; rm -rf /".to_owned();
-        assert!(plan_continue(&bad, &probe(false, CliPresence::None)).is_err());
-    }
+    fn unsafe_session_ids_never_reach_a_deeplink() {
+        for source_id in ["abc; rm -rf /", "abc/../def", "会话 id", ""] {
+            let mut qoder = task(SOURCE_QODER, None);
+            qoder.source_id = source_id.to_owned();
+            assert_eq!(
+                plan_continue(&qoder).unwrap().action,
+                ContinueAction::ActivateApp(QODER_BUNDLE_ID.to_owned()),
+                "{source_id}"
+            );
+            let hint = describe_continue(&qoder).unwrap();
+            assert_eq!(hint.channel, ContinueHintChannel::App, "{source_id}");
+            assert!(!hint.locates_session, "{source_id}");
 
-    #[test]
-    fn ps_parser_ignores_opencode_app_server() {
-        let listing = "\
-  100     1 /Applications/OpenCode.app/Contents/MacOS/OpenCode
-  101   100 /Users/x/Library/Application Support/ai.opencode.desktop/cli/2.2.5-arm64/opencode-cli serve --service
-  102     1 /Applications/Cline.app/Contents/MacOS/cline-cli --cline-hub-daemon --cwd / --port 25463
-  103     1 /bin/zsh -lc ls
-";
-        assert_eq!(
-            parse_ps_presence(SOURCE_OPENCODE, "ses_abc123", listing),
-            CliPresence::None
-        );
-        assert_eq!(
-            parse_ps_presence(SOURCE_CLINE, "ses_abc123", listing),
-            CliPresence::None
-        );
-    }
-
-    #[test]
-    fn ps_parser_finds_session_and_agent_processes() {
-        let listing = "\
-  100     1 /Applications/OpenCode.app/Contents/MacOS/OpenCode
-  200     1 /Applications/OpenCode.app/Contents/Resources/opencode-cli --session ses_abc123
-  300     1 /opt/homebrew/Cellar/kilo/7.8.15/libexec/kilo
-  400     1 /opt/homebrew/bin/codex resume 01a0f16e
-  500     1 /Users/x/.nvm/versions/node/v24/bin/cline --id ses_abc123
-";
-        assert_eq!(
-            parse_ps_presence(SOURCE_OPENCODE, "ses_abc123", listing),
-            CliPresence::Session
-        );
-        assert_eq!(
-            parse_ps_presence(SOURCE_OPENCODE, "ses_other", listing),
-            CliPresence::Agent
-        );
-        assert_eq!(
-            parse_ps_presence(SOURCE_KILO, "ses_abc123", listing),
-            CliPresence::Agent
-        );
-        assert_eq!(
-            parse_ps_presence(SOURCE_CODEX, "01a0f16e", listing),
-            CliPresence::Session
-        );
-        assert_eq!(
-            parse_ps_presence(SOURCE_CLINE, "ses_abc123", listing),
-            CliPresence::Session
-        );
-        assert_eq!(
-            parse_ps_presence(SOURCE_CLINE, "ses_other", listing),
-            CliPresence::Agent
-        );
+            assert_eq!(
+                plan_continue(&codex_task(Some("desktop"), source_id))
+                    .unwrap()
+                    .action,
+                ContinueAction::ActivateApp(CODEX_BUNDLE_ID.to_owned()),
+                "{source_id}"
+            );
+            assert_eq!(
+                describe_continue(&codex_task(Some("desktop"), source_id))
+                    .unwrap()
+                    .channel,
+                ContinueHintChannel::App,
+                "{source_id}"
+            );
+        }
     }
 }

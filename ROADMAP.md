@@ -50,7 +50,7 @@ Perch 以“先找到任务，再回 agent 继续”为核心。里程碑沿用
 - [ ] 用量报表视图（按 workspace / 时间聚合图表，复用 usage-ledger 的聚合口径）
 - [ ] 会话内容搜索（opt-in、默认关闭、仅本机内存；见 `docs/design-docs/source-designs/SEARCH.md` P1）
 - [x] Trae CN hooks 事件聚合（需安装 usage-ledger hook；未安装时来源不可用）
-- [x] Cline 来源：只读 CLI 与桌面 App 共用的 `sessions.db`；CLI 会话可 `cline --id` 恢复
+- [x] Cline 来源：只读 CLI 与桌面 App 共用的 `sessions.db`；继续工作只激活 Cline App（无会话级深链，不启动终端）
 - [ ] 伴生 CLI（可选）
 - [ ] 其他来源的只读适配，先做可行性验证
 
@@ -75,5 +75,6 @@ Perch 以“先找到任务，再回 agent 继续”为核心。里程碑沿用
 ## 已知风险
 
 - 各 agent 的本地 schema 可能随版本变化；采集器需要持续验证，失败时保留旧快照并提示。
-- Qoder 不支持会话级深链，Claude 桌面 App 不能恢复指定会话；这是上游限制。
+- Claude 桌面 App 不能恢复指定会话；Codex 桌面以外的会话与其余来源只激活 App，不能定位具体会话。这是上游限制。
+- Qoder 会话深链依赖私有路由 `qoder://chat/open`，上游改版可能失效；失效时 App 自行报错，Perch 不预判。
 - 未签名构建在他人机器上可能被 Gatekeeper 拦截。

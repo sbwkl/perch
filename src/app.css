@@ -1002,12 +1002,6 @@ kbd {
   white-space: nowrap;
 }
 
-.continue-channel.terminal {
-  color: var(--accent);
-  border-color: var(--accent-soft);
-  background: var(--accent-soft);
-}
-
 .continue-channel.deeplink {
   color: var(--ok);
   border-color: rgba(15, 159, 110, 0.25);

@@ -39,10 +39,13 @@ usage hooks install trae-cn --scope global
 状态由最新 hook 事件推导（`running` / `idle`），历史会话固定 `idle`；
 workspace 名从编码目录名启发式还原，不伪造完整路径。
 
-## 为什么 Qoder 的“打开”只把 App 切到前台？
+## Qoder 的“打开”能定位到具体会话吗？
 
-Qoder 官方支持 `qoder://`，但不支持会话级深链。`qoder://chat/<id>` 在 Qoder 日志中会报
-`DEEP_LINK_ROUTE_UNSUPPORTED`，只能激活 App。Perch 会如实提示“无法定位到具体会话”。
+能。Qoder 注册了 `qoder://`，并支持会话级深链 `qoder://chat/open?sessionId=<id>`。
+Perch 固定生成该链接，点击后切到目标会话。旧的 `qoder://chat/<id>` 不受支持
+（Qoder 日志报 `DEEP_LINK_ROUTE_UNSUPPORTED`），Perch 不使用它。
+会话 ID 不合法或超过 128 字符时，Perch 回退为仅激活 Qoder App，并提示“无法定位到具体会话”。
+证据见 [agent-session-deeplinks.md](references/agent-session-deeplinks.md)。
 
 ## Claude Code 的运行状态是怎么来的？
 
@@ -79,13 +82,13 @@ Perch 不臆造 `done`。待办进度来自 `~/.claude/tasks/<sessionId>/`。
 
 ## “打开”按钮会执行什么？
 
-见 [ARCHITECTURE.md](../ARCHITECTURE.md) 的“继续工作”一节。命令由 Rust 侧按来源固定模板生成，
-session id 会做字符集校验，前端不能传入任意命令。Claude Code 和 Codex CLI 会话会在 Terminal 中恢复；
-Qoder 只能激活 App。
+见 [ARCHITECTURE.md](../ARCHITECTURE.md) 的“继续工作”一节。动作由 Rust 侧按来源固定模板生成，
+session id 会做字符集校验，前端不能传入任意命令。Qoder 会话与 Codex 桌面会话使用会话级深链；
+其他来源只激活对应 App，目前不会启动终端或 CLI 恢复。
 
 ## 支持 Windows / Linux 吗？
 
-目前只支持 macOS。采集路径、App 激活和终端执行都按 macOS 实现。
+目前只支持 macOS。采集路径与 App 激活都按 macOS 实现。
 
 ## 有现成的安装包吗？
 

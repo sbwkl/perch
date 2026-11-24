@@ -36,7 +36,7 @@ export interface EstUsage {
   last_day: string | null;
 }
 
-export type ContinueHintChannel = "terminal" | "deeplink" | "app" | "dynamic";
+export type ContinueHintChannel = "deeplink" | "app";
 
 export interface ContinueHint {
   channel: ContinueHintChannel;
@@ -170,7 +170,6 @@ export interface SyncReport {
 }
 
 export interface ContinueOutcome {
-  channel: "app" | "cli";
   target: string;
   message: string;
 }

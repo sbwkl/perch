@@ -31,7 +31,7 @@ Perch 是一个 macOS 桌面应用：Tauri 2 壳 + 纯 Rust core + Svelte 5 前�
 │  usage::UsageSnapshot ──（只读 usage.db）──▶ query::build_bootstrap_with_usage│
 │  probe::SourceProbe（SQLite data_version / JSONL 签名）                     │
 │  search::search_tasks（只读 cache.db 元数据；拼音/模糊/加权排序）           │
-│  continue_work::plan_continue（App URL / 激活 App / 终端）                  │
+│  continue_work::plan_continue（App 会话深链 / 激活 App）                     │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -50,7 +50,7 @@ Perch 是一个 macOS 桌面应用：Tauri 2 壳 + 纯 Rust core + Svelte 5 前�
 | 搜索 | `src/search.rs` | 只读 `task` / `task_todo`，NFKC 归一 + 拼音 + 模糊匹配 + 字段加权，按 workspace / 来源筛选后返回全部命中与总数 |
 | 用量桥接 | `src/usage.rs` | 只读打开 usage-ledger 的 `usage.db`，按 `session_id` 聚合 token / credits / est |
 | 探测 | `src/probe.rs` | 轻量判断源是否变化：SQLite `PRAGMA data_version`、JSONL 文件数与最新 mtime |
-| 继续工作 | `src/continue_work.rs` | 按来源和进程探测决定打开 App / URL / 终端，并校验 session id |
+| 继续工作 | `src/continue_work.rs` | 按来源决定会话深链或激活 App，并校验 session id；不启动终端 |
 | 路径 | `src/paths.rs` | 默认源路径与环境变量覆盖 |
 | Tauri 壳 | `src-tauri/src/lib.rs` | IPC 命令、状态管理、3 秒探测循环、事件 |
 | 前端 | `src/App.svelte` | 三栏布局、任务筛选、元数据搜索、详情与“继续工作”按钮 |
@@ -105,23 +105,23 @@ Perch 是一个 macOS 桌面应用：Tauri 2 壳 + 纯 Rust core + Svelte 5 前�
 
 | 来源 | 决策 |
 | --- | --- |
-| Qoder | `open -b com.qoder.app`（无会话级深链） |
-| Claude Code | 终端 `claude --resume <id>` |
-| Codex | `desktop/automation` → `codex://threads/<id>`；`cli` → 终端 `codex resume <id>`；未知按 App 是否运行决定 |
-| OpenCode | App 运行 → 激活 `ai.opencode.desktop`；否则终端 `opencode --session <id>` |
-| Kilo | App 运行 → 激活 `ai.kilo.desktop`；否则终端 `kilo` |
-| Trae CN | 激活 `cn.trae.app`（hook/memory 无项目路径，也没有确认的会话级深链） |
-| Cline | `desktop` → 激活 `bot.cline.app`；`cli` → 终端 `cline --id <id>`；未知按 App 是否运行决定 |
-| Antigravity | 激活 `com.google.antigravity`（无确认的会话级恢复方式） |
-| MiniMax Code | 激活 `com.minimax.agent.cn`（无确认的会话级恢复方式） |
-| CodeArts | 激活 `com.huawei.codearts.agent`（无确认的会话级恢复方式） |
-| CodeBuddy | 激活 `com.tencent.codebuddycn`（无确认的会话级恢复方式） |
+| Qoder | `qoder://chat/open?sessionId=<id>`（`^[A-Za-z0-9_-]{1,128}$`）；不合法时 `open -b com.qoder.app` |
+| Claude Code | `open -b com.anthropic.claudefordesktop` |
+| Codex | `desktop/automation` 且 id 为 UUID → `codex://threads/<id>`；其他 `agent_kind` 或非 UUID id → `open -b com.openai.codex` |
+| OpenCode | `open -b ai.opencode.desktop` |
+| Kilo | `open -b ai.kilo.desktop` |
+| Trae CN | `open -b cn.trae.app`（hook/memory 无项目路径，也没有确认的会话级深链） |
+| Cline | `open -b bot.cline.app`（App 无 URL scheme） |
+| Antigravity | `open -b com.google.antigravity`（无确认的会话级恢复方式） |
+| MiniMax Code | `open -b com.minimax.agent.cn`（无确认的会话级恢复方式） |
+| CodeArts | `open -b com.huawei.codearts.agent`（无确认的会话级恢复方式） |
+| CodeBuddy | `open -b com.tencent.codebuddycn`（无确认的会话级恢复方式） |
 
 `TaskView.continue_hint` 由 `continue_work::describe_continue` 按快照元数据生成只读通道文案；
 实际动作仍由 `plan_continue` 与 Tauri 固定模板执行，前端不传命令或 URL。
 
-session id 先经过字符集校验；终端命令由固定模板拼接，前端无法传入任意命令。
-终端通过 `osascript` 在 Terminal 中执行，并在命令前加一个空格，避免 shell 启动提示吞掉首字符。
+session id 先经过字符集校验；URL 与 bundle id 都由固定模板生成，前端无法传入任意命令。
+“继续工作”只使用 `open` 的 URL scheme 或 App 激活，不启动终端，也不执行 CLI 恢复命令。
 
 ## 数据模型
 
@@ -152,7 +152,7 @@ usage-ledger 不可用时完全不出现。
 2. 源 JSONL 只读打开；不写入、不重命名、不删除源文件。
 3. 扫描路径只写 `cache.db`，不持有任何源写连接。
 4. 不读取消息正文、prompt、tool 输出、附件或思考过程；Claude todo 只读 `subject/status`。
-5. `continue_task` 只能使用固定模板命令；session id 必须通过字符集校验。
+5. `continue_task` 只能使用固定模板 URL / App 激活；session id 必须通过字符集校验。
 6. 删除 `cache.db` 必须只导致数据重建，不影响任何 agent。
 7. usage-ledger 的 `usage.db` 只读打开，不执行迁移、不触发 sync、不写入任何表；
    其 `usage_turn` / `usage_daily` / `usage_credit` / `usage_est` 必须分轨展示，永不相加。
@@ -175,7 +175,7 @@ usage-ledger 不可用时完全不出现。
 3. 在 `paths.rs` 增加默认路径与环境变量覆盖。
 4. 在 `collectors/mod.rs` 的 `all_collectors` 中注册。
 5. 在 `probe.rs` 中增加该来源的变化探测（SQLite 或文件签名）。
-6. 在 `continue_work.rs` 中定义“继续工作”的通道与固定命令模板。
+6. 在 `continue_work.rs` 中定义“继续工作”的深链或 App 激活决策。
 7. 前端补充来源图标/标签（`source-icons.ts` 与 `SOURCE_COLORS`）。
 8. 增加使用临时 fixture 的集成测试；更新 [docs/design-docs/source-designs/SOURCES.md](docs/design-docs/source-designs/SOURCES.md)。
 

@@ -12,7 +12,7 @@
 
 - 源 SQLite 只用只读连接并启用 `query_only`；源 JSONL / JSON 只读打开。
 - 不写源目录、不回写 agent 状态、不重命名或删除源文件。
-- `continue_task` 只能按固定模板打开 App / URL / 终端，前端不能传任意命令。
+- `continue_task` 只能按固定模板打开会话深链或激活 App，前端不能传任意命令或 URL。
 
 ## 3. 元数据最小化
 
