@@ -224,6 +224,294 @@ fn write_claude_fixture(root: &Path) {
 }
 
 #[test]
+fn claude_collector_derives_title_from_first_candidate_user_record() {
+    let temp = TempDir::new().unwrap();
+    let projects = temp.path().join("projects/-tmp-alpha");
+    fs::create_dir_all(&projects).unwrap();
+    let source = projects.join("derived.jsonl");
+    let original = concat!(
+        "{\"type\":\"user\",\"isSidechain\":true,\"message\":{\"role\":\"user\",\
+         \"content\":[{\"type\":\"text\",\"text\":\"侧链输入\"}]}}\n",
+        "{\"type\":\"user\",\"isMeta\":true,\"message\":{\"role\":\"user\",\
+         \"content\":[{\"type\":\"text\",\"text\":\"元信息\"}]}}\n",
+        "{\"type\":\"user\",\"toolUseResult\":{\"stdout\":\"工具输出\"},\
+         \"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"工具结果\"}]}}\n",
+        "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\
+         \"text\":\"<command-name>/review</command-name>\"},{\"type\":\"text\",\
+         \"text\":\"  请   审查  这个   功能   并补充测试  \"}]}}\n",
+        "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\
+         \"text\":\"后续输入不应参与标题\"}]}}\n"
+    );
+    fs::write(&source, original).unwrap();
+
+    let result = ClaudeCollector::new(temp.path().to_path_buf()).scan();
+
+    assert_eq!(result.status, SourceScanStatus::Ok, "{:?}", result.error);
+    let task = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "derived")
+        .unwrap();
+    assert_eq!(task.title, "请 审查 这个 功能 并补充测试");
+    assert_eq!(task.title_source, "derived");
+    assert_eq!(fs::read(&source).unwrap(), original.as_bytes());
+}
+
+#[test]
+fn claude_collector_ignores_slash_only_first_candidate() {
+    let temp = TempDir::new().unwrap();
+    let projects = temp.path().join("projects/-tmp-alpha");
+    fs::create_dir_all(&projects).unwrap();
+    let source = projects.join("slash-only.jsonl");
+    fs::write(
+        &source,
+        concat!(
+            "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\
+             \"text\":\"<command-name>/model</command-name>\"},{\"type\":\"text\",\
+             \"text\":\"<command-args></command-args>\"}]}}\n",
+            "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\
+             \"text\":\"后续有效输入\"}]}}\n"
+        ),
+    )
+    .unwrap();
+
+    let result = ClaudeCollector::new(temp.path().to_path_buf()).scan();
+
+    let task = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "slash-only")
+        .unwrap();
+    assert_eq!(task.title, "新会话");
+    assert_eq!(task.title_source, "fallback");
+}
+
+#[test]
+fn claude_collector_uses_fallback_when_first_candidate_is_empty() {
+    let temp = TempDir::new().unwrap();
+    let projects = temp.path().join("projects/-tmp-alpha");
+    fs::create_dir_all(&projects).unwrap();
+    fs::write(
+        projects.join("empty-first.jsonl"),
+        concat!(
+            "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\
+             \"text\":\" <system-reminder>注入内容</system-reminder> \"}]}}\n",
+            "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\
+             \"text\":\"后续有效输入\"}]}}\n"
+        ),
+    )
+    .unwrap();
+
+    let result = ClaudeCollector::new(temp.path().to_path_buf()).scan();
+
+    let task = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "empty-first")
+        .unwrap();
+    assert_eq!(task.title, "新会话");
+    assert_eq!(task.title_source, "fallback");
+}
+
+#[test]
+fn claude_collector_truncates_derived_title_to_sixty_chars() {
+    let temp = TempDir::new().unwrap();
+    let projects = temp.path().join("projects/-tmp-alpha");
+    fs::create_dir_all(&projects).unwrap();
+    let text = format!("{}中后文", "a".repeat(59));
+    let line = serde_json::json!({
+        "type": "user",
+        "message": {"role": "user", "content": [{"type": "text", "text": text}]}
+    });
+    fs::write(
+        projects.join("long.jsonl"),
+        format!("{}\n", serde_json::to_string(&line).unwrap()),
+    )
+    .unwrap();
+
+    let result = ClaudeCollector::new(temp.path().to_path_buf()).scan();
+
+    let task = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "long")
+        .unwrap();
+    assert_eq!(task.title, format!("{}中", "a".repeat(59)));
+    assert_eq!(task.title.chars().count(), 60);
+    assert_eq!(task.title_source, "derived");
+}
+
+#[test]
+fn claude_collector_ignores_empty_native_titles() {
+    let temp = TempDir::new().unwrap();
+    let projects = temp.path().join("projects/-tmp-alpha");
+    fs::create_dir_all(&projects).unwrap();
+    let session_dir = projects.join("empty-native");
+    fs::create_dir_all(&session_dir).unwrap();
+    fs::write(
+        projects.join("empty-native.jsonl"),
+        concat!(
+            "{\"type\":\"custom-title\",\"customTitle\":\"   \"}\n",
+            "{\"type\":\"custom-title\",\"customTitle\":\"有效人工标题\"}\n",
+            "{\"type\":\"custom-title\",\"customTitle\":\"\"}\n",
+            "{\"type\":\"ai-title\",\"aiTitle\":\"有效 AI 标题\"}\n",
+            "{\"type\":\"ai-title\",\"aiTitle\":\"\"}\n"
+        ),
+    )
+    .unwrap();
+    fs::write(
+        session_dir.join("custom-title.json"),
+        "{\"customTitle\":\"Sidecar 标题\"}",
+    )
+    .unwrap();
+
+    let result = ClaudeCollector::new(temp.path().to_path_buf()).scan();
+
+    let task = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "empty-native")
+        .unwrap();
+    assert_eq!(task.title, "有效人工标题");
+    assert_eq!(task.title_source, "custom");
+}
+
+#[test]
+fn claude_collector_uses_sidecar_title_between_native_titles() {
+    let temp = TempDir::new().unwrap();
+    let projects = temp.path().join("projects/-tmp-alpha");
+    fs::create_dir_all(&projects).unwrap();
+    let session_dir = projects.join("sidecar");
+    fs::create_dir_all(&session_dir).unwrap();
+    let source = projects.join("sidecar.jsonl");
+    fs::write(
+        &source,
+        concat!(
+            "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\
+             \"text\":\"派生标题\"}]}}\n",
+            "{\"type\":\"ai-title\",\"aiTitle\":\"AI 标题\"}\n",
+            "{\"type\":\"custom-title\",\"customTitle\":\"JSONL 人工标题\"}\n"
+        ),
+    )
+    .unwrap();
+    let sidecar = session_dir.join("custom-title.json");
+    fs::write(&sidecar, "{\"customTitle\":\"Sidecar 标题\"}").unwrap();
+    let collector = ClaudeCollector::new(temp.path().to_path_buf());
+    let with_native = collector.scan();
+    let task = with_native
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sidecar")
+        .unwrap();
+    assert_eq!(task.title, "JSONL 人工标题");
+    assert_eq!(task.title_source, "custom");
+
+    fs::write(&source, "{\"type\":\"ai-title\",\"aiTitle\":\"AI 标题\"}\n").unwrap();
+    let with_sidecar = collector.scan();
+    let task = with_sidecar
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sidecar")
+        .unwrap();
+    assert_eq!(task.title, "Sidecar 标题");
+    assert_eq!(task.title_source, "custom");
+
+    fs::write(&sidecar, "{\"customTitle\":\"   \"}").unwrap();
+    let with_blank = collector.scan();
+    let task = with_blank
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sidecar")
+        .unwrap();
+    assert_eq!(task.title, "AI 标题");
+    assert_eq!(task.title_source, "ai");
+
+    fs::write(&sidecar, "{broken").unwrap();
+    let with_broken = collector.scan();
+    let task = with_broken
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sidecar")
+        .unwrap();
+    assert_eq!(task.title, "AI 标题");
+    assert_eq!(task.title_source, "ai");
+
+    fs::write(&sidecar, "{\"customTitle\":\"临时标题\"}").unwrap();
+    let final_sidecar_before = fs::read(&sidecar).unwrap();
+    fs::remove_file(&sidecar).unwrap();
+    let after_delete = collector.scan();
+    let task = after_delete
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sidecar")
+        .unwrap();
+    assert_eq!(task.title, "AI 标题");
+    assert_eq!(task.title_source, "ai");
+    assert_eq!(
+        final_sidecar_before,
+        "{\"customTitle\":\"临时标题\"}".as_bytes()
+    );
+}
+
+#[test]
+fn claude_collector_native_title_takes_over_derived_and_reverts_when_removed() {
+    let temp = TempDir::new().unwrap();
+    let projects = temp.path().join("projects/-tmp-alpha");
+    fs::create_dir_all(&projects).unwrap();
+    let source = projects.join("takeover.jsonl");
+    fs::write(
+        &source,
+        concat!(
+            "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\
+             \"text\":\"派生标题\"}]}}\n",
+            "{\"type\":\"ai-title\",\"aiTitle\":\"AI 标题\"}\n"
+        ),
+    )
+    .unwrap();
+
+    let collector = ClaudeCollector::new(temp.path().to_path_buf());
+    let with_ai = collector.scan();
+    let task = with_ai
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "takeover")
+        .unwrap();
+    assert_eq!(task.title, "AI 标题");
+    assert_eq!(task.title_source, "ai");
+
+    fs::write(
+        &source,
+        concat!(
+            "{\"type\":\"ai-title\",\"aiTitle\":\"AI 标题\"}\n",
+            "{\"type\":\"custom-title\",\"customTitle\":\"人工标题\"}\n"
+        ),
+    )
+    .unwrap();
+    let with_custom = collector.scan();
+    let task = with_custom
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "takeover")
+        .unwrap();
+    assert_eq!(task.title, "人工标题");
+    assert_eq!(task.title_source, "custom");
+
+    fs::write(
+        &source,
+        "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"派生标题\"}]}}\n",
+    )
+    .unwrap();
+    let reverted = collector.scan();
+    let task = reverted
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "takeover")
+        .unwrap();
+    assert_eq!(task.title, "派生标题");
+    assert_eq!(task.title_source, "derived");
+}
+
+#[test]
 fn claude_collector_reads_titles_todos_and_ignores_subagents() {
     let temp = TempDir::new().unwrap();
     write_claude_fixture(temp.path());

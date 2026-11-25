@@ -7,6 +7,7 @@
 
 ### Added
 
+- Claude Code 会话标题优先级：JSONL `custom-title` → `custom-title.json` sidecar → JSONL `ai-title` → 首条候选用户消息派生标题 → `新会话`；派生标题单行、折叠空白并截断到 60 字符，不使用 `agentName`、`summary` 或 `history.jsonl`。
 - 继续工作入口收敛为一个按钮：动词表明通道（`打开 Qoder` / `打开 Codex` 能定位到具体会话，`激活 Trae CN` 等只把 App 切到前台），按钮用来源品牌色填充，删除重复的通道胶囊与说明段；点击成功不再弹出提示，失败显示危险色错误。
 - Qoder 会话深链：`qoder://chat/open?sessionId=<id>` 精确打开目标会话；session id 按 `^[A-Za-z0-9_-]{1,128}$` 校验，不合法时回退激活 Qoder App。
 - 继续工作收敛为 App 通道：Qoder 与 Codex 桌面会话走会话级深链，其余来源（含 Claude、OpenCode、Kilo、Cline、Trae CN 等）只激活对应 App，不再启动终端或 CLI 恢复。

@@ -113,6 +113,9 @@ impl ClaudeCollector {
             Some(stem) if !stem.is_empty() => stem.to_owned(),
             _ => return Ok(None),
         };
+        let sidecar_title = path.parent().and_then(|parent| {
+            self.load_sidecar_title(&parent.join(&session_id).join("custom-title.json"))
+        });
         let file = File::open(path)?;
         let reader = BufReader::new(file);
 
@@ -121,6 +124,7 @@ impl ClaudeCollector {
         let mut model = None;
         let mut custom_title = None;
         let mut ai_title = None;
+        let mut derived_title: Option<Option<String>> = None;
         let mut first_ts: Option<f64> = None;
         let mut last_ts: Option<f64> = None;
         let mut message_count = 0i64;
@@ -152,12 +156,12 @@ impl ClaudeCollector {
 
             match value.get("type").and_then(Value::as_str).unwrap_or("") {
                 "custom-title" => {
-                    if let Some(title) = json_string(&value, "customTitle") {
+                    if let Some(title) = non_empty_title(json_string(&value, "customTitle")) {
                         custom_title = Some(title);
                     }
                 }
                 "ai-title" => {
-                    if let Some(title) = json_string(&value, "aiTitle") {
+                    if let Some(title) = non_empty_title(json_string(&value, "aiTitle")) {
                         ai_title = Some(title);
                     }
                 }
@@ -168,6 +172,15 @@ impl ClaudeCollector {
                         .unwrap_or(false)
                     {
                         message_count += 1;
+                        if derived_title.is_none()
+                            && !value
+                                .get("isMeta")
+                                .and_then(Value::as_bool)
+                                .unwrap_or(false)
+                            && value.get("toolUseResult").is_none()
+                        {
+                            derived_title = Some(derived_user_title(&value));
+                        }
                     }
                 }
                 "assistant" => {
@@ -206,8 +219,12 @@ impl ClaudeCollector {
 
         let (title, title_source) = if let Some(title) = custom_title {
             (title, "custom")
+        } else if let Some(title) = sidecar_title {
+            (title, "custom")
         } else if let Some(title) = ai_title {
             (title, "ai")
+        } else if let Some(title) = derived_title.flatten().filter(|title| !title.is_empty()) {
+            (title, "derived")
         } else {
             (fallback_title(), "fallback")
         };
@@ -234,6 +251,12 @@ impl ClaudeCollector {
         task.refresh_fingerprint();
 
         Ok(Some(ParsedSession { task }))
+    }
+
+    fn load_sidecar_title(&self, path: &Path) -> Option<String> {
+        let raw = fs::read_to_string(path).ok()?;
+        let value: Value = serde_json::from_str(&raw).ok()?;
+        json_string(&value, "customTitle").filter(|title| !title.trim().is_empty())
     }
 
     /// Claude Code 在 `sessions/<pid>.json` 写入进程级实时状态。
@@ -347,6 +370,95 @@ struct ParsedSession {
 struct LiveSession {
     status_source: String,
     status_raw: Option<String>,
+}
+
+fn non_empty_title(title: Option<String>) -> Option<String> {
+    title.filter(|title| !title.trim().is_empty())
+}
+
+fn derived_user_title(record: &Value) -> Option<String> {
+    let content = record.pointer("/message/content")?;
+    let raw_parts: Vec<String> = match content {
+        Value::String(value) => vec![value.clone()],
+        Value::Array(items) => items
+            .iter()
+            .filter(|item| item.get("type").and_then(Value::as_str) == Some("text"))
+            .filter_map(|item| item.get("text").and_then(Value::as_str).map(str::to_owned))
+            .collect(),
+        _ => return None,
+    };
+    let mut parts = Vec::new();
+    for part in raw_parts {
+        let cleaned = strip_injected_wrappers(&part);
+        let cleaned = clean_derived_title(&cleaned);
+        if !cleaned.is_empty() {
+            parts.push(cleaned);
+        }
+    }
+    if parts.is_empty() {
+        return Some(String::new());
+    }
+    let joined = parts.join(" ");
+    if is_slash_command_only(&joined) {
+        return Some(String::new());
+    }
+    let truncated: String = joined.chars().take(60).collect();
+    Some(truncated.trim_end().to_owned())
+}
+
+fn strip_injected_wrappers(text: &str) -> String {
+    const WRAPPERS: &[&str] = &[
+        "system-reminder",
+        "command-name",
+        "command-message",
+        "command-args",
+        "task-notification",
+        "local-command-stdout",
+        "artifact-content-authored-by-others",
+    ];
+
+    let mut rest = text;
+    while let Some(start) = rest.find('<') {
+        let Some(end_offset) = rest[start..].find('>') else {
+            break;
+        };
+        let end = start + end_offset + 1;
+        let tag = &rest[start + 1..end - 1];
+        let name = tag
+            .trim()
+            .trim_start_matches('/')
+            .split_whitespace()
+            .next()
+            .unwrap_or_default();
+        if !WRAPPERS.contains(&name) {
+            break;
+        }
+        if tag.trim_end().ends_with('/') {
+            rest = &rest[end..];
+            continue;
+        }
+        let closing = format!("</{name}>");
+        let Some(close_offset) = rest[end..].find(&closing) else {
+            rest = &rest[end..];
+            continue;
+        };
+        let close_end = end + close_offset + closing.len();
+        rest = &rest[close_end..];
+    }
+    rest.to_owned()
+}
+
+fn is_slash_command_only(text: &str) -> bool {
+    let mut chars = text.chars();
+    chars.next() == Some('/')
+        && !text.contains(char::is_whitespace)
+        && text[1..]
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+}
+
+fn clean_derived_title(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 #[cfg(unix)]
