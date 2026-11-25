@@ -318,7 +318,7 @@ fn claude_collector_truncates_derived_title_to_sixty_chars() {
     let temp = TempDir::new().unwrap();
     let projects = temp.path().join("projects/-tmp-alpha");
     fs::create_dir_all(&projects).unwrap();
-    let text = format!("{}\u{4e2d}", "a".repeat(59));
+    let text = format!("{}中后文", "a".repeat(59));
     let line = serde_json::json!({
         "type": "user",
         "message": {"role": "user", "content": [{"type": "text", "text": text}]}

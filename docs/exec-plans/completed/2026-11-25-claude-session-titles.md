@@ -44,7 +44,7 @@ Claude Code CLI 会话常因缺少 JSONL 原生标题而在 Perch 中显示为�
 
 ## 验证记录
 
-- 2026-11-25：TDD 完成。`Collector::scan` 集成测试覆盖原生标题优先、sidecar 优先级、空白 / 损坏 / 删除 sidecar、首条候选派生、侧链 / meta / tool result / 系统注入 / slash command 跳过、首条候选为空即回退、60 字符边界、原生标题接管与回退、源文件字节不变。
+- 2026-11-25：TDD 完成。`Collector::scan` 集成测试覆盖原生标题优先、sidecar 优先级、空白 / 损坏 / 删除 sidecar、首条候选派生、侧链 / meta / tool result / 系统注入 / slash command 跳过、首条候选为空即回退、61+ 字符截断到前 60 个 Unicode 字符、原生标题接管与回退、源文件字节不变。
 - 2026-11-25：产品规格、Claude 来源设计、README、安全说明、架构、FAQ 与核心信念已同步说明 Claude-only 放宽标题读取范围、缓存仍最小化。
 - 2026-11-25：`SourceProbe::changed_sources` 集成测试覆盖 `custom-title.json` 创建、修改、删除触发 Claude 重扫，其他 JSON 不触发。
 - 2026-11-25：新增语义化 ADR 并登记到设计文档索引；产品规格、安全说明、架构、FAQ 与变更文档状态一致。
