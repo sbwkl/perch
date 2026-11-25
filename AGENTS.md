@@ -1,57 +1,17 @@
-# AGENTS.md — 项目工作区地图
+# AGENTS.md
 
-本目录是 `Perch`——macOS 上的本地多 agent 任务总览：只读汇总 Qoder、Claude Code、Codex、OpenCode、Kilo、Trae CN、Cline 等本地会话元数据，找到任务后回到对应 agent 继续。**本文件只是地图**：目录结构、硬性规则摘要、文档指针。架构基线在根目录 `ARCHITECTURE.md`，产品规格事实源在 `docs/product-specs/`，设计知识库在 `docs/design-docs/`，变更事实源在 `docs/exec-plans/`，开发约定与门禁在 `README.md`；动手前按「文档地图」按需读取，聊天 / issue / PR 只做同步。
+本目录是 `Perch`——macOS 上的本地多 agent 任务总览：只读汇总 Qoder、Claude Code、Codex、OpenCode、Kilo、Trae CN、Cline 等本地会话元数据，找到任务后回到对应 agent 继续。
 
-## 目录结构
-
-- `src/` — Svelte 5 + TypeScript 前端：三栏界面、搜索、详情面板、来源图标。
-- `src-tauri/` — Tauri 2 壳：`bootstrap` / `refresh_sources` / `search_tasks` / `continue_task` / `open_usage_report`，以及 3 秒 probe 循环。
-- `crates/perch-core/` — 纯 Rust core，不依赖 Tauri：采集器、缓存、查询、搜索、usage 聚合、变化探测、继续工作决策。
-- `demo/` — 开发和文档截图专用假数据入口；Vite alias 替换 Tauri API，不读取真实任务。
-- `docs/` — 系统记录：产品规格、设计知识库、执行计划、变更记录、探针证据与截图。权威事实源在这里，按 `docs/design-docs/index.md` 索引阅读。
-- `.github/workflows/` — CI：前端检查 / 构建与 Rust fmt / clippy / test。
-- 根目录：`README.md`（项目定位、文档与开发约定）、`ARCHITECTURE.md`（As-Built 架构）、`DEVELOPMENT.md`（环境、命令、数据路径）、`CONTRIBUTING.md`（协作约定与 review 关注点）、`SECURITY.md`（安全模型与隐私边界）、`ROADMAP.md`（进度与下一步）、`CHANGELOG.md`。
-- 构建产物与依赖目录：`dist/`、`target/`、`node_modules/` 均已忽略，不要手工编辑或提交。
-
-## 硬性规则（永远生效）
+## 硬性规则
 
 1. **只读源数据**：源 SQLite 只用 `SQLITE_OPEN_READ_ONLY` 并设 `PRAGMA query_only=ON`；源 JSONL / JSON 只读打开。不得写入、重命名、删除任何 agent 源文件。
 2. **只写自己的缓存**：扫描路径只写 Perch 自己的 `cache.db`，不持有任何源写连接；删除 `cache.db` 只能导致重建，不能影响 agent。
-3. **元数据最小化**：不读取 / 存储消息正文、prompt、tool 输入 / 输出、附件、思考过程或凭据；Claude todo 只读 `subject/status`。usage-ledger 的 `usage.db` 同样只读，不迁移、不 sync、不写表。
 4. **口径不可混加**：token / credits / est / activity 四轨分表分示，任何两轨都不相加；不同来源不做跨来源汇总。
 5. **命令边界固定**：`continue_task` 只接受任务 key，由 Rust 侧固定模板决定 `open` 的会话深链 / App 激活；session id 必须先做字符集校验，前端不能传入任意 shell 命令或 URL；继续工作不启动终端。
-6. **状态推断要有证据**：无上游证据不得臆造状态（例如不要把 Claude idle 写成“已完成”）；采集失败要隔离且保留旧快照，不误标 `source_missing`。
 7. **最小 IPC**：前端只调用窄命令；不引入远程页面 / 字体 / 图片 / 脚本，不启用 Tauri `fs` / `shell` / `http` 插件；`{@html}` 仅用于内联固定来源图标。
 8. **隐私与 fixture**：测试与文档截图只能用合成数据；不得提交真实会话标题、项目路径、数据库或日志。日志 / PR 贴出前先脱敏。
 9. `main` 是保护分支，只接受合并，不直接提交；**任何分支合并进 main 都必须先征得用户同意**，未经明确同意禁止合并。新特性走 `feat/<特性名>` 分支；集成测试用临时分支，测完即删；有未提交改动时用 `git worktree` 并行开发。完整流程见下文「开发流程」。
 10. **需求先行**：产品行为变化先更新对应 `docs/product-specs/` 文档；新功能 / 跨模块行为变更先建变更文档并链接对应产品规格，验收覆盖正常 / 异常 / 边界后再写代码。历史 `REQ-xxxx` / `CHG-xxxx` / `ADR-xxxx` 编号冻结，不再为新文档分配顺序编号；新增文档使用语义化主题路径（变更文档用 `YYYY-MM-DD-<主题>.md`，开发中放 `docs/exec-plans/active/`，验证后移入 `docs/exec-plans/completed/`）。
-11. **测试门禁**：`npm run check`、`cargo fmt --all --check`、`cargo clippy -p perch-core --all-targets -- -D warnings`、`cargo test -p perch-core` 全部通过才算完成。
-12. 提交信息用简短英文祈使句并引用变更文档路径或主题；PR 标题 / 描述引用产品规格章节与变更文档路径。文档与对话用中文；代码标识符、命令、协议字段保持英文。
-
-## 开发流程（每个新特性都必须遵守）
-
-分支模型：`main` 是保护分支，只接受合并；新特性一律走 `feat/<特性名>`；集成测试用临时分支，测完即删，不保留长期集成分支。
-
-1. **从最新 main 切分支**
-   先同步 main（有远程时 `git pull`），再 `git checkout -b feat/<特性名>`。
-
-2. **本地有未提交改动时用 worktree**
-   不要 stash，也不要带着脏工作区切分支；用 `git worktree add ../perch-<特性名> -b feat/<特性名> main` 在独立目录开发。
-
-3. **先写变更文档 / 验收，再写代码**
-   在 `docs/exec-plans/active/` 新建 `YYYY-MM-DD-<主题>.md`，链接对应产品规格；验收覆盖正常、异常、边界。实现中不得扩大变更范围；不相关的修复另开独立变更文档。
-
-4. **实现与测试**
-   按 TDD / 小步提交推进；本地完成提交前检查。`perch-core` 测试一律使用临时目录 + 环境变量覆盖，**不要读取真实用户数据**。
-
-5. **用临时分支做集成测试**
-   从最新 main 切临时分支并合入特性分支：`git checkout -b tmp/integration-<特性名> main && git merge --no-ff feat/<特性名>`；集成测试与全项目测试必须全部通过。测完删除临时分支：`git checkout main && git branch -D tmp/integration-<特性名>`；临时分支不推送远程。
-
-6. **需求补充 / 修改的处理**
-   集成测试通过后若用户提出新的需求补充或修改，先判断与当前特性主题的相关性：关联大则回到原 `feat/<特性名>` 继续走完流程；关联不大则从最新 main 新建特性分支；无法判断时向用户确认后再动手。
-
-7. **创建 PR 供人工审核**
-   推送特性分支并向 `main` 发起 PR。若仓库没有远程，跳过 PR，保留清晰提交记录并向用户说明变更内容与验证结果。**任何分支合并进 main 都必须先征得用户同意**；未经明确同意禁止执行合并到 main 的操作。
 
 ## 核心设计要点（已定，勿反复）
 
@@ -93,17 +53,6 @@
 4. `continue_work.rs` 定义继续工作通道和固定命令模板。
 5. 前端补来源图标 / 标签（`src/lib/source-icons.ts` 与颜色表）。
 6. 用临时目录 + fixture 写集成测试；更新 `docs/design-docs/source-designs/SOURCES.md`、`ROADMAP.md`，必要时更新 README / CHANGELOG。
-
-## 提交前检查
-
-```bash
-npm run check
-cargo fmt --all --check
-cargo clippy -p perch-core --all-targets -- -D warnings
-cargo test -p perch-core
-```
-
-CI 执行同样检查；涉及 UI 的改动还要在 `npm run tauri dev` 或 `npm run demo` 中实际验证。
 
 ## 常用命令
 
