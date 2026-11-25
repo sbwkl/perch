@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 | --- | --- |
-| 状态 | 开发中 |
+| 状态 | 已验证 |
 | 类型 | 变更文档 |
 | 关联产品规格 | [agent-sources.md R1](../../product-specs/agent-sources.md) |
 | 关联设计 | [SOURCES.md](../../design-docs/source-designs/SOURCES.md)、[Claude 标题读取范围 ADR](../../design-docs/adr/claude-session-title-read-scope.md)、[SECURITY.md](../../../SECURITY.md) |

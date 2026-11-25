@@ -367,44 +367,39 @@ fn jsonl_signature(
 }
 
 fn add_named_json_signature(root: &Path, basename: &str, count: &mut u64, latest: &mut u128) {
+    add_selected_signature(
+        root,
+        |path| path.file_name().and_then(|name| name.to_str()) == Some(basename),
+        count,
+        latest,
+    );
+}
+
+fn add_signature(root: &Path, extension: &str, count: &mut u64, latest: &mut u128) {
+    add_selected_signature(
+        root,
+        |path| {
+            path.extension()
+                .and_then(|value| value.to_str())
+                .is_some_and(|value| value.eq_ignore_ascii_case(extension))
+        },
+        count,
+        latest,
+    );
+}
+
+fn add_selected_signature(
+    root: &Path,
+    selected: impl Fn(&Path) -> bool,
+    count: &mut u64,
+    latest: &mut u128,
+) {
     if !root.is_dir() {
         return;
     }
     for entry in WalkDir::new(root).into_iter().filter_map(Result::ok) {
         let path = entry.path();
-        if !entry.file_type().is_file()
-            || path.file_name().and_then(|name| name.to_str()) != Some(basename)
-        {
-            continue;
-        }
-        *count += 1;
-        let Ok(metadata) = entry.metadata() else {
-            continue;
-        };
-        let Ok(modified) = metadata.modified() else {
-            continue;
-        };
-        let Ok(duration) = modified.duration_since(UNIX_EPOCH) else {
-            continue;
-        };
-        *latest = (*latest).max(duration.as_nanos());
-    }
-}
-
-fn add_signature(root: &Path, extension: &str, count: &mut u64, latest: &mut u128) {
-    if !root.is_dir() {
-        return;
-    }
-    for entry in WalkDir::new(root).into_iter().filter_map(Result::ok) {
-        if !entry.file_type().is_file() {
-            continue;
-        }
-        if !entry
-            .path()
-            .extension()
-            .and_then(|value| value.to_str())
-            .is_some_and(|value| value.eq_ignore_ascii_case(extension))
-        {
+        if !entry.file_type().is_file() || !selected(path) {
             continue;
         }
         *count += 1;

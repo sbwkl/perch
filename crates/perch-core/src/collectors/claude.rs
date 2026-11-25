@@ -156,12 +156,12 @@ impl ClaudeCollector {
 
             match value.get("type").and_then(Value::as_str).unwrap_or("") {
                 "custom-title" => {
-                    if let Some(title) = json_string(&value, "customTitle") {
+                    if let Some(title) = non_empty_title(json_string(&value, "customTitle")) {
                         custom_title = Some(title);
                     }
                 }
                 "ai-title" => {
-                    if let Some(title) = json_string(&value, "aiTitle") {
+                    if let Some(title) = non_empty_title(json_string(&value, "aiTitle")) {
                         ai_title = Some(title);
                     }
                 }
@@ -370,6 +370,10 @@ struct ParsedSession {
 struct LiveSession {
     status_source: String,
     status_raw: Option<String>,
+}
+
+fn non_empty_title(title: Option<String>) -> Option<String> {
+    title.filter(|title| !title.trim().is_empty())
 }
 
 fn derived_user_title(record: &Value) -> Option<String> {

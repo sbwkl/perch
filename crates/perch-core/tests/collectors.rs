@@ -342,6 +342,41 @@ fn claude_collector_truncates_derived_title_to_sixty_chars() {
 }
 
 #[test]
+fn claude_collector_ignores_empty_native_titles() {
+    let temp = TempDir::new().unwrap();
+    let projects = temp.path().join("projects/-tmp-alpha");
+    fs::create_dir_all(&projects).unwrap();
+    let session_dir = projects.join("empty-native");
+    fs::create_dir_all(&session_dir).unwrap();
+    fs::write(
+        projects.join("empty-native.jsonl"),
+        concat!(
+            "{\"type\":\"custom-title\",\"customTitle\":\"   \"}\n",
+            "{\"type\":\"custom-title\",\"customTitle\":\"有效人工标题\"}\n",
+            "{\"type\":\"custom-title\",\"customTitle\":\"\"}\n",
+            "{\"type\":\"ai-title\",\"aiTitle\":\"有效 AI 标题\"}\n",
+            "{\"type\":\"ai-title\",\"aiTitle\":\"\"}\n"
+        ),
+    )
+    .unwrap();
+    fs::write(
+        session_dir.join("custom-title.json"),
+        "{\"customTitle\":\"Sidecar 标题\"}",
+    )
+    .unwrap();
+
+    let result = ClaudeCollector::new(temp.path().to_path_buf()).scan();
+
+    let task = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "empty-native")
+        .unwrap();
+    assert_eq!(task.title, "有效人工标题");
+    assert_eq!(task.title_source, "custom");
+}
+
+#[test]
 fn claude_collector_uses_sidecar_title_between_native_titles() {
     let temp = TempDir::new().unwrap();
     let projects = temp.path().join("projects/-tmp-alpha");
