@@ -20,7 +20,11 @@
 
 ## 架构决策 ADR
 
-当前无 ADR。只有已做出、难回退且影响架构 / 数据模型 / 安全边界的决策才建 ADR；文件按主题命名。
+| 文档 | 领域 | 状态 | 当前事实源 / 代码入口 |
+|---|---|---|---|
+| [adr/claude-session-title-read-scope.md](adr/claude-session-title-read-scope.md) | Claude 标题读取范围、缓存最小化与 sidecar 生命周期 | current | `crates/perch-core/src/collectors/claude.rs`；`SECURITY.md` |
+
+只有已做出、难回退且影响架构 / 数据模型 / 安全边界的决策才建 ADR；文件按主题命名。
 
 ## RFC
 

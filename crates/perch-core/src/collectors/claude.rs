@@ -113,6 +113,9 @@ impl ClaudeCollector {
             Some(stem) if !stem.is_empty() => stem.to_owned(),
             _ => return Ok(None),
         };
+        let sidecar_title = path.parent().and_then(|parent| {
+            self.load_sidecar_title(&parent.join(&session_id).join("custom-title.json"))
+        });
         let file = File::open(path)?;
         let reader = BufReader::new(file);
 
@@ -216,6 +219,8 @@ impl ClaudeCollector {
 
         let (title, title_source) = if let Some(title) = custom_title {
             (title, "custom")
+        } else if let Some(title) = sidecar_title {
+            (title, "custom")
         } else if let Some(title) = ai_title {
             (title, "ai")
         } else if let Some(title) = derived_title.flatten().filter(|title| !title.is_empty()) {
@@ -246,6 +251,12 @@ impl ClaudeCollector {
         task.refresh_fingerprint();
 
         Ok(Some(ParsedSession { task }))
+    }
+
+    fn load_sidecar_title(&self, path: &Path) -> Option<String> {
+        let raw = fs::read_to_string(path).ok()?;
+        let value: Value = serde_json::from_str(&raw).ok()?;
+        json_string(&value, "customTitle").filter(|title| !title.trim().is_empty())
     }
 
     /// Claude Code 在 `sessions/<pid>.json` 写入进程级实时状态。
