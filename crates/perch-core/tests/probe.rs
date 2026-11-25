@@ -62,6 +62,48 @@ fn probe_reports_changed_sources_once() {
 }
 
 #[test]
+fn probe_detects_claude_custom_title_sidecar_changes_only() {
+    use std::time::Instant;
+
+    let temp = TempDir::new().unwrap();
+    let paths = paths_under(temp.path());
+    let session_dir = paths.claude_dir.join("projects/-tmp-alpha/session-a");
+    fs::create_dir_all(&session_dir).unwrap();
+    let sidecar = session_dir.join("custom-title.json");
+    fs::write(&sidecar, "{\"customTitle\":\"旧标题\"}").unwrap();
+    let other_json = session_dir.join("other.json");
+    fs::write(&other_json, "{\"x\":1}").unwrap();
+
+    let base = Instant::now();
+    let mut probe = SourceProbe::new(&paths);
+    probe.reset_baseline(base);
+
+    sleep(Duration::from_millis(20));
+    fs::write(&other_json, "{\"x\":2}").unwrap();
+    assert!(probe.changed_sources(base).is_empty());
+
+    fs::write(&sidecar, "{\"customTitle\":\"新标题\"}").unwrap();
+    assert!(probe
+        .changed_sources(base + Duration::from_secs(15))
+        .is_empty());
+    assert_eq!(
+        probe.changed_sources(base + Duration::from_secs(21)),
+        vec!["claude"]
+    );
+
+    probe.defer_jsonl("claude", base + Duration::from_secs(21));
+    sleep(Duration::from_millis(20));
+    fs::remove_file(&sidecar).unwrap();
+    assert!(probe
+        .changed_sources(base + Duration::from_secs(51))
+        .is_empty());
+    assert_eq!(
+        probe.changed_sources(base + Duration::from_secs(66)),
+        vec!["claude"]
+    );
+}
+
+#[test]
 fn probe_detects_claude_session_state_changes() {
     let temp = TempDir::new().unwrap();
     let paths = paths_under(temp.path());

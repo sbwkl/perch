@@ -342,6 +342,83 @@ fn claude_collector_truncates_derived_title_to_sixty_chars() {
 }
 
 #[test]
+fn claude_collector_uses_sidecar_title_between_native_titles() {
+    let temp = TempDir::new().unwrap();
+    let projects = temp.path().join("projects/-tmp-alpha");
+    fs::create_dir_all(&projects).unwrap();
+    let session_dir = projects.join("sidecar");
+    fs::create_dir_all(&session_dir).unwrap();
+    let source = projects.join("sidecar.jsonl");
+    fs::write(
+        &source,
+        concat!(
+            "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\
+             \"text\":\"派生标题\"}]}}\n",
+            "{\"type\":\"ai-title\",\"aiTitle\":\"AI 标题\"}\n",
+            "{\"type\":\"custom-title\",\"customTitle\":\"JSONL 人工标题\"}\n"
+        ),
+    )
+    .unwrap();
+    let sidecar = session_dir.join("custom-title.json");
+    fs::write(&sidecar, "{\"customTitle\":\"Sidecar 标题\"}").unwrap();
+    let collector = ClaudeCollector::new(temp.path().to_path_buf());
+    let with_native = collector.scan();
+    let task = with_native
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sidecar")
+        .unwrap();
+    assert_eq!(task.title, "JSONL 人工标题");
+    assert_eq!(task.title_source, "custom");
+
+    fs::write(&source, "{\"type\":\"ai-title\",\"aiTitle\":\"AI 标题\"}\n").unwrap();
+    let with_sidecar = collector.scan();
+    let task = with_sidecar
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sidecar")
+        .unwrap();
+    assert_eq!(task.title, "Sidecar 标题");
+    assert_eq!(task.title_source, "custom");
+
+    fs::write(&sidecar, "{\"customTitle\":\"   \"}").unwrap();
+    let with_blank = collector.scan();
+    let task = with_blank
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sidecar")
+        .unwrap();
+    assert_eq!(task.title, "AI 标题");
+    assert_eq!(task.title_source, "ai");
+
+    fs::write(&sidecar, "{broken").unwrap();
+    let with_broken = collector.scan();
+    let task = with_broken
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sidecar")
+        .unwrap();
+    assert_eq!(task.title, "AI 标题");
+    assert_eq!(task.title_source, "ai");
+
+    fs::write(&sidecar, "{\"customTitle\":\"临时标题\"}").unwrap();
+    let final_sidecar_before = fs::read(&sidecar).unwrap();
+    fs::remove_file(&sidecar).unwrap();
+    let after_delete = collector.scan();
+    let task = after_delete
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sidecar")
+        .unwrap();
+    assert_eq!(task.title, "AI 标题");
+    assert_eq!(task.title_source, "ai");
+    assert_eq!(
+        final_sidecar_before,
+        "{\"customTitle\":\"临时标题\"}".as_bytes()
+    );
+}
+
+#[test]
 fn claude_collector_native_title_takes_over_derived_and_reverts_when_removed() {
     let temp = TempDir::new().unwrap();
     let projects = temp.path().join("projects/-tmp-alpha");

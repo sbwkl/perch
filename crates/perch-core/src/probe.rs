@@ -33,6 +33,7 @@ struct JsonlProbe {
     roots: Vec<PathBuf>,
     json_roots: Vec<PathBuf>,
     log_roots: Vec<PathBuf>,
+    named_json_roots: Vec<(PathBuf, &'static str)>,
     last_signature: (u64, u128),
 }
 
@@ -69,6 +70,7 @@ impl SourceProbe {
                 roots: vec![paths.claude_dir.join("projects")],
                 json_roots: vec![paths.claude_dir.join("sessions")],
                 log_roots: Vec::new(),
+                named_json_roots: vec![(paths.claude_dir.join("projects"), "custom-title.json")],
                 last_signature: (0, 0),
             },
             JsonlProbe {
@@ -79,6 +81,7 @@ impl SourceProbe {
                 ],
                 json_roots: Vec::new(),
                 log_roots: Vec::new(),
+                named_json_roots: Vec::new(),
                 last_signature: (0, 0),
             },
             JsonlProbe {
@@ -89,6 +92,7 @@ impl SourceProbe {
                 ],
                 json_roots: Vec::new(),
                 log_roots: Vec::new(),
+                named_json_roots: Vec::new(),
                 last_signature: (0, 0),
             },
             JsonlProbe {
@@ -99,6 +103,7 @@ impl SourceProbe {
                 ],
                 json_roots: Vec::new(),
                 log_roots: Vec::new(),
+                named_json_roots: Vec::new(),
                 last_signature: (0, 0),
             },
             JsonlProbe {
@@ -106,6 +111,7 @@ impl SourceProbe {
                 roots: vec![paths.minimax_dir.join("v2/sessions")],
                 json_roots: Vec::new(),
                 log_roots: Vec::new(),
+                named_json_roots: Vec::new(),
                 last_signature: (0, 0),
             },
             JsonlProbe {
@@ -116,6 +122,7 @@ impl SourceProbe {
                     paths.codebuddy_cn_logs_dir.clone(),
                     paths.codebuddy_ide_logs_dir.clone(),
                 ],
+                named_json_roots: Vec::new(),
                 last_signature: (0, 0),
             },
         ];
@@ -165,7 +172,7 @@ impl SourceProbe {
             }
         }
         for probe in &mut self.jsonl {
-            let signature = jsonl_signature(&probe.roots, &probe.json_roots, &probe.log_roots);
+            let signature = probe_signature(probe);
             if signature != probe.last_signature {
                 probe.last_signature = signature;
                 changed.push(probe.source);
@@ -191,7 +198,7 @@ impl SourceProbe {
                 continue;
             }
             self.deferred_jsonl.remove(probe.source);
-            let signature = jsonl_signature(&probe.roots, &probe.json_roots, &probe.log_roots);
+            let signature = probe_signature(probe);
             if signature != probe.last_signature {
                 probe.last_signature = signature;
                 self.pending_changes.insert(probe.source, now);
@@ -270,8 +277,7 @@ impl SourceProbe {
 
     fn reset_jsonl_baseline(&mut self) {
         for probe in &mut self.jsonl {
-            probe.last_signature =
-                jsonl_signature(&probe.roots, &probe.json_roots, &probe.log_roots);
+            probe.last_signature = probe_signature(probe);
         }
     }
 }
@@ -333,6 +339,14 @@ fn data_version(conn: &Connection) -> Option<i64> {
         .ok()
 }
 
+fn probe_signature(probe: &JsonlProbe) -> (u64, u128) {
+    let mut signature = jsonl_signature(&probe.roots, &probe.json_roots, &probe.log_roots);
+    for (root, basename) in &probe.named_json_roots {
+        add_named_json_signature(root, basename, &mut signature.0, &mut signature.1);
+    }
+    signature
+}
+
 fn jsonl_signature(
     roots: &[PathBuf],
     json_roots: &[PathBuf],
@@ -350,6 +364,31 @@ fn jsonl_signature(
         add_signature(root, "log", &mut count, &mut latest);
     }
     (count, latest)
+}
+
+fn add_named_json_signature(root: &Path, basename: &str, count: &mut u64, latest: &mut u128) {
+    if !root.is_dir() {
+        return;
+    }
+    for entry in WalkDir::new(root).into_iter().filter_map(Result::ok) {
+        let path = entry.path();
+        if !entry.file_type().is_file()
+            || path.file_name().and_then(|name| name.to_str()) != Some(basename)
+        {
+            continue;
+        }
+        *count += 1;
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+        let Ok(modified) = metadata.modified() else {
+            continue;
+        };
+        let Ok(duration) = modified.duration_since(UNIX_EPOCH) else {
+            continue;
+        };
+        *latest = (*latest).max(duration.as_nanos());
+    }
 }
 
 fn add_signature(root: &Path, extension: &str, count: &mut u64, latest: &mut u128) {
