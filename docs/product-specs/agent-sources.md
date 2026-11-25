@@ -6,7 +6,7 @@
 | 文档类型 | 产品规格 |
 | 当前版本 | v0.1.0 |
 | 适用范围 | 当前来源覆盖行为与验收规格 |
-| 关联 | [CHG-0004](../exec-plans/completed/CHG-0004-usage-ledger-agents.md)、[侧栏来源溢出修复](../exec-plans/completed/2026-11-22-sidebar-source-overflow.md)、[真实体验确定性缺陷修复](../exec-plans/completed/2026-11-22-real-ux-clarity-fixes.md)、[P0/P1 全量修复](../exec-plans/completed/2026-11-22-real-ux-p0-p1.md)、[侧边栏界面收敛](../exec-plans/completed/2026-11-22-sidebar-simplification.md)、[近 7 天侧栏排序](../exec-plans/completed/2026-11-22-sidebar-recent-activity-order.md)、[删除临时目录后缀](../exec-plans/completed/2026-11-22-remove-temporary-workspace-suffix.md)、[删除 workspace 名称后缀](../exec-plans/completed/2026-11-22-remove-workspace-name-suffix.md)、[删除筛选 chip](../exec-plans/completed/2026-11-22-remove-filter-chips.md)、[代码审核修复](../exec-plans/completed/2026-11-23-code-review-fixes.md)、[Qoder 会话深链](../exec-plans/completed/2026-11-23-qoder-session-deeplink.md)、[Claude 会话标题](../exec-plans/completed/2026-11-25-claude-session-titles.md) |
+| 关联 | [CHG-0004](../exec-plans/completed/CHG-0004-usage-ledger-agents.md)、[侧栏来源溢出修复](../exec-plans/completed/2026-11-22-sidebar-source-overflow.md)、[真实体验确定性缺陷修复](../exec-plans/completed/2026-11-22-real-ux-clarity-fixes.md)、[P0/P1 全量修复](../exec-plans/completed/2026-11-22-real-ux-p0-p1.md)、[侧边栏界面收敛](../exec-plans/completed/2026-11-22-sidebar-simplification.md)、[近 7 天侧栏排序](../exec-plans/completed/2026-11-22-sidebar-recent-activity-order.md)、[删除临时目录后缀](../exec-plans/completed/2026-11-22-remove-temporary-workspace-suffix.md)、[删除 workspace 名称后缀](../exec-plans/completed/2026-11-22-remove-workspace-name-suffix.md)、[删除筛选 chip](../exec-plans/completed/2026-11-22-remove-filter-chips.md)、[代码审核修复](../exec-plans/completed/2026-11-23-code-review-fixes.md)、[Qoder 会话深链](../exec-plans/completed/2026-11-23-qoder-session-deeplink.md)、[Claude 会话标题](../exec-plans/completed/2026-11-25-claude-session-titles.md)、[Codex 子会话](../exec-plans/active/2026-11-25-codex-subagent-sessions.md) |
 
 ## 1. 摘要
 
@@ -48,6 +48,7 @@ Perch 当前覆盖 11 个本地 AI 编码 Agent 来源，与 usage-ledger 的来
 - R8：When 用户切换任务视图、workspace 或来源筛选, the system shall 不保留不属于当前列表的 Inspector 选中任务；When 搜索结果打开对应任务, the system shall 仍定位并选中该任务。
 - R9：When 用量报告打开, the system shall 标识当前报告视图为全局报告、提供返回任务路径，且不启动外部浏览器；任务分组不显示报告导航项。
 - R10：While 当前 workspace / 来源筛选生效, the system shall 在搜索弹层明示搜索作用域；When 无筛选时, the system shall 明示忽略任务视图并搜索全部会话（含归档）。
+- R21：When Codex 的子代理会话或侧聊会话被采集, the system shall 将其识别为产生它的主会话的子会话：默认不进入主列表，不计入来源 / workspace / 最近 / 更早计数，但仍保留在快照中、可被搜索，并在详情与搜索结果中标注「子会话」；子代理会话缺少正式标题时以代理昵称派生「子代理 · <昵称>」标题；用户自行 fork / 续接的普通 Codex 会话不受影响，仍按主任务展示与计数。
 
 验证位置：R1–R5 见来源采集器 / probe / continue 测试与当前代码核对；R6–R7 见侧栏布局实机验证；R8–R20 见本次变更文档的 core / Tauri 测试、demo UI 验收与 `npm run check`；R3 / R12 的事件与提示一致性见 [代码审核修复](../exec-plans/completed/2026-11-23-code-review-fixes.md) 单测与实机验证。
 
@@ -67,6 +68,7 @@ Perch 当前覆盖 11 个本地 AI 编码 Agent 来源，与 usage-ledger 的来
 | 2026-11-23 | PR #9 代码审核修复 | 已验证 | [../exec-plans/completed/2026-11-23-code-review-fixes.md](../exec-plans/completed/2026-11-23-code-review-fixes.md) |
 | 2026-11-23 | Qoder 会话深链与 App-only 继续工作 | 已验证 | [../exec-plans/completed/2026-11-23-qoder-session-deeplink.md](../exec-plans/completed/2026-11-23-qoder-session-deeplink.md) |
 | 2026-11-25 | Claude 会话标题派生与人工标题 sidecar | 已验证 | [../exec-plans/completed/2026-11-25-claude-session-titles.md](../exec-plans/completed/2026-11-25-claude-session-titles.md) |
+| 2026-11-25 | Codex 子代理 / 侧聊会话归为子会话 | 开发中 | [../exec-plans/active/2026-11-25-codex-subagent-sessions.md](../exec-plans/active/2026-11-25-codex-subagent-sessions.md) |
 | 2026-11-24 | 继续工作入口收敛为单按钮（打开 / 激活）与来源品牌色 | 已验证 | [../exec-plans/completed/2026-11-24-continue-work-affordance.md](../exec-plans/completed/2026-11-24-continue-work-affordance.md) |
 
 ## 6. 链接
