@@ -817,6 +817,267 @@ fn codex_running_status_follows_rollout_tail() {
     );
 }
 
+/// 写入一条合成 Codex rollout 首行（session_meta），payload 为紧凑 JSON 字符串。
+fn write_codex_rollout(root: &Path, relative: &str, payload: &str) {
+    let file = root.join(relative);
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+    fs::write(
+        &file,
+        format!(
+            "{{\"timestamp\":\"2026-11-01T08:00:00Z\",\"type\":\"session_meta\",\
+             \"payload\":{payload}}}\n"
+        ),
+    )
+    .unwrap();
+}
+
+#[test]
+fn codex_subagent_sessions_link_to_parent_thread() {
+    let temp = TempDir::new().unwrap();
+    write_codex_rollout(
+        temp.path(),
+        "sessions/2026/11/rollout-main.jsonl",
+        "{\"id\":\"main-a\",\"cwd\":\"/Users/x/work/beta\",\"originator\":\"Codex Desktop\",\
+         \"thread_source\":\"user\"}",
+    );
+    write_codex_rollout(
+        temp.path(),
+        "sessions/2026/11/rollout-sub.jsonl",
+        "{\"id\":\"sub-a\",\"session_id\":\"main-a\",\"cwd\":\"/Users/x/work/beta\",\
+         \"originator\":\"codex-tui\",\"thread_source\":\"subagent\",\
+         \"parent_thread_id\":\"main-a\",\"source\":{\"subagent\":{}}}",
+    );
+
+    let result = CodexCollector::new(temp.path().to_path_buf()).scan();
+
+    assert_eq!(result.status, SourceScanStatus::Ok, "{:?}", result.error);
+    assert_eq!(result.tasks.len(), 2, "子会话仍保留在快照中");
+    let child = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sub-a")
+        .unwrap();
+    assert_eq!(child.parent_key.as_deref(), Some("codex:main-a"));
+    let parent = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "main-a")
+        .unwrap();
+    assert_eq!(parent.parent_key, None, "主任务不得带父子关系");
+}
+
+#[test]
+fn codex_side_chat_sessions_link_to_parent_thread() {
+    let temp = TempDir::new().unwrap();
+    write_codex_rollout(
+        temp.path(),
+        "sessions/2026/11/rollout-main.jsonl",
+        "{\"id\":\"main-b\",\"cwd\":\"/Users/x/work/beta\",\"originator\":\"Codex Desktop\",\
+         \"thread_source\":\"user\"}",
+    );
+    write_codex_rollout(
+        temp.path(),
+        "sessions/2026/11/rollout-side-forked.jsonl",
+        "{\"id\":\"side-b\",\"cwd\":\"/Users/x/work/beta\",\"originator\":\"codex-tui\",\
+         \"thread_source\":\"tui_side_chat\",\"forked_from_id\":\"main-b\"}",
+    );
+    write_codex_rollout(
+        temp.path(),
+        "sessions/2026/11/rollout-side-history.jsonl",
+        "{\"id\":\"side-b2\",\"cwd\":\"/Users/x/work/beta\",\"originator\":\"codex-tui\",\
+         \"thread_source\":\"tui_side_chat\",\"history_base\":{\"thread_id\":\"main-b\"}}",
+    );
+
+    let result = CodexCollector::new(temp.path().to_path_buf()).scan();
+
+    assert_eq!(result.status, SourceScanStatus::Ok, "{:?}", result.error);
+    assert_eq!(result.tasks.len(), 3);
+    let forked = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "side-b")
+        .unwrap();
+    assert_eq!(forked.parent_key.as_deref(), Some("codex:main-b"));
+    let history = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "side-b2")
+        .unwrap();
+    assert_eq!(history.parent_key.as_deref(), Some("codex:main-b"));
+}
+
+#[test]
+fn codex_subagent_falls_back_to_forked_from_id() {
+    let temp = TempDir::new().unwrap();
+    write_codex_rollout(
+        temp.path(),
+        "sessions/2026/11/rollout-main.jsonl",
+        "{\"id\":\"main-c\",\"cwd\":\"/Users/x/work/beta\",\"originator\":\"Codex Desktop\",\
+         \"thread_source\":\"user\"}",
+    );
+    write_codex_rollout(
+        temp.path(),
+        "sessions/2026/11/rollout-sub-forked.jsonl",
+        "{\"id\":\"sub-c\",\"cwd\":\"/Users/x/work/beta\",\"originator\":\"codex-tui\",\
+         \"thread_source\":\"subagent\",\"forked_from_id\":\"main-c\"}",
+    );
+    // thread_source 缺失但 source 显式声明 subagent 的 rollout，仍按子会话兜底。
+    write_codex_rollout(
+        temp.path(),
+        "sessions/2026/11/rollout-sub-source.jsonl",
+        "{\"id\":\"sub-c2\",\"cwd\":\"/Users/x/work/beta\",\"originator\":\"codex-tui\",\
+         \"forked_from_id\":\"main-c\",\"source\":{\"subagent\":{}}}",
+    );
+
+    let result = CodexCollector::new(temp.path().to_path_buf()).scan();
+
+    assert_eq!(result.status, SourceScanStatus::Ok, "{:?}", result.error);
+    assert_eq!(result.tasks.len(), 3);
+    let forked = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sub-c")
+        .unwrap();
+    assert_eq!(forked.parent_key.as_deref(), Some("codex:main-c"));
+    let source = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sub-c2")
+        .unwrap();
+    assert_eq!(source.parent_key.as_deref(), Some("codex:main-c"));
+}
+
+#[test]
+fn codex_user_automation_and_unsourced_forks_stay_top_level() {
+    let temp = TempDir::new().unwrap();
+    write_codex_rollout(
+        temp.path(),
+        "sessions/2026/11/rollout-user-forked.jsonl",
+        "{\"id\":\"user-d\",\"cwd\":\"/Users/x/work/beta\",\"originator\":\"Codex Desktop\",\
+         \"thread_source\":\"user\",\"forked_from_id\":\"main-d\"}",
+    );
+    write_codex_rollout(
+        temp.path(),
+        "sessions/2026/11/rollout-automation-forked.jsonl",
+        "{\"id\":\"auto-d\",\"cwd\":\"/Users/x/work/beta\",\"originator\":\"codex_exec\",\
+         \"thread_source\":\"automation\",\"forked_from_id\":\"main-d\"}",
+    );
+    // 真实数据里存在 thread_source 缺失却带 forked_from_id 的普通会话，不得误判为子会话。
+    write_codex_rollout(
+        temp.path(),
+        "sessions/2026/11/rollout-unsourced-forked.jsonl",
+        "{\"id\":\"plain-d\",\"cwd\":\"/Users/x/work/beta\",\"originator\":\"codex-tui\",\
+         \"forked_from_id\":\"main-d\"}",
+    );
+
+    let result = CodexCollector::new(temp.path().to_path_buf()).scan();
+
+    assert_eq!(result.status, SourceScanStatus::Ok, "{:?}", result.error);
+    assert_eq!(result.tasks.len(), 3);
+    for source_id in ["user-d", "auto-d", "plain-d"] {
+        let task = result
+            .tasks
+            .iter()
+            .find(|task| task.source_id == source_id)
+            .unwrap();
+        assert_eq!(task.parent_key, None, "{source_id} 必须仍是主任务");
+    }
+}
+
+#[test]
+fn codex_self_or_blank_parent_ids_do_not_link() {
+    let temp = TempDir::new().unwrap();
+    // parent_thread_id 等于自身 id（以 payload.id 判定自身，session_id 指向父不算）。
+    write_codex_rollout(
+        temp.path(),
+        "sessions/2026/11/rollout-self.jsonl",
+        "{\"id\":\"sub-e\",\"session_id\":\"sub-e\",\"cwd\":\"/Users/x/work/beta\",\
+         \"originator\":\"codex-tui\",\"thread_source\":\"subagent\",\
+         \"parent_thread_id\":\"sub-e\"}",
+    );
+    write_codex_rollout(
+        temp.path(),
+        "sessions/2026/11/rollout-blank.jsonl",
+        "{\"id\":\"sub-e2\",\"cwd\":\"/Users/x/work/beta\",\"originator\":\"codex-tui\",\
+         \"thread_source\":\"subagent\",\"parent_thread_id\":\"   \"}",
+    );
+
+    let result = CodexCollector::new(temp.path().to_path_buf()).scan();
+
+    assert_eq!(result.status, SourceScanStatus::Ok, "{:?}", result.error);
+    assert_eq!(result.tasks.len(), 2);
+    for source_id in ["sub-e", "sub-e2"] {
+        let task = result
+            .tasks
+            .iter()
+            .find(|task| task.source_id == source_id)
+            .unwrap();
+        assert_eq!(task.parent_key, None, "{source_id} 不应建立父子关系");
+    }
+}
+
+#[test]
+fn codex_children_survive_missing_parents_depth_and_archives() {
+    let temp = TempDir::new().unwrap();
+    write_codex_rollout(
+        temp.path(),
+        "sessions/2026/11/rollout-main.jsonl",
+        "{\"id\":\"main-f\",\"cwd\":\"/Users/x/work/beta\",\"originator\":\"Codex Desktop\",\
+         \"thread_source\":\"user\"}",
+    );
+    // 二级子代理以即时父为准，而不是根主会话。
+    write_codex_rollout(
+        temp.path(),
+        "sessions/2026/11/rollout-sub.jsonl",
+        "{\"id\":\"sub-f\",\"cwd\":\"/Users/x/work/beta\",\"originator\":\"codex-tui\",\
+         \"thread_source\":\"subagent\",\"parent_thread_id\":\"main-f\"}",
+    );
+    write_codex_rollout(
+        temp.path(),
+        "sessions/2026/11/rollout-grandchild.jsonl",
+        "{\"id\":\"sub-f2\",\"cwd\":\"/Users/x/work/beta\",\"originator\":\"codex-tui\",\
+         \"thread_source\":\"subagent\",\"parent_thread_id\":\"sub-f\"}",
+    );
+    // 父会话不在本次扫描结果中，父子关系照常写入（与 Qoder/Cline/OpenCode 一致）。
+    write_codex_rollout(
+        temp.path(),
+        "sessions/2026/11/rollout-orphan.jsonl",
+        "{\"id\":\"sub-ghost\",\"cwd\":\"/Users/x/work/beta\",\"originator\":\"codex-tui\",\
+         \"thread_source\":\"subagent\",\"parent_thread_id\":\"ghost-parent\"}",
+    );
+    // 归档目录下的子代理会话同样归类。
+    write_codex_rollout(
+        temp.path(),
+        "archived_sessions/rollout-sub-archived.jsonl",
+        "{\"id\":\"sub-arch\",\"cwd\":\"/Users/x/work/beta\",\"originator\":\"codex-tui\",\
+         \"thread_source\":\"subagent\",\"parent_thread_id\":\"main-f\"}",
+    );
+
+    let result = CodexCollector::new(temp.path().to_path_buf()).scan();
+
+    assert_eq!(result.status, SourceScanStatus::Ok, "{:?}", result.error);
+    assert_eq!(result.tasks.len(), 5);
+    let grandchild = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sub-f2")
+        .unwrap();
+    assert_eq!(grandchild.parent_key.as_deref(), Some("codex:sub-f"));
+    let orphan = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sub-ghost")
+        .unwrap();
+    assert_eq!(orphan.parent_key.as_deref(), Some("codex:ghost-parent"));
+    let archived = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sub-arch")
+        .unwrap();
+    assert_eq!(archived.parent_key.as_deref(), Some("codex:main-f"));
+    assert!(archived.source_archived);
+}
+
 fn create_session_db(path: &Path) {
     let conn = Connection::open(path).unwrap();
     conn.execute_batch(

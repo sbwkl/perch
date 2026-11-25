@@ -161,6 +161,10 @@ impl CodexCollector {
             .flatten()
             .reduce(f64::max);
 
+            let parent_key = entry
+                .parent_thread()
+                .map(|parent| format!("{SOURCE_CODEX}:{parent}"));
+
             let mut task = TaskSnapshot::new(SOURCE_CODEX, &entry.id);
             task.title = title;
             task.title_source = title_source.to_owned();
@@ -173,6 +177,7 @@ impl CodexCollector {
             task.source_archived = entry.archived;
             task.model = entry.model;
             task.agent_kind = Some(agent_kind.to_owned());
+            task.parent_key = parent_key;
             task.resume_cmd =
                 shell_cd_command(entry.cwd.as_deref(), &format!("codex resume {}", entry.id));
             task.refresh_fingerprint();
@@ -214,6 +219,42 @@ struct CodexEntry {
     last_at: Option<f64>,
     tail_running: Option<bool>,
     archived: bool,
+    parent_thread_id: Option<String>,
+    forked_from_id: Option<String>,
+    history_base_thread_id: Option<String>,
+    source_is_subagent: bool,
+}
+
+impl CodexEntry {
+    fn is_subagent_thread(&self) -> bool {
+        self.thread_source
+            .as_deref()
+            .is_some_and(|value| value.eq_ignore_ascii_case("subagent"))
+            || self.source_is_subagent
+    }
+
+    fn is_side_chat_thread(&self) -> bool {
+        self.thread_source
+            .as_deref()
+            .is_some_and(|value| value.eq_ignore_ascii_case("tui_side_chat"))
+    }
+
+    /// 仅 subagent / tui_side_chat 会话与主会话建立父子关系；
+    /// user / automation / 来源缺失的会话即使带 forked_from_id 也保持主任务。
+    fn parent_thread(&self) -> Option<&str> {
+        let candidate = if self.is_subagent_thread() {
+            self.parent_thread_id
+                .as_deref()
+                .or(self.forked_from_id.as_deref())
+        } else if self.is_side_chat_thread() {
+            self.forked_from_id
+                .as_deref()
+                .or(self.history_base_thread_id.as_deref())
+        } else {
+            None
+        };
+        candidate.filter(|parent| !parent.is_empty() && *parent != self.id)
+    }
 }
 
 struct IndexEntry {
@@ -263,6 +304,18 @@ fn read_rollout_meta(path: &Path) -> crate::Result<Option<CodexEntry>> {
         last_at: tail.last_at,
         tail_running: tail.running,
         archived: false,
+        parent_thread_id: json_string(payload, "parent_thread_id"),
+        forked_from_id: json_string(payload, "forked_from_id"),
+        history_base_thread_id: payload
+            .pointer("/history_base/thread_id")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned),
+        source_is_subagent: payload
+            .get("source")
+            .and_then(Value::as_object)
+            .is_some_and(|source| source.contains_key("subagent")),
     }))
 }
 
