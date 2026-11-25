@@ -16,8 +16,10 @@ Codex 会把子代理派生的会话也当作独立任务采集。这些会话�
 
 ## 目标行为
 
-- 识别：`thread_source = subagent`（或首行 `source` 为含 `subagent` 键的对象）的 rollout 是
-  子代理会话；`thread_source = tui_side_chat` 的侧聊会话同为子会话。
+- 识别：`thread_source = subagent` 的 rollout 是子代理会话；仅当 `thread_source` 缺失时，
+  才以首行 `source` 为含 `subagent` 键的对象兜底判定，`thread_source` 为其他值
+  （如 `user` / `automation`）时一律不兜底。`thread_source = tui_side_chat` 的侧聊会话
+  同为子会话。
 - 父链接：subagent 优先 `parent_thread_id`、缺省退 `forked_from_id`；side_chat 优先
   `forked_from_id`、缺省退 `history_base.thread_id`。父 id 非空且不等于自身 id 才写入
   `parent_key`（自身以 rollout `payload.id` 为准）；父会话不在本次扫描结果中时照样写入。
@@ -54,6 +56,8 @@ Codex 会把子代理派生的会话也当作独立任务采集。这些会话�
 5. 归档目录下的子代理会话同样按子会话处理。
 6. subagent 无 `agent_nickname` 时标题回退「新会话」（`fallback`）。
 7. 所有 fixture 只用合成数据；扫描前后源文件字节一致。
+8. `thread_source` 明确为其他值（如 `user`）时，即使首行 `source` 含 `subagent` 键，
+   也不建父子关系、不派生昵称标题（`source` 兜底仅在 `thread_source` 缺失时生效）。
 
 ## 回滚
 
@@ -71,3 +75,7 @@ Codex 会把子代理派生的会话也当作独立任务采集。这些会话�
 - 2026-11-25：SOURCES.md Codex「子会话与自动化」与「标题优先级」、产品规格 R21、FAQ 子会话清单
   与 Claude 表述修正、GLOSSARY「子会话」词条、CHANGELOG 条目已同步，措辞与 `codex.rs`
   实现逐条核对一致。
+- 2026-11-25：按规格收紧 `source.subagent` 兜底门控（仅 `thread_source` 缺失时生效），
+  新增用例 `codex_explicit_thread_source_blocks_subagent_source_fallback`；dedupe 用例
+  升级为快照全部 fixture 文件，断言扫描前后源文件字节一致。SOURCES.md 与本文档的识别口径
+  同步改为门控语义。

@@ -1,5 +1,6 @@
+use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use perch_core::collectors::antigravity::AntigravityCollector;
 use perch_core::collectors::claude::ClaudeCollector;
@@ -554,6 +555,25 @@ fn claude_collector_reads_titles_todos_and_ignores_subagents() {
     assert_eq!(before, after, "collector must not modify Claude JSONL");
 }
 
+/// 递归收集 root 下所有普通文件的字节内容（相对路径 → 内容），
+/// 用于断言扫描前后源文件字节一致（只读红线）。
+fn snapshot_tree(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+    fn walk(dir: &Path, root: &Path, out: &mut BTreeMap<PathBuf, Vec<u8>>) {
+        for entry in fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                walk(&path, root, out);
+            } else if path.is_file() {
+                let relative = path.strip_prefix(root).unwrap().to_path_buf();
+                out.insert(relative, fs::read(&path).unwrap());
+            }
+        }
+    }
+    let mut out = BTreeMap::new();
+    walk(root, root, &mut out);
+    out
+}
+
 fn write_codex_fixture(root: &Path) {
     let active = root.join("sessions/2026/10/rollout-a.jsonl");
     fs::create_dir_all(active.parent().unwrap()).unwrap();
@@ -622,7 +642,8 @@ fn write_codex_fixture(root: &Path) {
 fn codex_collector_dedupes_rollouts_and_applies_goal_status() {
     let temp = TempDir::new().unwrap();
     write_codex_fixture(temp.path());
-    let before = fs::read(temp.path().join("session_index.jsonl")).unwrap();
+    // 快照全部源文件（rollout / 索引 / goals sqlite），断言扫描前后字节一致。
+    let before = snapshot_tree(temp.path());
 
     let result = CodexCollector::new(temp.path().to_path_buf()).scan();
 
@@ -656,8 +677,8 @@ fn codex_collector_dedupes_rollouts_and_applies_goal_status() {
     assert_eq!(second.status_raw.as_deref(), Some("blocked"));
     assert_eq!(second.agent_kind.as_deref(), Some("automation"));
 
-    let after = fs::read(temp.path().join("session_index.jsonl")).unwrap();
-    assert_eq!(before, after);
+    let after = snapshot_tree(temp.path());
+    assert_eq!(before, after, "扫描不得修改任何源文件的字节");
 }
 
 #[test]
@@ -982,6 +1003,34 @@ fn codex_user_automation_and_unsourced_forks_stay_top_level() {
             .unwrap();
         assert_eq!(task.parent_key, None, "{source_id} 必须仍是主任务");
     }
+}
+
+#[test]
+fn codex_explicit_thread_source_blocks_subagent_source_fallback() {
+    let temp = TempDir::new().unwrap();
+    // thread_source 明确为 user 时，即使首行 source 含 subagent 键也不按子代理处理：
+    // 不建父子关系，也不派生昵称标题（source 兜底仅在 thread_source 缺失时生效）。
+    write_codex_rollout(
+        temp.path(),
+        "sessions/2026/11/rollout-user-subsource.jsonl",
+        "{\"id\":\"user-g\",\"session_id\":\"main-g\",\"cwd\":\"/Users/x/work/beta\",\
+         \"originator\":\"codex-tui\",\"thread_source\":\"user\",\
+         \"parent_thread_id\":\"main-g\",\"source\":{\"subagent\":{}},\
+         \"agent_nickname\":\"巡检员\"}",
+    );
+
+    let result = CodexCollector::new(temp.path().to_path_buf()).scan();
+
+    assert_eq!(result.status, SourceScanStatus::Ok, "{:?}", result.error);
+    assert_eq!(result.tasks.len(), 1);
+    let task = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "user-g")
+        .unwrap();
+    assert_eq!(task.parent_key, None, "显式 user 来源不得建父子关系");
+    assert_eq!(task.title, "新会话", "显式 user 来源不得派生昵称标题");
+    assert_eq!(task.title_source, "fallback");
 }
 
 #[test]

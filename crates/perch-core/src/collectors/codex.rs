@@ -112,17 +112,16 @@ impl CodexCollector {
                 .filter(|value| !value.is_empty())
             {
                 (truncate_chars(objective, 240), "source")
-            } else if let Some(nickname) = entry
-                .agent_nickname
-                .as_deref()
-                .filter(|_| entry.is_subagent_thread())
-            {
-                // 子代理会话大多没有正式标题，用代理昵称派生可辨识标题，
-                // 避免搜索结果里出现大量无差别的「新会话」。
-                (
-                    truncate_chars(&format!("子代理 · {nickname}"), 240),
-                    "derived",
-                )
+            } else if entry.is_subagent_thread() {
+                match entry.agent_nickname.as_deref() {
+                    // 子代理会话大多没有正式标题，用代理昵称派生可辨识标题，
+                    // 避免搜索结果里出现大量无差别的「新会话」。
+                    Some(nickname) => (
+                        truncate_chars(&format!("子代理 · {nickname}"), 240),
+                        "derived",
+                    ),
+                    None => (fallback_title(), "fallback"),
+                }
             } else {
                 (fallback_title(), "fallback")
             };
@@ -238,11 +237,14 @@ struct CodexEntry {
 }
 
 impl CodexEntry {
+    /// `thread_source` 存在时唯一可信：只有 `subagent` 算子代理；
+    /// 仅当其缺失时才以首行 `source` 含 `subagent` 键兜底，
+    /// 显式来源（`user` / `automation` 等）一律不凭 `source` 对象改判。
     fn is_subagent_thread(&self) -> bool {
-        self.thread_source
-            .as_deref()
-            .is_some_and(|value| value.eq_ignore_ascii_case("subagent"))
-            || self.source_is_subagent
+        match self.thread_source.as_deref() {
+            Some(value) => value.eq_ignore_ascii_case("subagent"),
+            None => self.source_is_subagent,
+        }
     }
 
     fn is_side_chat_thread(&self) -> bool {

@@ -188,8 +188,10 @@ Claude Code 在 `~/.claude/sessions/<pid>.json` 写入运行中进程的实时�
 **子会话与自动化**
 
 - `thread_source = automation` → `agent_kind = automation`，默认不进入主列表。
-- `thread_source = subagent`（或首行 `source` 为含 `subagent` 键的对象）→ 子代理会话；
-  父 id 优先 `parent_thread_id`，缺省退 `forked_from_id`。
+- `thread_source = subagent`（大小写不敏感）→ 子代理会话；父 id 优先 `parent_thread_id`，
+  缺省退 `forked_from_id`。仅当 `thread_source` 缺失时，才以首行 `source` 为含 `subagent`
+  键的对象兜底判定；`thread_source` 为其他值（如 `user` / `automation`）时即使带
+  `source.subagent` 也不算子代理。
 - `thread_source = tui_side_chat` → 侧聊会话，同为子会话；父 id 优先 `forked_from_id`，
   缺省退 `history_base.thread_id`。
 - 父 id 非空且不等于自身 id 才写入 `parent_key`（`codex:<父 id>`）；父会话不在本次扫描结果中时
