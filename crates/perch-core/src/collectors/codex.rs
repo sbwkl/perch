@@ -112,6 +112,17 @@ impl CodexCollector {
                 .filter(|value| !value.is_empty())
             {
                 (truncate_chars(objective, 240), "source")
+            } else if let Some(nickname) = entry
+                .agent_nickname
+                .as_deref()
+                .filter(|_| entry.is_subagent_thread())
+            {
+                // 子代理会话大多没有正式标题，用代理昵称派生可辨识标题，
+                // 避免搜索结果里出现大量无差别的「新会话」。
+                (
+                    truncate_chars(&format!("子代理 · {nickname}"), 240),
+                    "derived",
+                )
             } else {
                 (fallback_title(), "fallback")
             };
@@ -222,6 +233,7 @@ struct CodexEntry {
     parent_thread_id: Option<String>,
     forked_from_id: Option<String>,
     history_base_thread_id: Option<String>,
+    agent_nickname: Option<String>,
     source_is_subagent: bool,
 }
 
@@ -312,6 +324,7 @@ fn read_rollout_meta(path: &Path) -> crate::Result<Option<CodexEntry>> {
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(ToOwned::to_owned),
+        agent_nickname: json_string(payload, "agent_nickname"),
         source_is_subagent: payload
             .get("source")
             .and_then(Value::as_object)

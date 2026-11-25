@@ -1078,6 +1078,98 @@ fn codex_children_survive_missing_parents_depth_and_archives() {
     assert!(archived.source_archived);
 }
 
+#[test]
+fn codex_subagent_without_formal_title_derives_nickname_title() {
+    let temp = TempDir::new().unwrap();
+    // thread_source=subagent 且带 agent_nickname，无索引/目标标题 → 派生标题。
+    write_codex_rollout(
+        temp.path(),
+        "sessions/2026/11/rollout-sub-nick.jsonl",
+        "{\"id\":\"sub-nick\",\"session_id\":\"main-nick\",\"cwd\":\"/Users/x/work/beta\",\
+         \"originator\":\"codex-tui\",\"thread_source\":\"subagent\",\
+         \"parent_thread_id\":\"main-nick\",\"agent_nickname\":\"巡检员\"}",
+    );
+    // thread_source 缺失但 source 声明 subagent 的会话同样按子代理派生。
+    write_codex_rollout(
+        temp.path(),
+        "sessions/2026/11/rollout-sub-source-nick.jsonl",
+        "{\"id\":\"sub-nick2\",\"session_id\":\"main-nick\",\"cwd\":\"/Users/x/work/beta\",\
+         \"originator\":\"codex-tui\",\"parent_thread_id\":\"main-nick\",\
+         \"source\":{\"subagent\":{}},\"agent_nickname\":\"哨兵\"}",
+    );
+
+    let result = CodexCollector::new(temp.path().to_path_buf()).scan();
+
+    assert_eq!(result.status, SourceScanStatus::Ok, "{:?}", result.error);
+    assert_eq!(result.tasks.len(), 2);
+    let nicked = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sub-nick")
+        .unwrap();
+    assert_eq!(nicked.title, "子代理 · 巡检员");
+    assert_eq!(nicked.title_source, "derived");
+    let sourced = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sub-nick2")
+        .unwrap();
+    assert_eq!(sourced.title, "子代理 · 哨兵");
+    assert_eq!(sourced.title_source, "derived");
+}
+
+#[test]
+fn codex_index_title_beats_subagent_nickname() {
+    let temp = TempDir::new().unwrap();
+    write_codex_rollout(
+        temp.path(),
+        "sessions/2026/11/rollout-sub-named.jsonl",
+        "{\"id\":\"sub-named\",\"session_id\":\"main-named\",\"cwd\":\"/Users/x/work/beta\",\
+         \"originator\":\"codex-tui\",\"thread_source\":\"subagent\",\
+         \"parent_thread_id\":\"main-named\",\"agent_nickname\":\"巡检员\"}",
+    );
+    fs::write(
+        temp.path().join("session_index.jsonl"),
+        "{\"id\":\"sub-named\",\"thread_name\":\"索引标题\",\"updated_at\":\"2026-11-02T00:00:00Z\"}\n",
+    )
+    .unwrap();
+
+    let result = CodexCollector::new(temp.path().to_path_buf()).scan();
+
+    assert_eq!(result.status, SourceScanStatus::Ok, "{:?}", result.error);
+    let named = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sub-named")
+        .unwrap();
+    assert_eq!(named.title, "索引标题");
+    assert_eq!(named.title_source, "source");
+}
+
+#[test]
+fn codex_subagent_without_nickname_keeps_fallback_title() {
+    let temp = TempDir::new().unwrap();
+    // 子代理缺少 agent_nickname 时不得派生，仍回退「新会话」。
+    write_codex_rollout(
+        temp.path(),
+        "sessions/2026/11/rollout-sub-plain.jsonl",
+        "{\"id\":\"sub-plain\",\"session_id\":\"main-plain\",\"cwd\":\"/Users/x/work/beta\",\
+         \"originator\":\"codex-tui\",\"thread_source\":\"subagent\",\
+         \"parent_thread_id\":\"main-plain\"}",
+    );
+
+    let result = CodexCollector::new(temp.path().to_path_buf()).scan();
+
+    assert_eq!(result.status, SourceScanStatus::Ok, "{:?}", result.error);
+    let plain = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sub-plain")
+        .unwrap();
+    assert_eq!(plain.title, "新会话");
+    assert_eq!(plain.title_source, "fallback");
+}
+
 fn create_session_db(path: &Path) {
     let conn = Connection::open(path).unwrap();
     conn.execute_batch(
