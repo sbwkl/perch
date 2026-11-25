@@ -113,7 +113,8 @@
   的文件跳过。
 - 从 JSONL 中读取：`cwd`、`gitBranch`、`timestamp`、`type`、`message.model`、`isSidechain`。
 - `message_count` = 非 sidechain 的 user + assistant 记录数。
-- 标题：最后一条 `custom-title.customTitle` → 最后一条 `ai-title.aiTitle` → `新会话`。
+- 标题：最后一条 `custom-title.customTitle` → 最后一条 `ai-title.aiTitle` → 首条候选用户消息派生的单行标题（`derived`，60 字符截断）→ `新会话`。
+- 首条候选跳过 sidechain、`isMeta`、`toolUseResult`、系统注入包装、slash command 包装；若该候选清洗后为空，立即回退 `新会话`，不再查找后续消息。不使用 `agentName`、`summary` 或 `history.jsonl`。
 - 时间：首/末记录 timestamp，缺失用文件 mtime。
 
 **状态**
@@ -138,7 +139,7 @@ Claude Code 在 `~/.claude/sessions/<pid>.json` 写入运行中进程的实时�
 - 子会话（`subagents/`）暂不进入主列表，也不读取其待办。
 - 没有运行/完成状态。
 
-**变化探测**：`projects/` 下 JSONL 的文件数 + 最新 mtime 签名。
+**变化探测**：`projects/` 下 JSONL 的文件数 + 最新 mtime 签名；人工标题 sidecar 按 `custom-title.json` 的文件数 + 最新 mtime 单独监测。
 
 ---
 

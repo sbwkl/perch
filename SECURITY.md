@@ -45,7 +45,12 @@ Trae CN 只读 usage-ledger hook 事件中的 `session`、`ts`、`project`（bas
 `tool`、`tool_use_id`、`loop`、`chars_in`、`chars_out` 等字段不读取、不存储；
 memory 的 `actions`、`outcome`、`learned` 与消息正文也不读取。
 
-**不读取**：消息正文、prompt、assistant 输出、tool 输入/输出、附件、思考过程、账号凭据或密钥。
+**读取范围例外**：为了给 CLI 会话生成可辨识标题，Claude Code 的标题派生会读取首条候选用户文本。
+该文本只在扫描内存中清洗为单行标题，缓存仅保存结果标题与既有元数据，不保存正文。其他来源继续遵守最小读取范围。
+
+**不使用**。Claude 标题不取 `agentName`、`summary` / compaction summary 或 `history.jsonl`。
+
+**不读取**：除上述 Claude 标题派生外，不读取消息正文、prompt、assistant 输出、tool 输入/输出、附件、思考过程、账号凭据或密钥。
 
 缓存位置：`~/Library/Application Support/app.perch.desktop/cache.db`。数据库不加密，
 与本地用户账号的隐私边界一致；能读取该用户目录的进程本来也能读取源 agent 数据。

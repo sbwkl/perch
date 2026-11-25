@@ -49,7 +49,7 @@ Perch 是一个 macOS 桌面应用：Tauri 2 壳 + 纯 Rust core + Svelte 5 前�
 | 查询 | `src/query.rs` | 把快照组装为 `BootstrapPayload`（workspaces、sources、counts、可选 usage） |
 | 搜索 | `src/search.rs` | 只读 `task` / `task_todo`，NFKC 归一 + 拼音 + 模糊匹配 + 字段加权，按 workspace / 来源筛选后返回全部命中与总数 |
 | 用量桥接 | `src/usage.rs` | 只读打开 usage-ledger 的 `usage.db`，按 `session_id` 聚合 token / credits / est |
-| 探测 | `src/probe.rs` | 轻量判断源是否变化：SQLite `PRAGMA data_version`、JSONL 文件数与最新 mtime |
+| 探测 | `src/probe.rs` | 轻量判断源是否变化：SQLite `PRAGMA data_version`、JSONL 文件数与最新 mtime；Claude 还单独监测 `custom-title.json` |
 | 继续工作 | `src/continue_work.rs` | 按来源决定会话深链或激活 App，并校验 session id；不启动终端 |
 | 路径 | `src/paths.rs` | 默认源路径与环境变量覆盖 |
 | Tauri 壳 | `src-tauri/src/lib.rs` | IPC 命令、状态管理、3 秒探测循环、事件 |
@@ -75,12 +75,16 @@ Perch 是一个 macOS 桌面应用：Tauri 2 壳 + 纯 Rust core + Svelte 5 前�
 `src-tauri` 启动一个后台线程，每 3 秒执行一次：
 
 - 窗口最小化或不可见时跳过；实时刷新可经 `set_live_refresh` 暂停。
-- SQLite 来源每轮检查 `PRAGMA data_version`；JSONL / 日志目录签名最多每 15 秒计算一次。
+- SQLite 来源每轮检查 `PRAGMA data_version`；JSONL / 日志目录签名最多每 15 秒计算一次。Claude 的 `custom-title.json` 也进入文件签名，但只匹配该 basename。
 - 变化按源记录，6 秒静默去抖、30 秒冷却、60 秒最长等待；只重扫到期的来源（`trigger = "live"`）。
 - 手动刷新期间后台不争用 `ScanEngine` 锁；扫描开始 / 结束通过 `scan-status` 发射来源、触发方式与耗时。
 - 仅当完成 live scan 或检测到 usage 变化时 emit `sources-updated`；空闲 / 去抖 / 冷却轮次不触发前端全量 `bootstrap`；完成后推迟该 JSONL / 日志源的签名检查。
 
 探测只做轻量读取，不解析内容；不会常驻 daemon，应用退出即停止。
+
+### Claude 标题读取边界
+
+Claude 标题优先级在每次扫描时完整重算：JSONL `custom-title` → sidecar `custom-title.json` → JSONL `ai-title` → 首条候选用户消息派生的 `derived` 标题 → `新会话`。派生只为生成标题读取首条候选用户文本，跳过 sidechain、`isMeta`、`toolUseResult`、系统注入与 slash command 包装；缓存只保存单行标题和既有任务字段，不保存正文。`agentName`、`summary` / compaction summary 与 `history.jsonl` 均不参与。
 
 ### 用量附加（可选）
 

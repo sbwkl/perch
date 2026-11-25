@@ -99,8 +99,10 @@ npm run tauri build
 
 - 采集只使用 SQLite `SQLITE_OPEN_READ_ONLY` + `PRAGMA query_only=ON`，JSONL 只读打开。
 - usage-ledger 的 `usage.db` 同样只读打开，Perch 不会写入、迁移或触发它的 sync。
-- 不读取消息正文、prompt、tool 输出、附件或思考过程；只读取标题、项目路径、时间、模型、分支、
-  计数、待办 subject、状态与置顶/未读标志等元数据。用量块只读取来源、会话 ID、模型、日期与计数。
+- Claude Code 标题派生是唯一放宽读取范围的例外：读取首条候选用户文本并在内存中清洗为单行标题，
+  缓存只保存结果标题。其他来源不读取消息正文、prompt、tool 输出、附件或思考过程；只读取标题、
+  项目路径、时间、模型、分支、计数、待办 subject、状态与置顶/未读标志等元数据。用量块只读取来源、
+  会话 ID、模型、日期与计数。
 - 不发起任何网络请求，没有遥测、账号或云同步。
 - 本地缓存位于 `~/Library/Application Support/app.perch.desktop/cache.db`，可随时删除重建，
   不影响源 agent 数据。标题由 agent 生成，可能包含 prompt 片段；Perch 只在本机保存。

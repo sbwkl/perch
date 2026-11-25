@@ -6,7 +6,7 @@
 | 文档类型 | 产品规格 |
 | 当前版本 | v0.1.0 |
 | 适用范围 | 当前来源覆盖行为与验收规格 |
-| 关联 | [CHG-0004](../exec-plans/completed/CHG-0004-usage-ledger-agents.md)、[侧栏来源溢出修复](../exec-plans/completed/2026-11-22-sidebar-source-overflow.md)、[真实体验确定性缺陷修复](../exec-plans/completed/2026-11-22-real-ux-clarity-fixes.md)、[P0/P1 全量修复](../exec-plans/completed/2026-11-22-real-ux-p0-p1.md)、[侧边栏界面收敛](../exec-plans/completed/2026-11-22-sidebar-simplification.md)、[近 7 天侧栏排序](../exec-plans/completed/2026-11-22-sidebar-recent-activity-order.md)、[删除临时目录后缀](../exec-plans/completed/2026-11-22-remove-temporary-workspace-suffix.md)、[删除 workspace 名称后缀](../exec-plans/completed/2026-11-22-remove-workspace-name-suffix.md)、[删除筛选 chip](../exec-plans/completed/2026-11-22-remove-filter-chips.md)、[代码审核修复](../exec-plans/completed/2026-11-23-code-review-fixes.md)、[Qoder 会话深链](../exec-plans/completed/2026-11-23-qoder-session-deeplink.md) |
+| 关联 | [CHG-0004](../exec-plans/completed/CHG-0004-usage-ledger-agents.md)、[侧栏来源溢出修复](../exec-plans/completed/2026-11-22-sidebar-source-overflow.md)、[真实体验确定性缺陷修复](../exec-plans/completed/2026-11-22-real-ux-clarity-fixes.md)、[P0/P1 全量修复](../exec-plans/completed/2026-11-22-real-ux-p0-p1.md)、[侧边栏界面收敛](../exec-plans/completed/2026-11-22-sidebar-simplification.md)、[近 7 天侧栏排序](../exec-plans/completed/2026-11-22-sidebar-recent-activity-order.md)、[删除临时目录后缀](../exec-plans/completed/2026-11-22-remove-temporary-workspace-suffix.md)、[删除 workspace 名称后缀](../exec-plans/completed/2026-11-22-remove-workspace-name-suffix.md)、[删除筛选 chip](../exec-plans/completed/2026-11-22-remove-filter-chips.md)、[代码审核修复](../exec-plans/completed/2026-11-23-code-review-fixes.md)、[Qoder 会话深链](../exec-plans/completed/2026-11-23-qoder-session-deeplink.md)、[Claude 会话标题](../exec-plans/active/2026-11-25-claude-session-titles.md) |
 
 ## 1. 摘要
 
@@ -28,7 +28,7 @@ Perch 当前覆盖 11 个本地 AI 编码 Agent 来源，与 usage-ledger 的来
 
 ## 4. 当前需求与验收（EARS）
 
-- R1：When 某来源的本地数据目录存在, the system shall 扫描其会话并在任务列表展示，字段语义与既有来源一致（标题、项目、时间、状态）。
+- R1：When 某来源的本地数据目录存在, the system shall 扫描其会话并在任务列表展示，字段语义与既有来源一致（标题、项目、时间、状态）。Claude 无原生标题时，the system shall 从首条候选用户消息派生单行标题，截断到 60 个字符；首条候选不可用或清洗后为空时回退 `新会话`。
 - R2：If 某来源的数据目录不存在或采集失败, then the system shall 标记来源状态并保留旧快照，不影响其他来源与其他功能；状态需在侧栏可读暴露，不只依赖颜色。
 - R3：When 用户对某来源的会话触发“继续工作”, the system shall 按该 Agent 的固定方式恢复会话；Qoder 会话在合法 session id 下使用 `qoder://chat/open?sessionId=<id>`、Codex 桌面 / 自动化会话在 UUID 形态的 session id 下使用 `codex://threads/<id>` 精确定位，其余来源（含 session id 不合法的 Qoder / 非 UUID 的 Codex）只激活对应 App，不启动终端或 CLI 恢复；详情面板只呈现一个继续工作按钮，不另设通道标签或说明段：按钮文案为「动词 + 来源名称」，能定位到具体会话的来源用 `打开 X`，只激活 App 的来源用 `激活 X`，动词必须与 Rust `plan_continue` 的决策分支一致（App 通道不得承诺定位具体会话）；若某来源的继续工作通道未知（`continue_hint` 缺失），按钮仍在，但动词取不承诺定位也不承诺激活的 `继续 X`，点击后失败原因由错误通道返回；按钮以该来源的品牌色填充，前景色按品牌色对比度自动选择，保证在浅色与深色面板上都可读；点击成功后不显示提示，失败显示危险色错误文本；URL 不得来自前端。
 - R4：When usage-ledger 报告包含某来源的用量, the system shall 将该来源计入 `PERCH_SOURCES` 用量子集。
@@ -66,6 +66,7 @@ Perch 当前覆盖 11 个本地 AI 编码 Agent 来源，与 usage-ledger 的来
 | 2026-11-22 | 删除第二栏筛选 chip | 已验证 | [../exec-plans/completed/2026-11-22-remove-filter-chips.md](../exec-plans/completed/2026-11-22-remove-filter-chips.md) |
 | 2026-11-23 | PR #9 代码审核修复 | 已验证 | [../exec-plans/completed/2026-11-23-code-review-fixes.md](../exec-plans/completed/2026-11-23-code-review-fixes.md) |
 | 2026-11-23 | Qoder 会话深链与 App-only 继续工作 | 已验证 | [../exec-plans/completed/2026-11-23-qoder-session-deeplink.md](../exec-plans/completed/2026-11-23-qoder-session-deeplink.md) |
+| 2026-11-25 | Claude 会话标题派生与人工标题 sidecar | 开发中 | [../exec-plans/active/2026-11-25-claude-session-titles.md](../exec-plans/active/2026-11-25-claude-session-titles.md) |
 | 2026-11-24 | 继续工作入口收敛为单按钮（打开 / 激活）与来源品牌色 | 已验证 | [../exec-plans/completed/2026-11-24-continue-work-affordance.md](../exec-plans/completed/2026-11-24-continue-work-affordance.md) |
 
 ## 6. 链接
