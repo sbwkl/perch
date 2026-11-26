@@ -15,13 +15,8 @@
         padding: 0 84px;
       }
       .brand { display: flex; align-items: center; gap: 22px; }
-      .mark {
-        width: 84px; height: 84px; border-radius: 22px;
-        background: linear-gradient(135deg, #e0965c, #b96a35);
-        display: flex; align-items: center; justify-content: center;
-        box-shadow: 0 12px 40px rgba(185, 106, 53, 0.35);
-      }
-      .mark svg { width: 46px; height: 46px; stroke: #1b1512; }
+      .mark { width: 84px; height: 84px; }
+      .mark svg { width: 84px; height: 84px; display: block; }
       h1 { font-size: 64px; letter-spacing: -1px; }
       .tagline { font-size: 24px; color: #a1a1a6; margin-top: 4px; }
       p.lead { margin-top: 44px; font-size: 28px; line-height: 1.55; color: #d8d8dc; max-width: 940px; }
@@ -44,8 +39,31 @@
     <div class="card">
       <div class="brand">
         <div class="mark">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M7 20c0-5.5 4.5-10 10-10h4l-3-4-5 2-4 4-3 6 1 2zM9 20h10" />
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+            <defs>
+              <linearGradient id="perch-social-bg" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#e2a56f"/>
+                <stop offset="1" stop-color="#a35626"/>
+              </linearGradient>
+              <radialGradient id="perch-social-glow" cx="0.3" cy="0.2" r="0.9">
+                <stop offset="0" stop-color="#ffffff" stop-opacity="0.22"/>
+                <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+              </radialGradient>
+            </defs>
+            <g transform="translate(100 100) scale(0.8046875)">
+              <rect width="1024" height="1024" rx="228" fill="url(#perch-social-bg)"/>
+              <rect width="1024" height="1024" rx="228" fill="url(#perch-social-glow)"/>
+              <rect x="188" y="706" width="648" height="44" rx="22" fill="#6f3a1a"/>
+              <path d="M356 548 L176 646 L320 690 Z" fill="#f7ead9"/>
+              <ellipse cx="512" cy="566" rx="196" ry="174" fill="#fbeedd"/>
+              <circle cx="660" cy="386" r="122" fill="#fbeedd"/>
+              <path d="M772 372 L872 406 L770 442 Z" fill="#f2b45f"/>
+              <circle cx="700" cy="360" r="15" fill="#3a2317"/>
+              <circle cx="705" cy="355" r="4.5" fill="#ffffff" opacity="0.85"/>
+              <path d="M424 556c64-44 170-44 232 0-42 96-182 106-232 0z" fill="#ecd7bf"/>
+              <path d="M492 704v34M566 704v34" stroke="#6f3a1a" stroke-width="20" stroke-linecap="round"/>
+              <path d="M472 738h44M546 738h44" stroke="#6f3a1a" stroke-width="18" stroke-linecap="round"/>
+            </g>
           </svg>
         </div>
         <div>

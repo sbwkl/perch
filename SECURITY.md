@@ -21,12 +21,16 @@ https://github.com/sbwkl/perch/security/advisories/new
 Perch 是本机单用户的只读查看器：
 
 - 不发起网络请求，没有遥测、账号或云同步。
-- 不启用 Tauri 的 `fs` / `shell` / `http` 等插件；前端只能调用五个窄命令：
-  `bootstrap`、`refresh_sources`、`search_tasks`、`continue_task`、`open_usage_report`。
+- 不启用 Tauri 的 `fs` / `shell` / `http` 等插件；前端只能调用七个窄命令：
+  `bootstrap`、`refresh_sources`、`search_tasks`、`continue_task`、`read_session_content`、
+  `open_usage_report`、`set_live_refresh`（后者为后端保留能力，前端不再调用）。
 - `search_tasks` 只读 `cache.db` 中已有的元数据与待办，不读取会话正文；搜索词只在内存中使用，
   不写入数据库、不写日志、不进入错误信息；只返回命中任务 key、分数与字段标签。
+- `read_session_content` 只接受任务 key，按需读取单个会话的可见对话文本：只读打开源文件、
+  只在内存中解析渲染、单次快照、不写入 `cache.db`、不写日志、不联网，关闭面板即丢弃。
+  路径由 Rust 侧从快照解析，前端不传路径或 URL；范围限定为 9 个提供正文的来源。
 - 所有源读取在 Rust core 中完成；源 SQLite 使用只读连接和 `PRAGMA query_only=ON`，
-  JSONL 只读打开。usage-ledger 的 `usage.db` 同样只读打开，Perch 不写入、不迁移、
+  JSONL / JSON 只读打开。usage-ledger 的 `usage.db` 同样只读打开，Perch 不写入、不迁移、
   不触发它的 sync。
 - `continue_task` 只接受任务 key，由 Rust 侧按来源固定模板决定 `open` 的会话深链或 App 激活；
   session id 先经过字符集校验，前端不能传入任意命令或 URL。
@@ -45,12 +49,21 @@ Trae CN 只读 usage-ledger hook 事件中的 `session`、`ts`、`project`（bas
 `tool`、`tool_use_id`、`loop`、`chars_in`、`chars_out` 等字段不读取、不存储；
 memory 的 `actions`、`outcome`、`learned` 与消息正文也不读取。
 
-**读取范围例外**：为了给 CLI 会话生成可辨识标题，Claude Code 的标题派生会读取首条候选用户文本。
-该文本只在扫描内存中清洗为单行标题，缓存仅保存结果标题与既有元数据，不保存正文。其他来源继续遵守最小读取范围。
+**读取范围例外（按需正文）**：用户在任务行打开对话视图时，`read_session_content` 按需读取该会话
+的 user / assistant 可见文本（工具调用只折叠计数，不读取 tool 输入/输出、思考过程、附件）。
+正文只在内存中解析与渲染，不写入 `cache.db`（缓存只保存可重建的源文件定位指针）、不写日志、
+不联网，关闭视图即丢弃；单条 8,000 字符、单会话 200,000 字符截断，只保留最近部分。
+仅 9 个提供正文的来源可读（Qoder、Claude Code、Codex、OpenCode、Kilo、Cline、Antigravity、
+MiniMax Code、CodeArts）；Trae CN 与 CodeBuddy 不提供。决策依据见
+[ADR：按需读取会话正文](docs/design-docs/adr/session-transcript-on-demand-read.md)。
+
+**读取范围例外（标题派生）**：为了给 CLI 会话生成可辨识标题，Claude Code 的标题派生会读取首条候选用户文本。
+该文本只在扫描内存中清洗为单行标题，缓存仅保存结果标题与既有元数据，不保存正文。
 
 **不使用**。Claude 标题不取 `agentName`、`summary` / compaction summary 或 `history.jsonl`。
 
-**不读取**：除上述 Claude 标题派生外，不读取消息正文、prompt、assistant 输出、tool 输入/输出、附件、思考过程、账号凭据或密钥。
+**默认不读取**：除上述两个显式例外（对话视图按需读取、Claude 标题派生）外，不读取消息正文、prompt、assistant 输出、tool 输入/输出、附件、思考过程、账号凭据或密钥；
+对话正文不做后台预读、索引、导出或落盘。
 
 缓存位置：`~/Library/Application Support/app.perch.desktop/cache.db`。数据库不加密，
 与本地用户账号的隐私边界一致；能读取该用户目录的进程本来也能读取源 agent 数据。

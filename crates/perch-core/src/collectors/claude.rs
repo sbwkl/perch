@@ -234,6 +234,7 @@ impl ClaudeCollector {
         task.title_source = title_source.to_owned();
         task.project_path = project_path.clone();
         task.project_name = project_name;
+        task.source_path = Some(path.to_string_lossy().into_owned());
         task.created_at = created_at;
         task.updated_at = updated_at;
         let live = live_sessions.get(&session_id);
@@ -406,7 +407,9 @@ fn derived_user_title(record: &Value) -> Option<String> {
     Some(truncated.trim_end().to_owned())
 }
 
-fn strip_injected_wrappers(text: &str) -> String {
+/// 剥离 Claude 注入文本的已知系统包装（system-reminder、command-* 等）；
+/// 标题派生与对话正文读取共用同一清洗口径。
+pub(crate) fn strip_injected_wrappers(text: &str) -> String {
     const WRAPPERS: &[&str] = &[
         "system-reminder",
         "command-name",

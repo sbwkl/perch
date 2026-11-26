@@ -9,6 +9,10 @@
   --text-tertiary: #9a9aa0;
   --accent: #b96a35;
   --accent-soft: rgba(185, 106, 53, 0.12);
+  /* 侧栏三组选中态：实底与墨色成对出现，浅色用深棕底白墨，深色用亮橙底深墨，
+     两两组合都 ≥ 4.5:1。 */
+  --nav-active-bg: #a35626;
+  --nav-active-ink: #ffffff;
   --danger: #c0392b;
   --warn: #a46a12;
   --ok: #0f9f6e;
@@ -27,6 +31,8 @@
     --text-tertiary: #6e6e73;
     --accent: #e0965c;
     --accent-soft: rgba(224, 150, 92, 0.16);
+    --nav-active-bg: #e0965c;
+    --nav-active-ink: #1d1d1f;
     --danger: #ff6b5e;
     --warn: #e0b252;
     --ok: #3ddc97;
@@ -120,20 +126,18 @@ button:focus-visible {
   padding: 2px 8px 8px;
 }
 
+/* 品牌位与 app icon 是同一件作品：圆角与底色由图形自身提供，这里只定尺寸。 */
 .brand-mark {
-  display: grid;
-  place-items: center;
+  display: block;
   width: 30px;
   height: 30px;
-  border-radius: 9px;
-  color: #fff;
-  background: linear-gradient(150deg, #d58a52, #a95826);
-  box-shadow: 0 2px 6px rgba(169, 88, 38, 0.28);
+  flex: none;
 }
 
 .brand-mark svg {
-  width: 19px;
-  height: 19px;
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .brand-text {
@@ -173,6 +177,7 @@ button:focus-visible {
   display: flex;
   align-items: center;
   gap: 8px;
+  position: relative;
   width: 100%;
   padding: 5.5px 8px;
   border: none;
@@ -188,10 +193,31 @@ button:focus-visible {
   background: var(--hover);
 }
 
+/* 选中态：实底 + 标签加粗 + 计数反白 + 左侧 3px 色条。任务 / Workspaces 的
+   色条用墨色（中性），来源组用该来源品牌色（--source 由标记写入）。 */
 .nav-item.active {
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-weight: 600;
+  background: var(--nav-active-bg);
+  color: var(--nav-active-ink);
+}
+
+.nav-item.active .nav-label {
+  font-weight: 650;
+  color: var(--nav-active-ink);
+}
+
+.nav-item.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--nav-active-ink);
+}
+
+.nav-item.source-item.active::before {
+  background: var(--source, var(--nav-active-ink));
 }
 
 .nav-icon {
@@ -232,7 +258,7 @@ button:focus-visible {
 }
 
 .nav-item.active .nav-count {
-  color: var(--accent);
+  color: var(--nav-active-ink);
 }
 
 .source-item.degraded .nav-label {
@@ -716,6 +742,182 @@ kbd {
   background: #fff;
 }
 
+/* —— #27 对话面板：占满第 2、3 列，侧栏保持可交互 —— */
+
+.transcript-pane {
+  display: flex;
+  flex-direction: column;
+  grid-column: 2 / -1;
+  min-width: 0;
+  min-height: 0;
+  background: var(--pane);
+}
+
+.transcript-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 14px 22px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.transcript-ident {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.transcript-source-label {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.transcript-title {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14.5px;
+  font-weight: 650;
+}
+
+.transcript-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.transcript-actions .continue-note {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+}
+
+.transcript-actions button {
+  flex: none;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.transcript-actions button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.transcript-actions button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.transcript-actions .transcript-continue {
+  border-color: color-mix(in srgb, var(--source, var(--accent)) 45%, var(--border));
+  color: var(--source, var(--accent));
+}
+
+.transcript-actions .transcript-continue:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.transcript-session-truncated {
+  margin: 8px 22px 0;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--hover);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.transcript-messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 22px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.transcript-msg {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--hover);
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.transcript-msg[data-role="user"] {
+  background: var(--accent-soft);
+}
+
+.transcript-msg[data-role="tool_call"] {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.transcript-truncated {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  vertical-align: 1px;
+}
+
+.transcript-state {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--hover);
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.transcript-state.error {
+  color: var(--danger);
+}
+
+.transcript-state.loading {
+  color: var(--text-tertiary);
+}
+
+.transcript-earlier {
+  display: block;
+  margin: 8px 22px 14px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.transcript-earlier:hover {
+  background: var(--hover);
+}
+
 .flat-list {
   display: flex;
   flex-direction: column;
@@ -727,7 +929,8 @@ kbd {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: 8px 10px;
   border: none;
   border-radius: 7px;
@@ -736,12 +939,47 @@ kbd {
   text-align: left;
 }
 
-.task:hover {
+.task-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+  border-radius: 7px;
+}
+
+.task-row:hover {
   background: var(--hover);
 }
 
-.task.selected {
+/* 选中 / 悬停绘制集中在行容器，主按钮与对话图标共享一块底色；
+   .task.selected 保留为选中态标记（滚动定位与测试用）。 */
+.task-row:has(.task.selected) {
   background: var(--accent-soft);
+}
+
+.task-transcript {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-top: 3px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.task-transcript svg {
+  width: 14px;
+  height: 14px;
+}
+
+.task-transcript:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 
@@ -1057,15 +1295,6 @@ kbd {
   color: var(--warn);
 }
 
-.usage-pill.muted {
-  color: var(--text-tertiary);
-}
-
-.usage-pill.stale {
-  color: var(--warn);
-  background: rgba(164, 106, 18, 0.12);
-}
-
 .usage-track {
   margin-top: 9px;
   padding: 9px 10px;
@@ -1249,10 +1478,16 @@ kbd {
   color: var(--text-tertiary);
 }
 
-.inspector-empty svg {
-  width: 34px;
-  height: 34px;
-  opacity: 0.45;
+.inspector-empty-icon {
+  display: block;
+  width: 40px;
+  height: 40px;
+}
+
+.inspector-empty-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .inspector-empty p {
@@ -1266,38 +1501,6 @@ kbd {
   }
 }
 
-.scan-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 8px 22px 0;
-  padding: 6px 9px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--bg);
-  color: var(--text-secondary);
-  font-size: 10.5px;
-}
-
-.scan-status.paused {
-  border-color: rgba(164, 106, 18, 0.3);
-  color: var(--warn);
-}
-
-.scan-dot {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--text-tertiary);
-}
-
-.scan-dot.busy {
-  background: var(--ok);
-  box-shadow: 0 0 0 3px rgba(15, 159, 110, 0.14);
-}
-
-.scan-toggle,
 .list-more,
 .search-more {
   padding: 3px 9px;
@@ -1307,10 +1510,6 @@ kbd {
   color: var(--accent);
   font-size: 10.5px;
   cursor: pointer;
-}
-
-.scan-toggle {
-  margin-left: auto;
 }
 
 .list-more {

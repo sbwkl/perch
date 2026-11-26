@@ -2,9 +2,10 @@
 
 | 项 | 内容 |
 | --- | --- |
-| 状态 | current |
+| 状态 | partial |
 | 领域 | Claude 标题读取范围、缓存最小化、sidecar 生命周期 |
-| 当前事实源 | `crates/perch-core/src/collectors/claude.rs`、`SECURITY.md`、`docs/product-specs/agent-sources.md` |
+| superseded_by | [ADR：按需读取会话正文](session-transcript-on-demand-read.md)（仅取代「Claude 是唯一放宽读取范围的来源」，标题口径不变） |
+| 当前事实源 | `crates/perch-core/src/collectors/claude.rs`、`docs/product-specs/agent-sources.md` R1、`docs/product-specs/session-transcript.md` |
 
 ## 背景
 
@@ -20,7 +21,7 @@ Claude Code CLI 会话常缺少 JSONL 原生标题，在 Perch 中统一显示�
 
 ## 后果
 
-- Claude 是唯一放宽读取范围的来源，放宽仅限标题用途；所有源文件仍只读打开，Perch 不创建、修改、重命名或删除 Claude 源数据。
+- Claude 的标题读取放宽仅限标题用途；对话正文另有按需读取通道（见 [ADR：按需读取会话正文](session-transcript-on-demand-read.md)）。所有源文件仍只读打开，Perch 不创建、修改、重命名或删除 Claude 源数据。
 - 原生标题或 sidecar 消失后，下一次扫描会按完整优先级回退，不保留旧人工标题。
 - 标题可能包含用户输入片段；日志、截图和 issue 仍需脱敏。
 - 其他来源的读取范围与 probe 行为不变。

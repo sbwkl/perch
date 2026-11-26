@@ -65,6 +65,8 @@ impl MiniMaxCollector {
                 entry.project_path = Some(project_path.clone());
             }
             let mut task = TaskSnapshot::new(SOURCE_MINIMAX, &session_id);
+            // 可重建的源文件定位指针：对话正文按需读取时据此定位 messages.jsonl。
+            task.source_path = Some(path.to_string_lossy().into_owned());
             task.title = match entry
                 .title
                 .as_deref()
@@ -317,7 +319,8 @@ fn user_message_title(message: &Value) -> Option<String> {
 
 /// 用户消息常被 <system-reminder>/<media-output-reminder>/<async-audit>
 /// 等块包裹；剥掉这些块后再取首行，避免标题全是注入的提示文本。
-fn strip_reminder_blocks(text: &str) -> String {
+/// 标题派生与对话正文读取共用同一清洗口径。
+pub(crate) fn strip_reminder_blocks(text: &str) -> String {
     const TAGS: [&str; 4] = [
         "system-reminder",
         "media-output-reminder",

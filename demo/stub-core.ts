@@ -1,8 +1,49 @@
 import type { SyncReport } from "../src/lib/types";
-import { demoPayload } from "./fixture";
+import { transcriptSupported } from "../src/lib/transcript";
+import { demoPayload, demoTranscriptOutcome } from "./fixture";
 
 export function convertFileSrc(filePath: string): string {
   return filePath;
+}
+
+// 供 CDP 验收读取的演示状态：重读次数、首读失败标记与刷新计数。
+const demoState = {
+  refreshCount: 0,
+  failedReads: new Set<string>(),
+  readSessionCalls: [] as string[],
+};
+
+if (typeof window !== "undefined") {
+  (window as unknown as { __perchDemo?: typeof demoState }).__perchDemo = demoState;
+}
+
+// ?vanish=<标题>：第二次刷新（首次是挂载时的自动刷新）后让该任务从快照消失，
+// 用于驱动「刷新后任务不在当前列表 → 关闭对话并清除选中」（T8）。
+const VANISH_PARAM = new URLSearchParams(location.search).get("vanish") ?? "";
+
+// ?filterout=<标题>：第二次刷新后任务仍在快照中，但被移出「最近」视图，
+// 用于驱动「任务被筛出当前筛选列表但仍在全量快照 → 关闭对话」（T8）。
+const FILTEROUT_PARAM = new URLSearchParams(location.search).get("filterout") ?? "";
+
+function currentVanishTitle(): string | null {
+  return demoState.refreshCount >= 2 && VANISH_PARAM ? VANISH_PARAM : null;
+}
+
+function currentFilterOutTitle(): string | null {
+  return demoState.refreshCount >= 2 && FILTEROUT_PARAM ? FILTEROUT_PARAM : null;
+}
+
+function demoOptions(): { excludeTitle: string | null; demoteTitle: string | null } {
+  return { excludeTitle: currentVanishTitle(), demoteTitle: currentFilterOutTitle() };
+}
+
+function findDemoTask(taskKey: string) {
+  const payload = demoPayload(demoOptions());
+  return (
+    payload.workspaces
+      .flatMap((group) => group.tasks)
+      .find((item) => item.key === taskKey) ?? null
+  );
 }
 
 export async function invoke<T>(
@@ -13,12 +54,13 @@ export async function invoke<T>(
 
   switch (command) {
     case "bootstrap":
-      return demoPayload() as T;
+      return demoPayload(demoOptions()) as T;
     case "open_usage_report":
       return { path: "/demo-usage-report.html" } as T;
     case "refresh_sources": {
+      demoState.refreshCount += 1;
       const started = Date.now() / 1000;
-      const payload = demoPayload();
+      const payload = demoPayload(demoOptions());
       const report: SyncReport = {
         started_at: started,
         finished_at: started + 0.012,
@@ -41,7 +83,7 @@ export async function invoke<T>(
       const source = args?.source ? String(args.source) : null;
       const workspace = args?.workspace ? String(args.workspace) : null;
       const terms = query.split(/\s+/).filter(Boolean);
-      const payload = demoPayload();
+      const payload = demoPayload(demoOptions());
       const matches: Array<{
         task_key: string;
         score: number;
@@ -94,17 +136,25 @@ export async function invoke<T>(
         })),
       } as T;
     }
-    case "set_live_refresh":
-      return { paused: Boolean(args?.paused) } as T;
     case "continue_task": {
       const taskKey = String(args?.taskKey ?? "");
-      const payload = demoPayload();
-      const task = payload.workspaces
-        .flatMap((group) => group.tasks)
-        .find((item) => item.key === taskKey);
+      const task = findDemoTask(taskKey);
       if (!task) throw new Error(`任务不存在：${taskKey}`);
       // Success is silent in the real command, so the demo stays silent too.
       return undefined as T;
+    }
+    case "read_session_content": {
+      // 与 src-tauri read_session_content_impl 同构：key 查找 → 来源能力 → 读取结果。
+      const taskKey = String(args?.taskKey ?? "");
+      demoState.readSessionCalls.push(taskKey);
+      const task = findDemoTask(taskKey);
+      if (!task) throw new Error(`任务不存在：${taskKey}`);
+      if (!transcriptSupported(task.source)) {
+        throw new Error(`来源不支持读取对话正文：${task.source}`);
+      }
+      const firstAttempt = !demoState.failedReads.has(taskKey);
+      demoState.failedReads.add(taskKey);
+      return demoTranscriptOutcome(task.title, { firstAttempt }) as T;
     }
     default:
       throw new Error(`demo 未实现命令：${command}`);

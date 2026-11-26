@@ -386,3 +386,35 @@ sqlite3 "file:$HOME/Library/Application Support/Trae CN/User/globalStorage/state
     所有会影响列表显示的字段。
 14. Qoder `chat_sessions.updated_at` 是否随每条消息更新；若不更新，活动指纹改用
     `chat_session_messages` 的 `max(rowid)` 或计数。
+
+---
+
+## 11. Cline 对话正文（2026-11-26 补录，随 #30 实现探测）
+
+> 只读探测；只记录结构与类型，不记录任何消息正文。
+
+### 11.1 目录布局
+
+| 项 | 值 |
+|---|---|
+| 会话元数据 DB | `~/.cline/data/db/sessions.db`（`PERCH_CLINE_DB` 可覆盖） |
+| 对话正文目录 | `~/.cline/data/sessions/<id>/<id>.messages.json` |
+| 目录推导规则 | 以 DB 路径 `parent().parent()/"sessions"` 为会话根（覆盖变量下同布局成立） |
+| session id 字符集 | 实测全部在 `[A-Za-z0-9_-]`，与 `valid_task_key` 现规一致，无需放宽 |
+
+### 11.2 文件结构
+
+- 顶层为 dict：`{version, sessionId, messages, ...}`；正文在 `messages` 数组。
+- `messages[]` 元素：`{id, role: user | assistant, ts: int, content}`。
+- `content` 为块数组；块类型：
+  - user 携 `text` / `tool_result`；
+  - assistant 携 `text` / `thinking` / `tool_use`。
+- `ts` 单调递增，数组顺序即时间序，读取无需自行排序。
+- `tool_result` 与 `tool_use` 数量 1:1 配对，读取器可按「assistant `tool_use` 计数、
+  `tool_result` 吸收不重复计数」处理。
+
+### 11.3 结论
+
+- 对话正文可按需只读解析（对话视图通道）；扫描路径不打开该文件。
+- 损坏 JSON、缺 `messages` 数组、非 UTF-8、文件缺失等均在读取器内给出明确错误，不影响扫描。
+- 纯 tool 轮（无可见文本）在对话面板折叠为「工具调用 N 次」。

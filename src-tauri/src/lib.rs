@@ -3,10 +3,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use perch_core::continue_work::{plan_continue, ContinueAction, ContinuePlan};
-use perch_core::models::{BootstrapPayload, SyncReport};
+use perch_core::continue_work::{plan_continue, valid_task_key, ContinueAction, ContinuePlan};
+use perch_core::models::{
+    transcript_supported, BootstrapPayload, SyncReport, TaskSnapshot, TranscriptOutcome,
+};
 use perch_core::probe::LiveScanScheduler;
 use perch_core::query::build_bootstrap_with_usage;
+use perch_core::transcript::read_transcript;
 use perch_core::{paths, CacheStore, ScanEngine, SourcePaths, SourceProbe, UsageSnapshot};
 use tauri::{Emitter, Manager, State};
 
@@ -183,6 +186,47 @@ fn continue_task(state: State<'_, AppState>, task_key: String) -> Result<(), Str
     };
     let plan = plan_continue(&task).map_err(|error| error.to_string())?;
     execute_plan(&plan)
+}
+
+/// 按需读取会话对话正文：单次内存内快照，不缓存正文、不写日志、不联网。
+/// 前端只提交任务 key；路径由 Rust 侧从缓存指针解析。
+/// async 命令：engine 锁只覆盖快照解析（短临界区），文件读取与解析交给
+/// 阻塞线程池，避免大会话（可达 64MB 尾部窗口）占住主线程并与实时扫描抢锁。
+#[tauri::command]
+async fn read_session_content(
+    state: State<'_, AppState>,
+    task_key: String,
+) -> Result<TranscriptOutcome, String> {
+    let task = {
+        let engine = state.engine.lock().map_err(|error| error.to_string())?;
+        resolve_session_task(engine.store(), &task_key)?
+    };
+    tauri::async_runtime::spawn_blocking(move || read_session_content_impl(&task))
+        .await
+        .map_err(|error| format!("读取对话正文失败：{error}"))?
+}
+
+/// 短临界区内完成：key 字符集校验与「继续工作」同规 → 快照查找。
+/// 拿到快照即应释放 engine 锁；后续能力判定与文件读取不依赖缓存。
+fn resolve_session_task(store: &CacheStore, task_key: &str) -> Result<TaskSnapshot, String> {
+    if !valid_task_key(task_key) {
+        return Err(format!("非法任务 key：{task_key}"));
+    }
+    store
+        .load_task(task_key)
+        .map_err(|error| format!("读取任务快照失败：{error}"))?
+        .ok_or_else(|| format!("任务不存在：{task_key}"))
+}
+
+/// `read_session_content` 的读取半程（锁外执行）：来源能力判定 → 核心读取入口。
+/// 非法 key、任务不存在已在 `resolve_session_task` 拒绝；来源不支持返回 Err；
+/// 源文件缺失等读取期失败属于本次视图的结果，以 Error outcome 返回。
+/// 拆成自由函数以便测试驱动（先例：render_usage_report）。
+fn read_session_content_impl(task: &TaskSnapshot) -> Result<TranscriptOutcome, String> {
+    if !transcript_supported(&task.source) {
+        return Err(format!("来源不支持读取对话正文：{}", task.source));
+    }
+    Ok(read_transcript(task))
 }
 
 fn execute_plan(plan: &ContinuePlan) -> Result<(), String> {
@@ -386,6 +430,7 @@ pub fn run() {
             refresh_sources,
             search_tasks,
             continue_task,
+            read_session_content,
             open_usage_report,
             set_live_refresh
         ])
@@ -441,6 +486,269 @@ mod tests {
 
         let error = render_usage_report(&bin, &temp.path().join("cache")).unwrap_err();
         assert!(error.contains("database is locked"), "{error}");
+    }
+}
+
+#[cfg(test)]
+mod read_session_content_tests {
+    use super::*;
+    use perch_core::models::{SourceResult, TaskSnapshot, TranscriptOutcome, TranscriptRole};
+
+    fn claude_task(source_path: &str) -> TaskSnapshot {
+        let mut task = TaskSnapshot::new("claude", "session-cmd");
+        task.title = "命令层合成会话".to_owned();
+        task.source_path = Some(source_path.to_owned());
+        task.refresh_fingerprint();
+        task
+    }
+
+    fn unsupported_task(source: &str, id: &str) -> TaskSnapshot {
+        let mut task = TaskSnapshot::new(source, id);
+        task.title = "不支持正文的来源".to_owned();
+        task.refresh_fingerprint();
+        task
+    }
+
+    fn store_with(tasks: &[TaskSnapshot]) -> CacheStore {
+        let store = CacheStore::open_in_memory().unwrap();
+        for (source, group) in [(
+            "claude",
+            tasks
+                .iter()
+                .filter(|t| t.source == "claude")
+                .collect::<Vec<_>>(),
+        )] {
+            if group.is_empty() {
+                continue;
+            }
+            let scan = store.begin_scan(source, "full", "source", "test").unwrap();
+            let owned: Vec<TaskSnapshot> = group.into_iter().cloned().collect();
+            store
+                .save_result(&SourceResult::ok(source, owned, Vec::new()), scan)
+                .unwrap();
+        }
+        for (source, group) in [
+            (
+                "trae-cn",
+                tasks
+                    .iter()
+                    .filter(|t| t.source == "trae-cn")
+                    .collect::<Vec<_>>(),
+            ),
+            (
+                "codebuddy",
+                tasks
+                    .iter()
+                    .filter(|t| t.source == "codebuddy")
+                    .collect::<Vec<_>>(),
+            ),
+            (
+                "qoder",
+                tasks
+                    .iter()
+                    .filter(|t| t.source == "qoder")
+                    .collect::<Vec<_>>(),
+            ),
+        ] {
+            if group.is_empty() {
+                continue;
+            }
+            let scan = store.begin_scan(source, "full", "source", "test").unwrap();
+            let owned: Vec<TaskSnapshot> = group.into_iter().cloned().collect();
+            store
+                .save_result(&SourceResult::ok(source, owned, Vec::new()), scan)
+                .unwrap();
+        }
+        store
+    }
+
+    fn write_session_fixture(path: &std::path::Path) {
+        std::fs::write(
+            path,
+            concat!(
+                "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"命令层问题\"}}\n",
+                "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[",
+                "{\"type\":\"text\",\"text\":\"命令层回答\"}]}}\n",
+            ),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn rejects_illegal_keys_before_touching_the_store() {
+        let store = CacheStore::open_in_memory().unwrap();
+        for key in [
+            "",
+            "noseparator",
+            "claude:",
+            ":session-a",
+            "claude:../../etc/passwd",
+            "claude:abc; rm -rf /",
+            "qoder:http://evil.example",
+        ] {
+            let error = resolve_session_task(&store, key).unwrap_err();
+            assert!(error.contains("非法任务 key"), "{key}: {error}");
+        }
+    }
+
+    #[test]
+    fn reports_missing_tasks_with_a_distinct_error() {
+        let store = CacheStore::open_in_memory().unwrap();
+        let error = resolve_session_task(&store, "claude:nope").unwrap_err();
+        assert!(error.contains("任务不存在"), "{error}");
+    }
+
+    #[test]
+    fn rejects_sources_without_transcript_support() {
+        for task in [
+            unsupported_task("trae-cn", "t-1"),
+            unsupported_task("codebuddy", "b-1"),
+        ] {
+            let error = read_session_content_impl(&task).unwrap_err();
+            assert!(error.contains("来源不支持读取对话正文"), "{error}");
+        }
+    }
+
+    #[test]
+    fn returns_messages_for_claude_tasks() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let session = temp.path().join("session-cmd.jsonl");
+        write_session_fixture(&session);
+        let store = store_with(&[claude_task(session.to_str().unwrap())]);
+
+        let task = resolve_session_task(&store, "claude:session-cmd").unwrap();
+        let outcome = read_session_content_impl(&task).unwrap();
+        let TranscriptOutcome::Ready {
+            messages,
+            session_truncated,
+        } = outcome
+        else {
+            panic!("期望 Ready，实际：{outcome:?}");
+        };
+        assert!(!session_truncated);
+        let rendered: Vec<(TranscriptRole, &str)> = messages
+            .iter()
+            .map(|message| (message.role, message.text.as_str()))
+            .collect();
+        assert_eq!(
+            rendered,
+            vec![
+                (TranscriptRole::User, "命令层问题"),
+                (TranscriptRole::Assistant, "命令层回答"),
+            ]
+        );
+    }
+
+    #[test]
+    fn maps_unreadable_source_files_to_error_outcomes() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let missing = temp.path().join("session-missing.jsonl");
+        let store = store_with(&[claude_task(missing.to_str().unwrap())]);
+
+        let task = resolve_session_task(&store, "claude:session-cmd").unwrap();
+        let outcome = read_session_content_impl(&task).unwrap();
+        let TranscriptOutcome::Error { reason } = outcome else {
+            panic!("期望 Error outcome，实际：{outcome:?}");
+        };
+        assert!(reason.contains("源文件不存在"), "{reason}");
+    }
+
+    #[test]
+    fn produces_no_writes_to_store_or_source() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let session = temp.path().join("session-cmd.jsonl");
+        write_session_fixture(&session);
+        let store = store_with(&[claude_task(session.to_str().unwrap())]);
+        let before_tasks = serde_json::to_value(store.load_tasks().unwrap()).unwrap();
+        let before_file = std::fs::read(&session).unwrap();
+
+        let task = resolve_session_task(&store, "claude:session-cmd").unwrap();
+        read_session_content_impl(&task).unwrap();
+
+        assert_eq!(
+            before_tasks,
+            serde_json::to_value(store.load_tasks().unwrap()).unwrap()
+        );
+        assert_eq!(before_file, std::fs::read(&session).unwrap());
+    }
+
+    /// SQLite 系来源经命令层直通核心读取入口：指针列留空，读取器按配置路径定位。
+    #[test]
+    fn reads_sqlite_source_tasks_through_the_command_chain() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let db = temp.path().join("main.sqlite");
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE chat_sessions (session_id TEXT PRIMARY KEY, title TEXT NOT NULL);
+             CREATE TABLE chat_session_messages (
+               session_id TEXT NOT NULL,
+               message_id TEXT NOT NULL,
+               sequence INTEGER NOT NULL,
+               payload_json TEXT NOT NULL,
+               PRIMARY KEY (session_id, message_id));",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO chat_sessions (session_id, title) VALUES ('ses-cmd', '命令层合成会话')",
+            [],
+        )
+        .unwrap();
+        for (id, seq, payload) in [
+            (
+                "m1",
+                1,
+                r#"{"id":"m1","role":"user","text":"命令层问题","timestamp":1}"#,
+            ),
+            (
+                "m2",
+                2,
+                r#"{"id":"m2","role":"assistant","text":"命令层回答","timestamp":2}"#,
+            ),
+        ] {
+            conn.execute(
+                "INSERT INTO chat_session_messages (session_id, message_id, sequence, payload_json) \
+                 VALUES ('ses-cmd', ?1, ?2, ?3)",
+                rusqlite::params![id, seq, payload],
+            )
+            .unwrap();
+        }
+        drop(conn);
+        let before_bytes = std::fs::read(&db).unwrap();
+
+        let mut task = TaskSnapshot::new("qoder", "ses-cmd");
+        task.title = "命令层合成会话".to_owned();
+        task.refresh_fingerprint();
+        let store = store_with(&[task]);
+        std::env::set_var("PERCH_QODER_DB", &db);
+
+        let task = resolve_session_task(&store, "qoder:ses-cmd").unwrap();
+        let outcome = read_session_content_impl(&task).unwrap();
+
+        std::env::remove_var("PERCH_QODER_DB");
+        let TranscriptOutcome::Ready {
+            messages,
+            session_truncated,
+        } = outcome
+        else {
+            panic!("期望 Ready，实际：{outcome:?}");
+        };
+        assert!(!session_truncated);
+        let rendered: Vec<(TranscriptRole, &str)> = messages
+            .iter()
+            .map(|message| (message.role, message.text.as_str()))
+            .collect();
+        assert_eq!(
+            rendered,
+            vec![
+                (TranscriptRole::User, "命令层问题"),
+                (TranscriptRole::Assistant, "命令层回答"),
+            ]
+        );
+        assert_eq!(
+            before_bytes,
+            std::fs::read(&db).unwrap(),
+            "读取前后源库字节必须一致"
+        );
     }
 }
 

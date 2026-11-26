@@ -28,8 +28,8 @@ Perch 以“先找到任务，再回 agent 继续”为核心。里程碑沿用
 
 - [x] 三栏布局、平铺任务列表、行内 workspace
 - [x] 最近（7 天）/ 更早 / 已归档视图
-- [x] 窗口可见时 probe、变化去抖 / 冷却后重扫并刷新，可暂停实时刷新
-- [x] 手动刷新（`⌘R`）、扫描来源 / 触发方式 / 耗时提示
+- [x] 窗口可见时 probe、变化去抖 / 冷却后重扫并刷新，实时刷新常开（无暂停入口；`set_live_refresh` 保留为后端能力）
+- [x] 手动刷新（`⌘R`）优先于后台扫描；扫描状态栏与耗时提示已按界面收敛删除
 - [x] 来源图标与品牌色、只读脚注
 - [ ] 启用 CSP（当前 `tauri.conf.json` 中为 `null`）
 - [x] 打包 `.dmg` 并发布 GitHub Release
@@ -47,6 +47,7 @@ Perch 以“先找到任务，再回 agent 继续”为核心。里程碑沿用
 ## M5 · 集成与可选能力 — 计划中
 
 - [x] 可选读取 usage-ledger 的 `usage.db`，在 Inspector 附带 token / credits / est（分轨标注，永不相加）
+- [x] 会话对话正文视图：9 个来源按需、只读、内存内读取（单次快照、8k / 200k 预算；见 `docs/product-specs/session-transcript.md`）
 - [ ] 用量报表视图（按 workspace / 时间聚合图表，复用 usage-ledger 的聚合口径）
 - [ ] 会话内容搜索（opt-in、默认关闭、仅本机内存；见 `docs/design-docs/source-designs/SEARCH.md` P1）
 - [x] Trae CN hooks 事件聚合（需安装 usage-ledger hook；未安装时来源不可用）
@@ -67,7 +68,8 @@ Perch 以“先找到任务，再回 agent 继续”为核心。里程碑沿用
 
 以下能力不是永久排除，而是当前版本不默认开启；引入时需要独立开关、按源说明与最小化存储：
 
-- 读取消息正文、prompt、tool 输出或 Claude todo 的 description
+- 正文后台预读、正文索引、正文导出与全文搜索（正文只在打开对话视图时按需读取）
+- 读取 prompt、tool 输出或 Claude todo 的 description（对话视图与标题派生之外不扩大读取面）
 - 回写 agent（修改源状态、置顶、归档、重命名）
 - 解密 Trae 的本地加密数据或调用非公开接口
 - 云同步、账号体系、遥测

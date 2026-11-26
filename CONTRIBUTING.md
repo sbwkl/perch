@@ -42,7 +42,8 @@ CI 会执行同样的检查。涉及 UI 的改动请在 `npm run tauri dev` 或 
 
 - 对源 SQLite 执行任何写语句，或打开可写连接；
 - 写入、重命名、删除源 JSONL / JSON 文件；
-- 读取并存储消息正文、prompt、tool 输出、附件或思考过程（见 SECURITY.md）；
+- 把消息正文、prompt、tool 输出、附件或思考过程写入缓存、日志或任何持久化存储；
+  读取范围默认不含正文，显式例外（对话视图按需读取、Claude 标题派生）见 SECURITY.md；
 - 让前端传入任意 shell 命令或 URL；
 - 在没有证据时臆造 agent 状态（例如把 Claude 的 idle 显示成“已完成”）。
 
