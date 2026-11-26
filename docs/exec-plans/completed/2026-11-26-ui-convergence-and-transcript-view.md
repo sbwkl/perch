@@ -101,7 +101,7 @@
 
 - 新模块 `transcript.rs`：`read_transcript(task: &TaskSnapshot) -> TranscriptOutcome`，按来源分派 9 个读取器（SQLite：Qoder / OpenCode / Kilo / CodeArts；JSONL：Claude / Codex / Antigravity / MiniMax；JSON：Cline）。统一产出 `TranscriptMessage { role, text, truncated }`。
 - 解析口径：只提取 user / assistant 可见文本；工具块只计数；跳过 sidechain / meta / 系统注入包装；单条 8,000 字符、单会话 200,000 字符截断（只保留最近部分）；坏行跳过。
-- 大文件策略：先读尾部并按上限解码，再向前补齐到「加载更早」所需条数，避免整文件驻留。
+- 大文件策略：先读尾部并按上限解码（按行对齐块向前收集，可见文本超单会话预算即停），预算未满且未到文件头时继续向前补齐，避免整文件驻留。
 - `models.rs`：新增 `TranscriptOutcome` / `TranscriptMessage` / `TranscriptRole`；`SUPPORTED_TRANSCRIPT_SOURCES` 常量集合（9 个），`transcript_supported(source)`。
 - `store.rs`：`task` 表新增可重建的 `source_path TEXT`（`PRAGMA user_version` 升 1 → 2，`ALTER TABLE ADD COLUMN`）；文件型来源在扫描时写入会话文件路径，SQLite 来源留空并在读取时用配置的 DB 路径 + `source_id` 定位。正文不落库。
 - 读取一律 `SQLITE_OPEN_READ_ONLY` + `PRAGMA query_only=ON`、JSONL 只读打开；打开失败返回错误字符串，不改来源状态。
