@@ -69,7 +69,6 @@ CI 会执行同样的检查。涉及 UI 的改动请在 `npm run tauri dev` 或 
 
 ## Commit 与 PR
 
-- Commit message 用简短的英文祈使句，例如 `Add Cursor collector`、`Fix Qoder running heuristic`。
 - 一个 PR 聚焦一件事；附带测试或说明为什么不需要测试。
 - PR 描述包含：动机、改动范围、验证步骤、对只读边界的影响。
 - 如果改了用户可见行为，同步更新 README / CHANGELOG / 相关 docs。
