@@ -4,7 +4,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use perch_core::continue_work::{plan_continue, valid_task_key, ContinueAction, ContinuePlan};
-use perch_core::models::{transcript_supported, BootstrapPayload, SyncReport, TranscriptOutcome};
+use perch_core::models::{
+    transcript_supported, BootstrapPayload, SyncReport, TaskSnapshot, TranscriptOutcome,
+};
 use perch_core::probe::LiveScanScheduler;
 use perch_core::query::build_bootstrap_with_usage;
 use perch_core::transcript::read_transcript;
@@ -188,34 +190,43 @@ fn continue_task(state: State<'_, AppState>, task_key: String) -> Result<(), Str
 
 /// 按需读取会话对话正文：单次内存内快照，不缓存正文、不写日志、不联网。
 /// 前端只提交任务 key；路径由 Rust 侧从缓存指针解析。
+/// async 命令：engine 锁只覆盖快照解析（短临界区），文件读取与解析交给
+/// 阻塞线程池，避免大会话（可达 64MB 尾部窗口）占住主线程并与实时扫描抢锁。
 #[tauri::command]
-fn read_session_content(
+async fn read_session_content(
     state: State<'_, AppState>,
     task_key: String,
 ) -> Result<TranscriptOutcome, String> {
-    let engine = state.engine.lock().map_err(|error| error.to_string())?;
-    read_session_content_impl(engine.store(), &task_key)
+    let task = {
+        let engine = state.engine.lock().map_err(|error| error.to_string())?;
+        resolve_session_task(engine.store(), &task_key)?
+    };
+    tauri::async_runtime::spawn_blocking(move || read_session_content_impl(&task))
+        .await
+        .map_err(|error| format!("读取对话正文失败：{error}"))?
 }
 
-/// `read_session_content` 的薄层：key 字符集校验与「继续工作」同规 → 快照查找 →
-/// 来源能力 → 核心读取入口。非法 key、任务不存在、来源不支持返回不同的 Err；
-/// 源文件缺失等读取期失败属于本次视图的结果，以 Error outcome 返回。
-/// 拆成自由函数以便测试驱动（先例：render_usage_report）。
-fn read_session_content_impl(
-    store: &CacheStore,
-    task_key: &str,
-) -> Result<TranscriptOutcome, String> {
+/// 短临界区内完成：key 字符集校验与「继续工作」同规 → 快照查找。
+/// 拿到快照即应释放 engine 锁；后续能力判定与文件读取不依赖缓存。
+fn resolve_session_task(store: &CacheStore, task_key: &str) -> Result<TaskSnapshot, String> {
     if !valid_task_key(task_key) {
         return Err(format!("非法任务 key：{task_key}"));
     }
-    let task = store
+    store
         .load_task(task_key)
         .map_err(|error| format!("读取任务快照失败：{error}"))?
-        .ok_or_else(|| format!("任务不存在：{task_key}"))?;
+        .ok_or_else(|| format!("任务不存在：{task_key}"))
+}
+
+/// `read_session_content` 的读取半程（锁外执行）：来源能力判定 → 核心读取入口。
+/// 非法 key、任务不存在已在 `resolve_session_task` 拒绝；来源不支持返回 Err；
+/// 源文件缺失等读取期失败属于本次视图的结果，以 Error outcome 返回。
+/// 拆成自由函数以便测试驱动（先例：render_usage_report）。
+fn read_session_content_impl(task: &TaskSnapshot) -> Result<TranscriptOutcome, String> {
     if !transcript_supported(&task.source) {
         return Err(format!("来源不支持读取对话正文：{}", task.source));
     }
-    Ok(read_transcript(&task))
+    Ok(read_transcript(task))
 }
 
 fn execute_plan(plan: &ContinuePlan) -> Result<(), String> {
@@ -575,7 +586,7 @@ mod read_session_content_tests {
             "claude:abc; rm -rf /",
             "qoder:http://evil.example",
         ] {
-            let error = read_session_content_impl(&store, key).unwrap_err();
+            let error = resolve_session_task(&store, key).unwrap_err();
             assert!(error.contains("非法任务 key"), "{key}: {error}");
         }
     }
@@ -583,19 +594,18 @@ mod read_session_content_tests {
     #[test]
     fn reports_missing_tasks_with_a_distinct_error() {
         let store = CacheStore::open_in_memory().unwrap();
-        let error = read_session_content_impl(&store, "claude:nope").unwrap_err();
+        let error = resolve_session_task(&store, "claude:nope").unwrap_err();
         assert!(error.contains("任务不存在"), "{error}");
     }
 
     #[test]
     fn rejects_sources_without_transcript_support() {
-        let store = store_with(&[
+        for task in [
             unsupported_task("trae-cn", "t-1"),
             unsupported_task("codebuddy", "b-1"),
-        ]);
-        for key in ["trae-cn:t-1", "codebuddy:b-1"] {
-            let error = read_session_content_impl(&store, key).unwrap_err();
-            assert!(error.contains("来源不支持读取对话正文"), "{key}: {error}");
+        ] {
+            let error = read_session_content_impl(&task).unwrap_err();
+            assert!(error.contains("来源不支持读取对话正文"), "{error}");
         }
     }
 
@@ -606,7 +616,8 @@ mod read_session_content_tests {
         write_session_fixture(&session);
         let store = store_with(&[claude_task(session.to_str().unwrap())]);
 
-        let outcome = read_session_content_impl(&store, "claude:session-cmd").unwrap();
+        let task = resolve_session_task(&store, "claude:session-cmd").unwrap();
+        let outcome = read_session_content_impl(&task).unwrap();
         let TranscriptOutcome::Ready {
             messages,
             session_truncated,
@@ -634,7 +645,8 @@ mod read_session_content_tests {
         let missing = temp.path().join("session-missing.jsonl");
         let store = store_with(&[claude_task(missing.to_str().unwrap())]);
 
-        let outcome = read_session_content_impl(&store, "claude:session-cmd").unwrap();
+        let task = resolve_session_task(&store, "claude:session-cmd").unwrap();
+        let outcome = read_session_content_impl(&task).unwrap();
         let TranscriptOutcome::Error { reason } = outcome else {
             panic!("期望 Error outcome，实际：{outcome:?}");
         };
@@ -650,7 +662,8 @@ mod read_session_content_tests {
         let before_tasks = serde_json::to_value(store.load_tasks().unwrap()).unwrap();
         let before_file = std::fs::read(&session).unwrap();
 
-        read_session_content_impl(&store, "claude:session-cmd").unwrap();
+        let task = resolve_session_task(&store, "claude:session-cmd").unwrap();
+        read_session_content_impl(&task).unwrap();
 
         assert_eq!(
             before_tasks,
@@ -708,7 +721,8 @@ mod read_session_content_tests {
         let store = store_with(&[task]);
         std::env::set_var("PERCH_QODER_DB", &db);
 
-        let outcome = read_session_content_impl(&store, "qoder:ses-cmd").unwrap();
+        let task = resolve_session_task(&store, "qoder:ses-cmd").unwrap();
+        let outcome = read_session_content_impl(&task).unwrap();
 
         std::env::remove_var("PERCH_QODER_DB");
         let TranscriptOutcome::Ready {
