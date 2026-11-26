@@ -1050,6 +1050,17 @@ fn opencode_family_skips_broken_payloads_and_keeps_the_rest() {
 }
 
 #[test]
+fn sqlite_sources_are_transcript_supported_and_claude_stays_supported() {
+    use perch_core::models::transcript_supported;
+
+    // 本票接入的四个 SQLite 系来源在能力集合内（不断言集合总数，其他来源由各自票据负责）。
+    for source in ["qoder", "opencode", "kilo", "codearts"] {
+        assert!(transcript_supported(source), "{source} 应当支持正文读取");
+    }
+    assert!(transcript_supported("claude"), "既有来源不应被移出能力集合");
+}
+
+#[test]
 fn sqlite_sources_report_missing_message_tables() {
     let _guard = lock_sqlite_fixtures();
     // Qoder：只有会话表没有消息表。
