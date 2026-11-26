@@ -51,6 +51,67 @@ pub fn source_label(source: &str) -> &'static str {
 
 pub const RECENT_WINDOW_SECONDS: f64 = 7.0 * 24.0 * 60.0 * 60.0;
 
+/// 单条对话消息保留的最大字符数（按字符计，不是字节）。
+pub const TRANSCRIPT_MESSAGE_CHAR_LIMIT: usize = 8_000;
+/// 单个会话保留的最大正文总字符数；超出时只保留最近部分。
+pub const TRANSCRIPT_SESSION_CHAR_LIMIT: usize = 200_000;
+
+/// 提供对话正文的 9 个来源；Trae CN 与 CodeBuddy 不提供，入口不出现。
+pub const SUPPORTED_TRANSCRIPT_SOURCES: [&str; 9] = [
+    SOURCE_QODER,
+    SOURCE_CLAUDE,
+    SOURCE_CODEX,
+    SOURCE_OPENCODE,
+    SOURCE_KILO,
+    SOURCE_CLINE,
+    SOURCE_ANTIGRAVITY,
+    SOURCE_MINIMAX,
+    SOURCE_CODEARTS,
+];
+
+pub fn transcript_supported(source: &str) -> bool {
+    SUPPORTED_TRANSCRIPT_SOURCES.contains(&source)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TranscriptRole {
+    User,
+    Assistant,
+    /// 纯工具轮的折叠行；text 固定为「工具调用 N 次」，不携带工具内容。
+    ToolCall,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscriptMessage {
+    pub role: TranscriptRole,
+    pub text: String,
+    pub truncated: bool,
+}
+
+/// 对话正文读取是内存内单次快照：Ready 携带按时间正序的消息，
+/// Error 携带一行原因；正文不落盘、不写日志。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum TranscriptOutcome {
+    Ready {
+        messages: Vec<TranscriptMessage>,
+        /// 单会话超限时丢弃过更早的消息，只保留最近部分。
+        session_truncated: bool,
+    },
+    Error {
+        reason: String,
+    },
+}
+
+impl TranscriptOutcome {
+    pub fn error(reason: impl Into<String>) -> Self {
+        Self::Error {
+            reason: reason.into(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SourceScanStatus {
@@ -97,6 +158,9 @@ pub struct TaskSnapshot {
     pub todo_done: Option<i64>,
     pub deeplink: Option<String>,
     pub resume_cmd: Option<String>,
+    /// 可重建的源文件定位指针：文件型来源在扫描时写入会话文件路径；
+    /// SQLite 来源留空并在读取时按配置的 DB 路径 + source_id 定位。正文不落库。
+    pub source_path: Option<String>,
     pub fingerprint: String,
     pub seen_at: f64,
     pub last_seen_run: Option<i64>,
@@ -129,6 +193,7 @@ impl TaskSnapshot {
             todo_done: None,
             deeplink: None,
             resume_cmd: None,
+            source_path: None,
             fingerprint: String::new(),
             seen_at: 0.0,
             last_seen_run: None,

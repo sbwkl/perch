@@ -115,6 +115,29 @@ fn activate_plan(bundle_id: &str, target: &str) -> ContinuePlan {
 
 /// Qoder 的 `chat/open` 路由只接受 `[A-Za-z0-9_-]` 且长度不超过 128 的 sessionId。
 fn valid_qoder_session_id(value: &str) -> bool {
+    valid_session_id_charset(value)
+}
+
+/// 任务 key 是前端唯一允许携带的会话标识（`read_session_content` 与 `continue_task`
+/// 的入口边界一致）：形如 `<source>:<source_id>`，来源名为小写字母与连字符，
+/// `source_id` 字符集与深链 sessionId 同规（[A-Za-z0-9_-]，1..=128）。
+/// 前端不能传路径、URL 或 shell 片段；路径全部由 Rust 侧解析。
+pub fn valid_task_key(key: &str) -> bool {
+    let Some((source, session_id)) = key.split_once(':') else {
+        return false;
+    };
+    valid_source_name(source) && valid_session_id_charset(session_id)
+}
+
+fn valid_source_name(source: &str) -> bool {
+    (1..=32).contains(&source.len())
+        && source
+            .chars()
+            .all(|ch| ch.is_ascii_lowercase() || ch == '-')
+}
+
+/// 深链 sessionId 与任务 key 共用的字符集规则。
+fn valid_session_id_charset(value: &str) -> bool {
     (1..=128).contains(&value.len())
         && value
             .chars()
@@ -307,6 +330,44 @@ mod tests {
         unknown.source = "synthetic-unknown".to_owned();
         assert!(describe_continue(&unknown).is_none());
         assert!(plan_continue(&unknown).is_err());
+    }
+
+    #[test]
+    fn task_keys_accept_only_safe_source_and_session_chars() {
+        for key in [
+            "claude:0b53f3a2-7f1c-4c6b-9d3e-2f5c8a1b7e40",
+            "qoder:ses_abc123",
+            "codex:01A0F16E-6064-7033-A99A-F0800A7F5477",
+            "trae-cn:some-id_1",
+        ] {
+            assert!(valid_task_key(key), "{key} 应当通过字符集校验");
+        }
+    }
+
+    #[test]
+    fn task_keys_reject_paths_shell_and_junk() {
+        for key in [
+            "",
+            "claude:",
+            ":session-a",
+            "noseparator",
+            "claude:../../etc/passwd",
+            "claude:abc; rm -rf /",
+            "claude:会话 id",
+            "claude:a b",
+            "qoder:http://evil.example",
+            "Claude:UPPER",
+        ] {
+            assert!(!valid_task_key(key), "{key} 必须被拒绝");
+        }
+    }
+
+    #[test]
+    fn task_keys_reject_overlong_session_ids() {
+        let over = format!("claude:{}", "a".repeat(129));
+        assert!(!valid_task_key(&over));
+        let max = format!("claude:{}", "a".repeat(128));
+        assert!(valid_task_key(&max));
     }
 
     #[test]
