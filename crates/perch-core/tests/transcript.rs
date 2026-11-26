@@ -394,6 +394,72 @@ fn qoder_task(source_id: &str) -> TaskSnapshot {
     task
 }
 
+/// OpenCode / Kilo / CodeArts 共用的 message + part schema（CodeArts 复用 OpenCode 表结构）。
+fn create_opencode_fixture(path: &Path) -> rusqlite::Connection {
+    let conn = rusqlite::Connection::open(path).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE session (id TEXT PRIMARY KEY, title TEXT NOT NULL);
+         CREATE TABLE message (
+           id TEXT PRIMARY KEY,
+           session_id TEXT NOT NULL,
+           time_created INTEGER NOT NULL,
+           time_updated INTEGER NOT NULL,
+           data TEXT NOT NULL);
+         CREATE TABLE part (
+           id TEXT PRIMARY KEY,
+           message_id TEXT NOT NULL,
+           session_id TEXT NOT NULL,
+           time_created INTEGER NOT NULL,
+           time_updated INTEGER NOT NULL,
+           data TEXT NOT NULL);",
+    )
+    .unwrap();
+    conn
+}
+
+fn insert_oc_session(conn: &rusqlite::Connection, session_id: &str) {
+    conn.execute(
+        "INSERT INTO session (id, title) VALUES (?1, ?2)",
+        rusqlite::params![session_id, "合成会话"],
+    )
+    .unwrap();
+}
+
+fn insert_oc_message(
+    conn: &rusqlite::Connection,
+    session_id: &str,
+    message_id: &str,
+    time_created: i64,
+    role: &str,
+) {
+    conn.execute(
+        "INSERT INTO message (id, session_id, time_created, time_updated, data) \
+         VALUES (?1, ?2, ?3, ?3, ?4)",
+        rusqlite::params![
+            message_id,
+            session_id,
+            time_created,
+            format!(r#"{{"id":"{message_id}","role":"{role}"}}"#)
+        ],
+    )
+    .unwrap();
+}
+
+fn insert_oc_part(
+    conn: &rusqlite::Connection,
+    message_id: &str,
+    part_id: &str,
+    time_created: i64,
+    data: &str,
+) {
+    conn.execute(
+        "INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) \
+         VALUES (?1, ?2, 'ses-shared', ?3, ?3, ?4)",
+        rusqlite::params![part_id, message_id, time_created, data],
+    )
+    .unwrap();
+}
+
 #[test]
 fn qoder_transcript_reads_turns_in_sequence_order() {
     let _guard = lock_sqlite_fixtures();
@@ -634,6 +700,72 @@ fn qoder_transcript_clips_single_message_and_keeps_recent_session_tail() {
     assert!(total <= 200_000, "保留部分不得超过会话预算：{total}");
     assert_db_untouched(&db, &before_files, &before_bytes);
     std::env::remove_var("PERCH_QODER_DB");
+}
+
+/// OpenCode / Kilo / CodeArts 共用同一适配器：一个 fixture、三条来源读出一致结果，
+/// CodeArts 不需要单独的表查询实现。
+#[test]
+fn opencode_family_reads_shared_schema_identically_for_all_three_sources() {
+    let _guard = lock_sqlite_fixtures();
+    let temp = TempDir::new().unwrap();
+    let db = temp.path().join("opencode.db");
+    let conn = create_opencode_fixture(&db);
+    insert_oc_session(&conn, "ses-shared");
+    // 用户消息：synthetic 注入块与 file 附件块不渲染。
+    insert_oc_message(&conn, "ses-shared", "m1", 100, "user");
+    insert_oc_part(&conn, "m1", "p1", 100, r#"{"type":"text","synthetic":true,"text":"环境上下文"}"#);
+    insert_oc_part(&conn, "m1", "p1b", 101, r#"{"type":"file","mime":"image/png","filename":"a.png"}"#);
+    insert_oc_part(&conn, "m1", "p1c", 102, r#"{"type":"text","text":"第一个问题"}"#);
+    // 助手消息：step-start/reasoning 跳过；text → 工具 ×2 → text。
+    insert_oc_message(&conn, "ses-shared", "m2", 110, "assistant");
+    insert_oc_part(&conn, "m2", "p2a", 110, r#"{"type":"step-start"}"#);
+    insert_oc_part(&conn, "m2", "p2b", 111, r#"{"type":"reasoning","text":"思考不渲染"}"#);
+    insert_oc_part(&conn, "m2", "p2c", 112, r#"{"type":"text","text":"开始排查"}"#);
+    insert_oc_part(&conn, "m2", "p2d", 113, r#"{"type":"tool","tool":"read"}"#);
+    insert_oc_part(&conn, "m2", "p2e", 114, r#"{"type":"tool","tool":"grep"}"#);
+    insert_oc_part(&conn, "m2", "p2f", 115, r#"{"type":"text","text":"定位到了"}"#);
+    insert_oc_message(&conn, "ses-shared", "m3", 120, "user");
+    insert_oc_part(&conn, "m3", "p3a", 120, r#"{"type":"text","text":"修一下"}"#);
+    // 纯工具回合：三个工具块，无文本。
+    insert_oc_message(&conn, "ses-shared", "m4", 130, "assistant");
+    insert_oc_part(&conn, "m4", "p4a", 130, r#"{"type":"tool","tool":"edit"}"#);
+    insert_oc_part(&conn, "m4", "p4b", 131, r#"{"type":"tool","tool":"write"}"#);
+    insert_oc_part(&conn, "m4", "p4c", 132, r#"{"type":"tool","tool":"patch"}"#);
+    drop(conn);
+    let before_files = dir_file_names(temp.path());
+    let before_bytes = fs::read(&db).unwrap();
+
+    for (source, env_key, source_id) in [
+        (SOURCE_OPENCODE, "PERCH_OPENCODE_DB", "ses-shared"),
+        (SOURCE_KILO, "PERCH_KILO_DB", "ses-shared"),
+        (SOURCE_CODEARTS, "PERCH_CODEARTS_DB", "ses-shared"),
+    ] {
+        std::env::set_var(env_key, &db);
+        let mut task = TaskSnapshot::new(source, source_id);
+        task.title = "合成会话".to_owned();
+        let outcome = read_transcript(&task);
+        let TranscriptOutcome::Ready { messages, .. } = outcome else {
+            panic!("{source} 期望 Ready，实际：{outcome:?}");
+        };
+        let rendered: Vec<(TranscriptRole, &str)> = messages
+            .iter()
+            .map(|message| (message.role, message.text.as_str()))
+            .collect();
+        assert_eq!(
+            rendered,
+            vec![
+                (TranscriptRole::User, "第一个问题"),
+                (TranscriptRole::Assistant, "开始排查"),
+                (TranscriptRole::ToolCall, "工具调用 2 次"),
+                (TranscriptRole::Assistant, "定位到了"),
+                (TranscriptRole::User, "修一下"),
+                (TranscriptRole::ToolCall, "工具调用 3 次"),
+            ],
+            "{source} 消息序列不一致"
+        );
+        std::env::remove_var(env_key);
+    }
+    assert_db_untouched(&db, &before_files, &before_bytes);
 }
 
 #[test]
