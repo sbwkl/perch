@@ -309,10 +309,26 @@
     flatTasks.find((task) => task.key === selectedKey) ?? null,
   );
 
-  // 当前筛选列表（T8 判定口径）：view / workspace / source 三重筛选后的任务，
-  // 复用 tasksMatching，不含 flatTasks 对选中任务的兜底纳入 ——
-  // 刷新后任务被筛出当前列表即视为「不再出现」，对话面板随之关闭。
-  const filteredListTasks = $derived(tasksMatching(view, workspaceFilter, sourceFilter));
+  // T8 判定口径（transcriptKey 命中的任务是否仍在当前筛选列表）：按 flatTasks
+  // 的同一过滤 + 选中兜底逻辑计算，而不是只查 primary 集合 —— 子会话 / 自动化
+  // 任务经搜索 reveal 后以选中态在列表出现并可点开对话；只要任务仍在快照且
+  // 符合 view / workspace / source 筛选，实时刷新就不应关面板；被筛出或从
+  // 快照消失才关闭。
+  const transcriptTaskInList = $derived.by(() => {
+    const key = transcriptKey;
+    if (!key || !payload) return false;
+    for (const group of payload.workspaces) {
+      if (workspaceFilter && group.key !== workspaceFilter) continue;
+      for (const task of group.tasks) {
+        if (task.key !== key) continue;
+        if (!primaryTask(task) && task.key !== selectedKey) return false;
+        if (!matchesView(task, view)) return false;
+        if (sourceFilter && task.source !== sourceFilter) return false;
+        return true;
+      }
+    }
+    return false; // 快照里已没有该任务
+  });
 
   const continueHint = $derived<ContinueHint | null>(selected?.continue_hint ?? null);
 
@@ -578,8 +594,9 @@
       if (selectedKey && !flatTasks.some((task) => task.key === selectedKey)) {
         selectedKey = null;
       }
-      // 刷新后任务不在当前筛选列表：关闭对话并清除选中（T8，与列表选中规则一致）。
-      if (transcriptKey && !filteredListTasks.some((task) => task.key === transcriptKey)) {
+      // 刷新后 transcriptKey 命中的任务不在当前筛选列表（含选中兜底口径）：
+      // 关闭对话并清除选中（T8，与列表选中规则一致）。
+      if (transcriptKey && !transcriptTaskInList) {
         closeTranscript();
         if (selectedKey) selectedKey = null;
       }
@@ -988,8 +1005,9 @@
           return;
         }
         if (disposed) return;
-        // 实时刷新后任务不在当前筛选列表：关闭对话（T8）；选中沿用既有规则。
-        if (transcriptKey && !filteredListTasks.some((task) => task.key === transcriptKey)) {
+        // 实时刷新后 transcriptKey 命中的任务不在当前筛选列表（含选中兜底
+        // 口径）：关闭对话（T8）；选中沿用既有规则。
+        if (transcriptKey && !transcriptTaskInList) {
           closeTranscript();
         }
         if (!reportView) return;
