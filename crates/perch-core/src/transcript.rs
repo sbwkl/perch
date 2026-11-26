@@ -7,7 +7,8 @@ use serde_json::Value;
 
 use crate::collectors::claude::strip_injected_wrappers;
 use crate::models::{
-    TaskSnapshot, TranscriptMessage, TranscriptOutcome, TranscriptRole, SOURCE_CLAUDE, SOURCE_CODEX,
+    TaskSnapshot, TranscriptMessage, TranscriptOutcome, TranscriptRole, SOURCE_ANTIGRAVITY,
+    SOURCE_CLAUDE, SOURCE_CODEX,
 };
 
 /// 单一公共读取入口：输入任务快照，输出对话记录（角色、文本、是否截断）或错误。
@@ -17,6 +18,7 @@ pub fn read_transcript(task: &TaskSnapshot) -> TranscriptOutcome {
     match task.source.as_str() {
         SOURCE_CLAUDE => read_claude_transcript(task),
         SOURCE_CODEX => read_codex_transcript(task),
+        SOURCE_ANTIGRAVITY => read_antigravity_transcript(task),
         other if crate::models::transcript_supported(other) => {
             TranscriptOutcome::error("该来源的对话正文读取尚未接入")
         }
@@ -263,6 +265,73 @@ fn strip_codex_wrappers(text: &str) -> String {
         }
     }
     output
+}
+
+/// Antigravity 转录：USER_EXPLICIT（USER_INPUT）是用户输入（常包在
+/// <USER_REQUEST> 里）；MODEL 的 PLANNER_RESPONSE 是助手文本；
+/// 其余 MODEL 步骤（VIEW_FILE / RUN_COMMAND / GENERIC 等）是工具活动，只计数；
+/// SYSTEM 全部跳过。转录不是严格 JSONL（写入中断留下坏行），坏行整行跳过。
+fn read_antigravity_transcript(task: &TaskSnapshot) -> TranscriptOutcome {
+    let mut reader = match open_session_file(task) {
+        Ok(reader) => reader,
+        Err(outcome) => return outcome,
+    };
+    let mut builder = SessionBuilder::new();
+    let mut buffer = Vec::new();
+
+    loop {
+        buffer.clear();
+        match reader.read_until(b'\n', &mut buffer) {
+            Ok(0) => break,
+            Ok(_) => {}
+            Err(error) => return TranscriptOutcome::error(format!("读取源文件失败：{error}")),
+        }
+        let Ok(line) = std::str::from_utf8(&buffer) else {
+            continue;
+        };
+        let Ok(value) = serde_json::from_str::<Value>(line.trim()) else {
+            continue;
+        };
+        match value.get("source").and_then(Value::as_str) {
+            Some("USER_EXPLICIT") => {
+                if let Some(content) = value.get("content").and_then(Value::as_str) {
+                    let text = unwrap_user_request(content);
+                    if !text.trim().is_empty() {
+                        builder.push_text(TranscriptRole::User, text);
+                    }
+                }
+            }
+            Some("MODEL") => match value.get("type").and_then(Value::as_str) {
+                Some("PLANNER_RESPONSE") => {
+                    if let Some(content) = value.get("content").and_then(Value::as_str) {
+                        if !content.trim().is_empty() {
+                            builder.push_text(TranscriptRole::Assistant, content.to_owned());
+                        }
+                    }
+                }
+                // 非对话的模型活动步骤折叠为工具计数。
+                Some(_) => builder.add_tools(1),
+                None => {}
+            },
+            // SYSTEM / 缺失来源：系统消息、检查点、对话历史等，不属于对话。
+            _ => {}
+        }
+    }
+
+    builder.finish()
+}
+
+/// Antigravity 用户输入被 <USER_REQUEST>…</USER_REQUEST> 包裹时取内部文本。
+fn unwrap_user_request(content: &str) -> String {
+    let inner = match content
+        .find("<USER_REQUEST>")
+        .zip(content.find("</USER_REQUEST>"))
+        .filter(|(start, end)| end > start)
+    {
+        Some((start, end)) => &content[start + "<USER_REQUEST>".len()..end],
+        None => content,
+    };
+    inner.trim().to_owned()
 }
 
 fn tool_call_message(count: usize) -> TranscriptMessage {
