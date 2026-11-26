@@ -63,14 +63,18 @@ Perch 不臆造 `done`。待办进度来自 `~/.claude/tasks/<sessionId>/`。
 
 ## 为什么列表里看不到子会话或自动化任务？
 
-子会话（Claude `subagents/`、OpenCode/Kilo `parent_id`、Qoder `side_chat`）和 Codex 自动化线程
-默认不进入主列表，避免任务碎片化。它们仍保存在快照里，详情面板可显示“子会话”“自动化”徽标。
+子会话（Qoder `side_chat`、OpenCode/Kilo `parent_id`、Codex `subagent` / `tui_side_chat`）和
+Codex 自动化线程默认不进入主列表，也不计入来源 / 工作区 / 最近 / 更早的计数，避免任务碎片化。
+它们仍保存在快照里，可被搜索找到，详情面板与搜索结果可显示“子会话”“自动化”徽标。
+例外：Claude Code 的子代理文件（`subagents/`）只计入变化探测的文件数，不进快照，
+因此既搜索不到，也不会出现在详情面板里。
 
 ## 会话没有标题时显示什么？
 
 Claude Code 按标题优先级取原生标题、人工标题 sidecar，或由首条候选用户消息派生单行标题；
 都不存在时使用 `新会话`。Perch 不会调用模型自行命名：OpenCode 的 `session_v2.title` 在部分会话里为空
 （标题生成没有发生或失败），Qoder 新会话也可能暂时没有正式标题，此时统一使用该占位标题。
+Codex 的子代理会话缺少正式标题时，用其代理昵称派生「子代理 · <昵称>」，便于在搜索中分辨它来自哪个子代理。
 
 ## “源已删除”是什么意思？
 

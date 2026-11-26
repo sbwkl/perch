@@ -158,8 +158,9 @@ Claude Code 在 `~/.claude/sessions/<pid>.json` 写入运行中进程的实时�
 
 **读取内容**
 
-- 每个 rollout 读第一行 `session_meta`：`id`、`timestamp`、`cwd`、`originator`、`thread_source`、`model`；
-  尾部 256 KB 用于最新事件时间与运行状态。不扫完整 rollout。
+- 每个 rollout 读第一行 `session_meta`：`id`、`timestamp`、`cwd`、`originator`、`thread_source`、`model`，
+  以及子会话父链接所需的 `parent_thread_id`、`forked_from_id`、`history_base.thread_id`、
+  `agent_nickname` 与 `source`；尾部 256 KB 用于最新事件时间与运行状态。不扫完整 rollout。
 - `session_index.jsonl` 提供 `id → thread_name` 与 `updated_at`。
 - `goals_1.sqlite` 提供 `thread_goals` 的 `objective`、`status`。
 - `.jsonl.zst` 不解析。
@@ -173,7 +174,8 @@ Claude Code 在 `~/.claude/sessions/<pid>.json` 写入运行中进程的实时�
 
 1. `session_index.thread_name`。
 2. `thread_goals.objective`（截断 240 字符）。
-3. `新会话`。
+3. 子代理会话带 `agent_nickname` 时派生「子代理 · <昵称>」（截断 240 字符）。
+4. `新会话`。
 
 **状态推断**
 
@@ -186,6 +188,23 @@ Claude Code 在 `~/.claude/sessions/<pid>.json` 写入运行中进程的实时�
 **子会话与自动化**
 
 - `thread_source = automation` → `agent_kind = automation`，默认不进入主列表。
+- `thread_source = subagent`（大小写不敏感）→ 子代理会话；父 id 优先 `parent_thread_id`，
+  缺省退 `forked_from_id`。仅当 `thread_source` 缺失时，才以首行 `source` 为含 `subagent`
+  键的对象兜底判定；`thread_source` 为其他值（如 `user` / `automation`）时即使带
+  `source.subagent` 也不算子代理。
+- `thread_source = tui_side_chat` → 侧聊会话，同为子会话；父 id 优先 `forked_from_id`，
+  缺省退 `history_base.thread_id`。
+- 父 id 非空且不等于自身 id 才写入 `parent_key`（`codex:<父 id>`）；父会话不在本次扫描结果中时
+  照样写入。子会话仍保留在快照中、可被搜索，默认不进入主列表、不计入来源 / 工作区 / 最近 / 更早计数。
+- 其余会话（`user` / `automation` / 未被识别为子会话）即使带 `forked_from_id` 也保持主任务，
+  不建父子关系。
+- 多层级派生以即时父为准，嵌套深度不影响归类；归档目录 `archived_sessions/` 下的子代理会话
+  同样按子会话处理。
+- 子代理标题：`session_index.thread_name` 与 `thread_goals.objective` 优先；两者缺失且
+  `agent_nickname` 非空时派生「子代理 · <昵称>」（`title_source = derived`），
+  否则回退 `新会话`（`fallback`）。
+- `agent_kind` 与继续工作不变：subagent / tui_side_chat 不特判为 automation，继续工作沿用
+  既有通道，不为子会话另设深链。
 - `originator` 含 `Desktop` → `desktop`；含 `tui` / `exec` → `cli`。
 - 同一 id 同时存在于 `sessions/` 与 `archived_sessions/` 时只保留一条，活跃副本优先。
 
@@ -200,7 +219,7 @@ Claude Code 在 `~/.claude/sessions/<pid>.json` 写入运行中进程的实时�
 
 **已知限制**
 
-- 标题依赖 `session_index` 与 goal，覆盖不完整时显示 fallback；属正常情况。
+- 标题依赖 `session_index`、goal 与子代理 `agent_nickname`，覆盖不完整时显示 fallback；属正常情况。
 - goal 数据当前可能为空，此时状态只有运行/空闲。
 
 **变化探测**：`sessions/` + `archived_sessions/` 下 JSONL 的文件数 + 最新 mtime 签名。
