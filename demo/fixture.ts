@@ -433,8 +433,18 @@ const LONG_MESSAGES: TranscriptMessage[] = Array.from({ length: 120 }, (_, index
 // 单条 8000 字符的合成消息：正文读取通道会截断并标注「已截断」。
 const LONG_TEXT = "报错堆栈行，用于演示单条消息截断。".repeat(500);
 
+// 超过 200 个中文字符的合成用户输入：让「用户气泡最大宽度」成为可被几何断言约束的真实场景。
+const LONG_USER_TEXT =
+  "这是一条用于验证用户气泡最大宽度的长输入。请把结账页的价格计算、优惠券叠加、税费拆分和最终展示金额逐项核对一遍，并把每一步的中间结果写清楚，方便我对照产品文档确认口径是否一致。另外还需要检查空购物车、单一商品、多件同款、跨店满减以及退款之后的金额回滚这些边界情况。如果发现问题，请给出最小复现步骤、影响范围、临时规避方式和修复建议，并把相关的日志片段一起贴出来。最后请把这些内容汇总成一份可以在评审会上直接过一遍的清单，按严重程度排序。";
+
 const TRANSCRIPT_SPECS: Record<string, TranscriptSpec> = {
   "合成对话 · 分页长会话": { messages: LONG_MESSAGES },
+  "合成对话 · 长用户输入": {
+    messages: [
+      { role: "user", text: LONG_USER_TEXT, truncated: false },
+      { role: "assistant", text: "好的，我按上面的清单逐项核对，稍后把结果发你。", truncated: false },
+    ],
+  },
   "合成对话 · 工具轮与截断": {
     messages: [
       { role: "user", text: "帮我看一下结账页的报错。", truncated: false },
@@ -519,6 +529,7 @@ export function demoTranscriptOutcome(
 if (TRANSCRIPT_SCENARIO) {
   const scenarioTasks: TaskSeed[] = [
     { source: "claude", title: "合成对话 · 分页长会话", workspace: 0, status: "idle", updated_minutes_ago: 18, created_days_ago: 1, messages: 120 },
+    { source: "claude", title: "合成对话 · 长用户输入", workspace: 0, status: "idle", updated_minutes_ago: 15, created_days_ago: 1 },
     { source: "claude", title: "合成对话 · 工具轮与截断", workspace: 0, status: "running", updated_minutes_ago: 12, created_days_ago: 1, unread: true },
     { source: "claude", title: "合成对话 · 超大会话截断", workspace: 0, status: "idle", updated_minutes_ago: 40, created_days_ago: 2 },
     { source: "claude", title: "合成对话 · 首读失败后成功", workspace: 0, status: "idle", updated_minutes_ago: 65, created_days_ago: 2 },

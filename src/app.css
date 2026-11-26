@@ -9,10 +9,8 @@
   --text-tertiary: #9a9aa0;
   --accent: #b96a35;
   --accent-soft: rgba(185, 106, 53, 0.12);
-  /* 侧栏三组选中态：实底与墨色成对出现，浅色用深棕底白墨，深色用亮橙底深墨，
-     两两组合都 ≥ 4.5:1。 */
-  --nav-active-bg: #a35626;
-  --nav-active-ink: #ffffff;
+  /* 侧栏三组选中态：柔色底 + 墨色成对出现，合成后 ≥ 4.5:1。 */
+  --nav-active-ink: #8f4f24;
   --danger: #c0392b;
   --warn: #a46a12;
   --ok: #0f9f6e;
@@ -31,8 +29,7 @@
     --text-tertiary: #6e6e73;
     --accent: #e0965c;
     --accent-soft: rgba(224, 150, 92, 0.16);
-    --nav-active-bg: #e0965c;
-    --nav-active-ink: #1d1d1f;
+    --nav-active-ink: #e0965c;
     --danger: #ff6b5e;
     --warn: #e0b252;
     --ok: #3ddc97;
@@ -177,7 +174,6 @@ button:focus-visible {
   display: flex;
   align-items: center;
   gap: 8px;
-  position: relative;
   width: 100%;
   padding: 5.5px 8px;
   border: none;
@@ -193,31 +189,16 @@ button:focus-visible {
   background: var(--hover);
 }
 
-/* 选中态：实底 + 标签加粗 + 计数反白 + 左侧 3px 色条。任务 / Workspaces 的
-   色条用墨色（中性），来源组用该来源品牌色（--source 由标记写入）。 */
+/* 选中态：柔色强调底 + 标签加粗 + 标签与计数同用选中墨色；三组统一，
+   不再使用实底、反白或左侧色条，也不按来源品牌色区分。 */
 .nav-item.active {
-  background: var(--nav-active-bg);
+  background: var(--accent-soft);
   color: var(--nav-active-ink);
 }
 
 .nav-item.active .nav-label {
   font-weight: 650;
   color: var(--nav-active-ink);
-}
-
-.nav-item.active::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 4px;
-  bottom: 4px;
-  width: 3px;
-  border-radius: 999px;
-  background: var(--nav-active-ink);
-}
-
-.nav-item.source-item.active::before {
-  background: var(--source, var(--nav-active-ink));
 }
 
 .nav-icon {
@@ -861,6 +842,10 @@ kbd {
 }
 
 .transcript-msg[data-role="user"] {
+  /* 用户消息靠右气泡：限宽 76%，气泡内文字仍左对齐；助手与工具行样式不变。 */
+  align-self: flex-end;
+  max-width: 76%;
+  text-align: left;
   background: var(--accent-soft);
 }
 
@@ -904,7 +889,7 @@ kbd {
 
 .transcript-earlier {
   display: block;
-  margin: 8px 22px 14px;
+  margin: 0;
   padding: 5px 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
