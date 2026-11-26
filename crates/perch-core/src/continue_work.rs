@@ -136,8 +136,9 @@ fn valid_source_name(source: &str) -> bool {
             .all(|ch| ch.is_ascii_lowercase() || ch == '-')
 }
 
-/// 深链 sessionId 与任务 key 共用的字符集规则。
-fn valid_session_id_charset(value: &str) -> bool {
+/// 深链 sessionId 与任务 key 共用的字符集规则；来源适配（如 Cline 的
+/// messages.json 指针）复用同一规则过滤不可信的会话 id。
+pub(crate) fn valid_session_id_charset(value: &str) -> bool {
     (1..=128).contains(&value.len())
         && value
             .chars()

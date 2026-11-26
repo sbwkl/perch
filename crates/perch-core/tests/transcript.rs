@@ -1,8 +1,11 @@
 use std::fs;
 use std::path::Path;
 
-use perch_core::models::{TaskSnapshot, TranscriptOutcome, TranscriptRole, SOURCE_CLAUDE};
+use perch_core::models::{
+    TaskSnapshot, TranscriptOutcome, TranscriptRole, SOURCE_CLAUDE, SOURCE_CLINE,
+};
 use perch_core::transcript::read_transcript;
+use serde_json::json;
 use tempfile::TempDir;
 
 fn claude_task(source_path: &Path) -> TaskSnapshot {
@@ -14,6 +17,13 @@ fn claude_task(source_path: &Path) -> TaskSnapshot {
 
 fn codex_task(source_path: &Path) -> TaskSnapshot {
     let mut task = TaskSnapshot::new("codex", "sess-transcript");
+    task.title = "合成会话".to_owned();
+    task.source_path = Some(source_path.to_string_lossy().into_owned());
+    task
+}
+
+fn cline_task(source_path: &Path) -> TaskSnapshot {
+    let mut task = TaskSnapshot::new(SOURCE_CLINE, "session-transcript");
     task.title = "合成会话".to_owned();
     task.source_path = Some(source_path.to_string_lossy().into_owned());
     task
@@ -1142,14 +1152,13 @@ fn transcript_supported_set_gains_the_three_jsonl_sources() {
     // 明确不提供正文的来源保持不支持。
     assert!(!transcript_supported("trae-cn"));
     assert!(!transcript_supported("codebuddy"));
-    // 能力集合里已声明、但尚未接入的来源继续返回「尚未接入」，不整屏失败。
-    for source in ["qoder", "opencode", "kilo", "cline", "codearts"] {
-        let task = TaskSnapshot::new(source, "pending-1");
-        let outcome = read_transcript(&task);
+    // 三个来源的任务已接入读取通道：无指针时返回指针错误，而不是「尚未接入」。
+    for source in ["codex", "antigravity", "minimax"] {
+        let outcome = read_transcript(&TaskSnapshot::new(source, "no-pointer-1"));
         let TranscriptOutcome::Error { reason } = outcome else {
             panic!("期望 Error，实际：{outcome:?}");
         };
-        assert!(reason.contains("尚未接入"), "{source}: {reason}");
+        assert!(reason.contains("源文件指针"), "{source}: {reason}");
     }
 }
 
@@ -1294,6 +1303,336 @@ fn claude_collector_pointer_feeds_the_reader_end_to_end() {
             (TranscriptRole::User, "端到端问题"),
             (TranscriptRole::ToolCall, "工具调用 1 次"),
             (TranscriptRole::Assistant, "端到端回答"),
+        ]
+    );
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn cline_transcript_clips_single_message_to_eight_thousand_chars() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("session.messages.json");
+    // 9,000 个 CJK 字符：若按字节截断会得到约 2,666 字符，测试据此钉住「按字符」口径。
+    let long_text = "甲".repeat(9_000);
+    write_cline_messages(
+        &session,
+        json!([
+            {"id": "m1", "role": "assistant", "ts": 1, "content": [
+                {"type": "text", "text": long_text}
+            ]}
+        ]),
+    );
+    let before = fs::read(&session).unwrap();
+
+    let outcome = read_transcript(&cline_task(&session));
+
+    let TranscriptOutcome::Ready { messages, .. } = outcome else {
+        panic!("期望 Ready，实际：{outcome:?}");
+    };
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0].text.chars().count(), 8_000);
+    assert!(messages[0].truncated);
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn cline_transcript_keeps_the_recent_part_of_oversized_sessions() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("session.messages.json");
+    // 30 条 × 9,000 字符（截后 8,000）：总 240,000 超预算，保留最近 25 条（200,000 恰不超限）。
+    let records: Vec<serde_json::Value> = (1..=30)
+        .map(|index| {
+            json!({
+                "id": format!("m{index}"),
+                "role": "assistant",
+                "ts": index,
+                "content": [
+                    {"type": "text", "text": format!("第{index:02}条{}", "甲".repeat(9_000))}
+                ]
+            })
+        })
+        .collect();
+    write_cline_messages(&session, serde_json::Value::Array(records));
+    let before = fs::read(&session).unwrap();
+
+    let outcome = read_transcript(&cline_task(&session));
+
+    let TranscriptOutcome::Ready {
+        messages,
+        session_truncated,
+    } = outcome
+    else {
+        panic!("期望 Ready，实际：{outcome:?}");
+    };
+    assert!(session_truncated, "超预算会话必须标记丢弃");
+    assert_eq!(messages.len(), 25);
+    assert_eq!(messages[0].text.chars().count(), 8_000);
+    assert!(
+        messages[0].text.starts_with("第06条"),
+        "{}",
+        &messages[0].text[..12]
+    );
+    assert!(messages[24].text.starts_with("第30条"));
+    let total: usize = messages
+        .iter()
+        .map(|message| message.text.chars().count())
+        .sum();
+    assert!(total <= 200_000, "保留部分不得超过会话预算：{total}");
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn cline_transcript_empty_session_reports_no_displayable_content() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("session.messages.json");
+    write_cline_messages(&session, json!([]));
+    let before = fs::read(&session).unwrap();
+
+    let outcome = read_transcript(&cline_task(&session));
+
+    let TranscriptOutcome::Error { reason } = outcome else {
+        panic!("期望 Error，实际：{outcome:?}");
+    };
+    assert!(reason.contains("没有可显示的对话内容"), "{reason}");
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn cline_transcript_whitespace_only_session_reports_no_displayable_content() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("session.messages.json");
+    write_cline_messages(
+        &session,
+        json!([
+            {"id": "m1", "role": "user", "ts": 1, "content": [
+                {"type": "text", "text": "   \n  "}
+            ]},
+            {"id": "m2", "role": "assistant", "ts": 2, "content": [
+                {"type": "thinking", "thinking": "只有推理"}
+            ]}
+        ]),
+    );
+    let before = fs::read(&session).unwrap();
+
+    let outcome = read_transcript(&cline_task(&session));
+
+    let TranscriptOutcome::Error { reason } = outcome else {
+        panic!("期望 Error，实际：{outcome:?}");
+    };
+    assert!(reason.contains("没有可显示的对话内容"), "{reason}");
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn cline_transcript_corrupt_json_reports_parse_error() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("session.messages.json");
+    fs::write(&session, "{\"messages\": [ {\"role\": \"user\", ").unwrap();
+    let before = fs::read(&session).unwrap();
+
+    let outcome = read_transcript(&cline_task(&session));
+
+    let TranscriptOutcome::Error { reason } = outcome else {
+        panic!("期望 Error，实际：{outcome:?}");
+    };
+    assert!(reason.contains("JSON"), "{reason}");
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn cline_transcript_missing_messages_array_reports_shape_error() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("session.messages.json");
+    fs::write(&session, "{\"version\": 1, \"sessionId\": \"x\"}").unwrap();
+    let before = fs::read(&session).unwrap();
+
+    let outcome = read_transcript(&cline_task(&session));
+
+    let TranscriptOutcome::Error { reason } = outcome else {
+        panic!("期望 Error，实际：{outcome:?}");
+    };
+    assert!(reason.contains("messages"), "{reason}");
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn cline_transcript_reports_missing_source_file() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("missing.messages.json");
+
+    let outcome = read_transcript(&cline_task(&session));
+
+    let TranscriptOutcome::Error { reason } = outcome else {
+        panic!("期望 Error，实际：{outcome:?}");
+    };
+    assert!(reason.contains("源文件不存在"), "{reason}");
+}
+
+#[test]
+fn cline_transcript_reports_missing_cache_pointer() {
+    let mut task = TaskSnapshot::new(SOURCE_CLINE, "session-no-pointer");
+    task.source_path = None;
+
+    let outcome = read_transcript(&task);
+
+    let TranscriptOutcome::Error { reason } = outcome else {
+        panic!("期望 Error，实际：{outcome:?}");
+    };
+    assert!(reason.contains("源文件指针"), "{reason}");
+}
+
+#[test]
+fn cline_collector_pointer_feeds_the_reader_end_to_end() {
+    use perch_core::collectors::cline::ClineCollector;
+    use perch_core::collectors::Collector;
+    use perch_core::store::CacheStore;
+
+    let temp = TempDir::new().unwrap();
+    let db_path = temp.path().join(".cline/data/db/sessions.db");
+    fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+    {
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE sessions (
+               session_id TEXT PRIMARY KEY, source TEXT NOT NULL, status TEXT NOT NULL,
+               started_at TEXT NOT NULL, updated_at TEXT NOT NULL, cwd TEXT NOT NULL,
+               workspace_root TEXT NOT NULL, parent_session_id TEXT, model TEXT,
+               metadata_json TEXT);
+             INSERT INTO sessions VALUES ('syn1', 'cli', 'completed',
+               '2026-11-10T01:00:00.000Z', '2026-11-10T02:00:00.000Z',
+               '/Users/x/work/delta', '/Users/x/work/delta', NULL, NULL, '{}');",
+        )
+        .unwrap();
+    }
+    let messages_file = temp
+        .path()
+        .join(".cline/data/sessions/syn1/syn1.messages.json");
+    fs::create_dir_all(messages_file.parent().unwrap()).unwrap();
+    write_cline_messages(
+        &messages_file,
+        json!([
+            {"id": "m1", "role": "user", "ts": 1, "content": [
+                {"type": "text", "text": "端到端问题"}
+            ]},
+            {"id": "m2", "role": "assistant", "ts": 2, "content": [
+                {"type": "tool_use", "name": "read_file"}
+            ]},
+            {"id": "m3", "role": "assistant", "ts": 3, "content": [
+                {"type": "text", "text": "端到端回答"}
+            ]}
+        ]),
+    );
+    let before_db = fs::read(&db_path).unwrap();
+    let before_messages = fs::read(&messages_file).unwrap();
+
+    let result = ClineCollector::new(db_path.clone()).scan();
+    let task = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "syn1")
+        .expect("collector 应产出该会话任务")
+        .clone();
+    assert_eq!(
+        task.source_path.as_deref(),
+        Some(messages_file.to_str().unwrap()),
+        "扫描时必须写入可重建的源文件指针"
+    );
+
+    let store = CacheStore::open_in_memory().unwrap();
+    let scan_id = store.begin_scan("cline", "full", "source", "test").unwrap();
+    store
+        .save_result(
+            &perch_core::models::SourceResult::ok("cline", vec![task], Vec::new()),
+            scan_id,
+        )
+        .unwrap();
+    let loaded = store.load_task("cline:syn1").unwrap().unwrap();
+
+    let outcome = read_transcript(&loaded);
+    let TranscriptOutcome::Ready { messages, .. } = outcome else {
+        panic!("期望 Ready，实际：{outcome:?}");
+    };
+    let rendered: Vec<(TranscriptRole, &str)> = messages
+        .iter()
+        .map(|message| (message.role, message.text.as_str()))
+        .collect();
+    assert_eq!(
+        rendered,
+        vec![
+            (TranscriptRole::User, "端到端问题"),
+            (TranscriptRole::ToolCall, "工具调用 1 次"),
+            (TranscriptRole::Assistant, "端到端回答"),
+        ]
+    );
+    assert_eq!(
+        before_db,
+        fs::read(&db_path).unwrap(),
+        "端到端后源数据库字节必须一致"
+    );
+    assert_source_unchanged(&messages_file, &before_messages);
+}
+
+/// 合成 Cline messages.json：顶层 dict + messages 数组，块类型与真实探针一致
+/// （user 携 text/tool_result，assistant 携 text/thinking/tool_use）。
+fn write_cline_messages(path: &Path, messages: serde_json::Value) {
+    let document = json!({
+        "version": 1,
+        "sessionId": "session-transcript",
+        "messages": messages,
+    });
+    fs::write(path, serde_json::to_string_pretty(&document).unwrap()).unwrap();
+}
+
+#[test]
+fn cline_transcript_reads_turns_in_order_and_counts_tools() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("session.messages.json");
+    write_cline_messages(
+        &session,
+        json!([
+            {"id": "m1", "role": "user", "ts": 1, "content": [
+                {"type": "text", "text": "帮我看看这个函数"}
+            ]},
+            {"id": "m2", "role": "assistant", "ts": 2, "content": [
+                {"type": "thinking", "thinking": "内部推理不渲染"},
+                {"type": "text", "text": "函数缺少错误处理"},
+                {"type": "tool_use", "name": "read_file", "path": "/tmp/a"}
+            ]},
+            {"id": "m3", "role": "user", "ts": 3, "content": [
+                {"type": "tool_result", "content": "工具输出不渲染"}
+            ]},
+            {"id": "m4", "role": "assistant", "ts": 4, "content": [
+                {"type": "tool_use", "name": "edit_file"},
+                {"type": "tool_use", "name": "write_to_file"}
+            ]},
+            {"id": "m5", "role": "assistant", "ts": 5, "content": [
+                {"type": "text", "text": "已修复"}
+            ]},
+            {"id": "m6", "role": "user", "ts": 6, "content": [
+                {"type": "tool_result", "content": "diff 输出"},
+                {"type": "text", "text": "再检查一下"}
+            ]}
+        ]),
+    );
+    let before = fs::read(&session).unwrap();
+
+    let outcome = read_transcript(&cline_task(&session));
+
+    let TranscriptOutcome::Ready { messages, .. } = outcome else {
+        panic!("期望 Ready，实际：{outcome:?}");
+    };
+    let rendered: Vec<(TranscriptRole, &str)> = messages
+        .iter()
+        .map(|message| (message.role, message.text.as_str()))
+        .collect();
+    assert_eq!(
+        rendered,
+        vec![
+            (TranscriptRole::User, "帮我看看这个函数"),
+            (TranscriptRole::Assistant, "函数缺少错误处理"),
+            (TranscriptRole::ToolCall, "工具调用 3 次"),
+            (TranscriptRole::Assistant, "已修复"),
+            (TranscriptRole::User, "再检查一下"),
         ]
     );
     assert_source_unchanged(&session, &before);
