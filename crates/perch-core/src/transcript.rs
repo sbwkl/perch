@@ -1,13 +1,15 @@
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{BufRead, BufReader, ErrorKind};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
+use rusqlite::Connection;
 use serde_json::Value;
 
 use crate::collectors::claude::strip_injected_wrappers;
+use crate::collectors::common::{open_read_only, table_exists};
 use crate::models::{
-    TaskSnapshot, TranscriptMessage, TranscriptOutcome, TranscriptRole, SOURCE_CLAUDE,
+    TaskSnapshot, TranscriptMessage, TranscriptOutcome, TranscriptRole, SOURCE_CLAUDE, SOURCE_QODER,
 };
 
 /// 单一公共读取入口：输入任务快照，输出对话记录（角色、文本、是否截断）或错误。
@@ -16,11 +18,33 @@ use crate::models::{
 pub fn read_transcript(task: &TaskSnapshot) -> TranscriptOutcome {
     match task.source.as_str() {
         SOURCE_CLAUDE => read_claude_transcript(task),
+        SOURCE_QODER => read_qoder_transcript(task),
         other if crate::models::transcript_supported(other) => {
             TranscriptOutcome::error("该来源的对话正文读取尚未接入")
         }
         _ => TranscriptOutcome::error("来源不支持读取对话正文"),
     }
+}
+
+/// SQLite 系读取器的公共入口：按配置路径（含环境变量覆盖）只读打开源库。
+/// 打开失败或文件缺失统一转为 TranscriptOutcome::Error，不向上传播。
+fn open_transcript_db(label: &str, path: &Path) -> Result<Connection, TranscriptOutcome> {
+    if !path.is_file() {
+        return Err(TranscriptOutcome::error(format!(
+            "未找到{label}数据库：{}",
+            path.display()
+        )));
+    }
+    open_read_only(path)
+        .map_err(|error| TranscriptOutcome::error(format!("打开{label}数据库失败：{error}")))
+}
+
+/// 会话级存在性检查：找不到会话与「空会话」区分开；会话表缺失时跳过检查。
+fn source_session_exists(conn: &Connection, exists_sql: &str, source_id: &str) -> Option<bool> {
+    let found: Option<i64> = conn
+        .query_row(exists_sql, [source_id], |row| row.get(0))
+        .ok();
+    found.map(|value| value == 1)
 }
 
 fn read_claude_transcript(task: &TaskSnapshot) -> TranscriptOutcome {
@@ -117,6 +141,150 @@ fn tool_call_message(count: usize) -> TranscriptMessage {
         text: format!("工具调用 {count} 次"),
         truncated: false,
     }
+}
+
+/// Qoder：正文在 `chat_session_messages.payload_json`。现行格式 role 在 payload 里、
+/// 完整正文在顶层 text（parts 里的 text 是流式分块）；旧格式（无 role 字段）正文
+/// 只在 parts 的 text 块里，带 finalTextId 的是助手回合。system 等角色整条跳过。
+fn read_qoder_transcript(task: &TaskSnapshot) -> TranscriptOutcome {
+    let db_path = crate::paths::SourcePaths::detect().qoder_db;
+    let conn = match open_transcript_db("Qoder", &db_path) {
+        Ok(conn) => conn,
+        Err(outcome) => return outcome,
+    };
+    if source_session_exists(&conn, "SELECT 1 FROM chat_sessions WHERE session_id = ?1", &task.source_id)
+        == Some(false)
+    {
+        return TranscriptOutcome::error(format!("会话不存在：{}", task.source_id));
+    }
+    if !table_exists(&conn, "chat_session_messages").unwrap_or(false) {
+        return TranscriptOutcome::error("Qoder 数据库缺少消息表");
+    }
+
+    let mut stmt = match conn.prepare(
+        "SELECT payload_json FROM chat_session_messages \
+         WHERE session_id = ?1 ORDER BY sequence, rowid",
+    ) {
+        Ok(stmt) => stmt,
+        Err(error) => return TranscriptOutcome::error(format!("读取会话消息失败：{error}")),
+    };
+    let mut rows = match stmt.query([&task.source_id]) {
+        Ok(rows) => rows,
+        Err(error) => return TranscriptOutcome::error(format!("读取会话消息失败：{error}")),
+    };
+
+    let mut messages = VecDeque::new();
+    let mut session_chars = 0usize;
+    let mut session_truncated = false;
+    let mut pending_tools = 0usize;
+
+    while let Some(row) = match rows.next() {
+        Ok(row) => row,
+        Err(error) => return TranscriptOutcome::error(format!("读取会话消息失败：{error}")),
+    } {
+        let payload: String = match row.get(0) {
+            Ok(payload) => payload,
+            Err(error) => return TranscriptOutcome::error(format!("读取会话消息失败：{error}")),
+        };
+        // 损坏的 payload 跳过并继续，不整屏失败。
+        let Ok(value) = serde_json::from_str::<Value>(&payload) else {
+            continue;
+        };
+        let Some(record) = qoder_record(&value) else {
+            continue;
+        };
+        // 与 Claude 同构的折叠：先冲刷累积的工具计数再落文本，本条工具计入下一轮。
+        if let Some(text) = record.text.filter(|text| !text.trim().is_empty()) {
+            if pending_tools > 0 {
+                push_message(
+                    &mut messages,
+                    &mut session_chars,
+                    &mut session_truncated,
+                    tool_call_message(pending_tools),
+                );
+                pending_tools = 0;
+            }
+            let (text, truncated) = clip_message_text(text);
+            if !text.is_empty() {
+                push_message(
+                    &mut messages,
+                    &mut session_chars,
+                    &mut session_truncated,
+                    TranscriptMessage {
+                        role: record.role,
+                        text,
+                        truncated,
+                    },
+                );
+            }
+        }
+        pending_tools += record.tools;
+    }
+
+    if pending_tools > 0 {
+        push_message(
+            &mut messages,
+            &mut session_chars,
+            &mut session_truncated,
+            tool_call_message(pending_tools),
+        );
+    }
+
+    if messages.is_empty() {
+        return TranscriptOutcome::error("会话没有可显示的对话内容");
+    }
+    TranscriptOutcome::Ready {
+        messages: messages.into_iter().collect(),
+        session_truncated,
+    }
+}
+
+struct QoderRecord {
+    role: TranscriptRole,
+    text: Option<String>,
+    tools: usize,
+}
+
+/// payload_json 归一：role 取 payload.role，缺失时按结构判定（finalTextId → 助手）；
+/// text 现行格式取顶层、为空时回退 parts 的 text 块；tool 块只计数。
+fn qoder_record(value: &Value) -> Option<QoderRecord> {
+    let role_raw = value.get("role").and_then(Value::as_str);
+    let role = match role_raw {
+        Some("user") => TranscriptRole::User,
+        Some("assistant") => TranscriptRole::Assistant,
+        Some(_) => return None,
+        None if value.get("finalTextId").is_some() => TranscriptRole::Assistant,
+        None => TranscriptRole::User,
+    };
+
+    let mut parts_texts = Vec::new();
+    let mut tools = 0usize;
+    if let Some(parts) = value.get("parts").and_then(Value::as_array) {
+        for part in parts {
+            match part.get("type").and_then(Value::as_str) {
+                Some("text") => {
+                    if let Some(raw) = part.get("text").and_then(Value::as_str) {
+                        parts_texts.push(raw.to_owned());
+                    }
+                }
+                Some("tool") => tools += 1,
+                _ => {}
+            }
+        }
+    }
+
+    let text = match role_raw {
+        Some(_) => {
+            let top = value.get("text").and_then(Value::as_str).unwrap_or("");
+            if top.trim().is_empty() {
+                joined_visible_text(&parts_texts)
+            } else {
+                Some(top.to_owned())
+            }
+        }
+        None => joined_visible_text(&parts_texts),
+    };
+    Some(QoderRecord { role, text, tools })
 }
 
 enum ClaudeRecord {

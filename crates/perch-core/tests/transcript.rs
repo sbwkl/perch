@@ -1,7 +1,11 @@
 use std::fs;
 use std::path::Path;
+use std::sync::{Mutex, MutexGuard};
 
-use perch_core::models::{TaskSnapshot, TranscriptOutcome, TranscriptRole, SOURCE_CLAUDE};
+use perch_core::models::{
+    TaskSnapshot, TranscriptOutcome, TranscriptRole, SOURCE_CLAUDE, SOURCE_CODEARTS, SOURCE_KILO,
+    SOURCE_OPENCODE, SOURCE_QODER,
+};
 use perch_core::transcript::read_transcript;
 use tempfile::TempDir;
 
@@ -252,9 +256,9 @@ fn claude_transcript_marks_unsupported_and_pending_sources() {
     };
     assert!(reason.contains("来源不支持"), "{reason}");
 
-    // 其余 7 个正文来源已声明支持，但在各自适配票落地前返回未接入。
-    let qoder = TaskSnapshot::new("qoder", "q-1");
-    let outcome = read_transcript(&qoder);
+    // 其余 4 个正文来源已声明支持，但在各自适配票落地前返回未接入。
+    let codex = TaskSnapshot::new("codex", "c-1");
+    let outcome = read_transcript(&codex);
     let TranscriptOutcome::Error { reason } = outcome else {
         panic!("期望 Error，实际：{outcome:?}");
     };
@@ -310,11 +314,160 @@ fn claude_transcript_reads_user_and_assistant_turns_in_order() {
             (TranscriptRole::Assistant, "已修复"),
         ]
     );
+    assert_source_unchanged(&session, &before);
+}
+
+// ===== SQLite 系来源（Qoder / OpenCode / Kilo / CodeArts）=====
+
+/// SQLite 读取器按 SourcePaths::detect() 解析路径（环境变量覆盖），测试通过
+/// 设置环境变量指向临时 fixture；env 是进程全局的，用互斥锁把本节用例串行化。
+static SQLITE_FIXTURE_LOCK: Mutex<()> = Mutex::new(());
+
+fn lock_sqlite_fixtures() -> MutexGuard<'static, ()> {
+    SQLITE_FIXTURE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn dir_file_names(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+/// 断言读取前后：目录里没有任何文件新增或删除（含 -shm / -wal 侧车），
+/// 且数据库文件字节一致。
+fn assert_db_untouched(db: &Path, before_files: &[String], before_bytes: &[u8]) {
+    let dir = db.parent().unwrap();
+    assert_eq!(
+        before_files,
+        dir_file_names(dir),
+        "读取前后目录文件集合必须一致（不得产生任何写入或侧车文件）"
+    );
+    assert_source_unchanged(db, before_bytes);
+}
+
+fn create_qoder_fixture(path: &Path) -> rusqlite::Connection {
+    let conn = rusqlite::Connection::open(path).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE chat_sessions (session_id TEXT PRIMARY KEY, title TEXT NOT NULL);
+         CREATE TABLE chat_session_messages (
+           session_id TEXT NOT NULL,
+           message_id TEXT NOT NULL,
+           sequence INTEGER NOT NULL,
+           payload_json TEXT NOT NULL,
+           PRIMARY KEY (session_id, message_id));",
+    )
+    .unwrap();
+    conn
+}
+
+fn insert_qoder_message(
+    conn: &rusqlite::Connection,
+    session_id: &str,
+    message_id: &str,
+    sequence: i64,
+    payload_json: &str,
+) {
+    conn.execute(
+        "INSERT INTO chat_session_messages (session_id, message_id, sequence, payload_json) \
+         VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![session_id, message_id, sequence, payload_json],
+    )
+    .unwrap();
+}
+
+fn insert_qoder_session(conn: &rusqlite::Connection, session_id: &str) {
+    conn.execute(
+        "INSERT INTO chat_sessions (session_id, title) VALUES (?1, ?2)",
+        rusqlite::params![session_id, "合成会话"],
+    )
+    .unwrap();
+}
+
+fn qoder_task(source_id: &str) -> TaskSnapshot {
+    let mut task = TaskSnapshot::new(SOURCE_QODER, source_id);
+    task.title = "合成会话".to_owned();
+    task
+}
+
+#[test]
+fn qoder_transcript_reads_turns_in_sequence_order() {
+    let _guard = lock_sqlite_fixtures();
+    let temp = TempDir::new().unwrap();
+    let db = temp.path().join("main.sqlite");
+    let conn = create_qoder_fixture(&db);
+    insert_qoder_session(&conn, "q-order");
+    // 插入顺序打乱，断言按 sequence 排序。
+    insert_qoder_message(
+        &conn,
+        "q-order",
+        "m3",
+        3,
+        r#"{"id":"m3","role":"user","turnId":"t2","text":"第二个问题","timestamp":3}"#,
+    );
+    insert_qoder_message(
+        &conn,
+        "q-order",
+        "m2",
+        2,
+        concat!(
+            r#"{"id":"m2","role":"assistant","turnId":"t1","text":"看完了，结论如下","#,
+            r#""timestamp":2,"parts":[{"type":"thinking","text":"思考不渲染"},"#,
+            r#"{"type":"text","text":"看完了块1"},{"type":"text","text":"块2"}]}"#
+        ),
+    );
+    insert_qoder_message(
+        &conn,
+        "q-order",
+        "m1",
+        1,
+        r#"{"id":"m1","role":"user","turnId":"t1","text":"先看这个文件","timestamp":1}"#,
+    );
+    insert_qoder_message(
+        &conn,
+        "q-order",
+        "m4",
+        4,
+        r#"{"id":"m4","role":"assistant","turnId":"t2","text":"修好了","timestamp":4}"#,
+    );
+    drop(conn);
+    let before_files = dir_file_names(temp.path());
+    let before_bytes = fs::read(&db).unwrap();
+    std::env::set_var("PERCH_QODER_DB", &db);
+
+    let outcome = read_transcript(&qoder_task("q-order"));
+
+    let TranscriptOutcome::Ready {
+        messages,
+        session_truncated,
+    } = outcome
+    else {
+        panic!("期望 Ready，实际：{outcome:?}");
+    };
+    assert!(!session_truncated);
+    let rendered: Vec<(TranscriptRole, &str)> = messages
+        .iter()
+        .map(|message| (message.role, message.text.as_str()))
+        .collect();
+    assert_eq!(
+        rendered,
+        vec![
+            (TranscriptRole::User, "先看这个文件"),
+            (TranscriptRole::Assistant, "看完了，结论如下"),
+            (TranscriptRole::User, "第二个问题"),
+            (TranscriptRole::Assistant, "修好了"),
+        ]
+    );
     assert!(
         messages.iter().all(|message| !message.truncated),
         "正常消息不应标记截断"
     );
-    assert_source_unchanged(&session, &before);
+    assert_db_untouched(&db, &before_files, &before_bytes);
+    std::env::remove_var("PERCH_QODER_DB");
 }
 
 #[test]
