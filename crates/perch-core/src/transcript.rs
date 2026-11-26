@@ -7,7 +7,8 @@ use serde_json::Value;
 
 use crate::collectors::claude::strip_injected_wrappers;
 use crate::models::{
-    TaskSnapshot, TranscriptMessage, TranscriptOutcome, TranscriptRole, SOURCE_CLAUDE, SOURCE_CLINE,
+    TaskSnapshot, TranscriptMessage, TranscriptOutcome, TranscriptRole, SOURCE_ANTIGRAVITY,
+    SOURCE_CLAUDE, SOURCE_CLINE, SOURCE_CODEX, SOURCE_MINIMAX,
 };
 
 /// 单一公共读取入口：输入任务快照，输出对话记录（角色、文本、是否截断）或错误。
@@ -16,6 +17,9 @@ use crate::models::{
 pub fn read_transcript(task: &TaskSnapshot) -> TranscriptOutcome {
     match task.source.as_str() {
         SOURCE_CLAUDE => read_claude_transcript(task),
+        SOURCE_CODEX => read_codex_transcript(task),
+        SOURCE_ANTIGRAVITY => read_antigravity_transcript(task),
+        SOURCE_MINIMAX => read_minimax_transcript(task),
         SOURCE_CLINE => read_cline_transcript(task),
         other if crate::models::transcript_supported(other) => {
             TranscriptOutcome::error("该来源的对话正文读取尚未接入")
@@ -24,25 +28,106 @@ pub fn read_transcript(task: &TaskSnapshot) -> TranscriptOutcome {
     }
 }
 
-fn read_claude_transcript(task: &TaskSnapshot) -> TranscriptOutcome {
+/// 各文件来源共用的开场：解析指针列并只读打开源文件。
+/// 指针缺失、文件不存在、打开失败各自有一行原因，不整屏失败。
+fn open_session_file(task: &TaskSnapshot) -> Result<BufReader<File>, TranscriptOutcome> {
     let Some(path_text) = task.source_path.as_deref().filter(|path| !path.is_empty()) else {
-        return TranscriptOutcome::error("缓存中缺少会话源文件指针，请刷新后重试");
+        return Err(TranscriptOutcome::error(
+            "缓存中缺少会话源文件指针，请刷新后重试",
+        ));
     };
     let path = PathBuf::from(path_text);
     let file = match File::open(&path) {
         Ok(file) => file,
         Err(error) if error.kind() == ErrorKind::NotFound => {
-            return TranscriptOutcome::error(format!("源文件不存在：{}", path.display()))
+            return Err(TranscriptOutcome::error(format!(
+                "源文件不存在：{}",
+                path.display()
+            )));
         }
-        Err(error) => return TranscriptOutcome::error(format!("读取源文件失败：{error}")),
+        Err(error) => {
+            return Err(TranscriptOutcome::error(format!("读取源文件失败：{error}")));
+        }
     };
+    Ok(BufReader::new(file))
+}
 
-    let mut reader = BufReader::new(file);
+/// 单会话累计器：按时间正序追加消息，工具轮折叠为计数行，
+/// 超出会话预算时从最早的消息开始整条丢弃（保最近）。
+struct SessionBuilder {
+    messages: VecDeque<TranscriptMessage>,
+    session_chars: usize,
+    session_truncated: bool,
+    pending_tools: usize,
+}
+
+impl SessionBuilder {
+    fn new() -> Self {
+        Self {
+            messages: VecDeque::new(),
+            session_chars: 0,
+            session_truncated: false,
+            pending_tools: 0,
+        }
+    }
+
+    fn add_tools(&mut self, count: usize) {
+        self.pending_tools += count;
+    }
+
+    /// 追加一条消息；其前若有未折叠的工具轮，先输出折叠行。
+    fn push_text(&mut self, role: TranscriptRole, text: String) {
+        self.flush_tools();
+        let (text, truncated) = clip_message_text(text);
+        if text.is_empty() {
+            return;
+        }
+        push_message(
+            &mut self.messages,
+            &mut self.session_chars,
+            &mut self.session_truncated,
+            TranscriptMessage {
+                role,
+                text,
+                truncated,
+            },
+        );
+    }
+
+    /// 把累积的纯工具轮折叠成一行「工具调用 N 次」。
+    fn flush_tools(&mut self) {
+        if self.pending_tools == 0 {
+            return;
+        }
+        let count = std::mem::take(&mut self.pending_tools);
+        push_message(
+            &mut self.messages,
+            &mut self.session_chars,
+            &mut self.session_truncated,
+            tool_call_message(count),
+        );
+    }
+
+    /// 会话结束：折叠剩余工具轮；没有任何可显示内容时报错而不是空 Ready。
+    fn finish(mut self) -> TranscriptOutcome {
+        self.flush_tools();
+        if self.messages.is_empty() {
+            return TranscriptOutcome::error("会话没有可显示的对话内容");
+        }
+        TranscriptOutcome::Ready {
+            messages: self.messages.into_iter().collect(),
+            session_truncated: self.session_truncated,
+        }
+    }
+}
+
+fn read_claude_transcript(task: &TaskSnapshot) -> TranscriptOutcome {
+    let mut reader = match open_session_file(task) {
+        Ok(reader) => reader,
+        Err(outcome) => return outcome,
+    };
+    let mut builder = SessionBuilder::new();
     let mut buffer = Vec::new();
-    let mut messages: VecDeque<TranscriptMessage> = VecDeque::new();
-    let mut session_chars = 0usize;
-    let mut session_truncated = false;
-    let mut pending_tools = 0usize;
 
     loop {
         buffer.clear();
@@ -60,56 +145,292 @@ fn read_claude_transcript(task: &TaskSnapshot) -> TranscriptOutcome {
         };
 
         match claude_record(&value) {
-            Some(ClaudeRecord::Tools(count)) => pending_tools += count,
+            Some(ClaudeRecord::Tools(count)) => builder.add_tools(count),
             Some(ClaudeRecord::Text {
                 role,
                 text,
                 tool_uses,
             }) => {
-                if pending_tools > 0 {
-                    push_message(
-                        &mut messages,
-                        &mut session_chars,
-                        &mut session_truncated,
-                        tool_call_message(pending_tools),
-                    );
-                    pending_tools = 0;
-                }
-                let (text, truncated) = clip_message_text(text);
-                if !text.is_empty() {
-                    push_message(
-                        &mut messages,
-                        &mut session_chars,
-                        &mut session_truncated,
-                        TranscriptMessage {
-                            role,
-                            text,
-                            truncated,
-                        },
-                    );
-                }
-                pending_tools += tool_uses;
+                builder.push_text(role, text);
+                builder.add_tools(tool_uses);
             }
             None => {}
         }
     }
 
-    if pending_tools > 0 {
-        push_message(
-            &mut messages,
-            &mut session_chars,
-            &mut session_truncated,
-            tool_call_message(pending_tools),
-        );
+    builder.finish()
+}
+
+/// Codex rollout：只取 response_item 的 message（user input_text / assistant
+/// output_text）；function_call / custom_tool_call 只计数。event_msg 的
+/// user_message / agent_message 与 response_item 重复，一律跳过避免双计。
+fn read_codex_transcript(task: &TaskSnapshot) -> TranscriptOutcome {
+    let mut reader = match open_session_file(task) {
+        Ok(reader) => reader,
+        Err(outcome) => return outcome,
+    };
+    let mut builder = SessionBuilder::new();
+    let mut buffer = Vec::new();
+
+    loop {
+        buffer.clear();
+        match reader.read_until(b'\n', &mut buffer) {
+            Ok(0) => break,
+            Ok(_) => {}
+            Err(error) => return TranscriptOutcome::error(format!("读取源文件失败：{error}")),
+        }
+        let Ok(line) = std::str::from_utf8(&buffer) else {
+            continue;
+        };
+        let Ok(value) = serde_json::from_str::<Value>(line.trim()) else {
+            continue;
+        };
+        if value.get("type").and_then(Value::as_str) != Some("response_item") {
+            continue;
+        }
+        let payload = match value.get("payload") {
+            Some(payload) if payload.is_object() => payload,
+            _ => continue,
+        };
+        match payload.get("type").and_then(Value::as_str) {
+            Some("message") => match payload.get("role").and_then(Value::as_str) {
+                Some("user") => {
+                    let texts = codex_message_texts(payload, "input_text");
+                    if let Some(text) = joined_visible_text(&texts) {
+                        builder.push_text(TranscriptRole::User, text);
+                    }
+                }
+                Some("assistant") => {
+                    let texts = codex_message_texts(payload, "output_text");
+                    if let Some(text) = joined_visible_text(&texts) {
+                        builder.push_text(TranscriptRole::Assistant, text);
+                    }
+                }
+                // developer / system 角色是注入的项目说明，不属于对话。
+                _ => {}
+            },
+            Some("function_call" | "custom_tool_call") => builder.add_tools(1),
+            // reasoning / function_call_output / custom_tool_call_output /
+            // local_shell_call / web_search_call / other 等一律跳过。
+            _ => {}
+        }
     }
 
-    if messages.is_empty() {
-        return TranscriptOutcome::error("会话没有可显示的对话内容");
+    builder.finish()
+}
+
+/// Codex message payload 的 content 数组 → 文本块列表；每块剥离注入包装后
+/// 为空即跳过（environment_context 等常与真实输入同条共存）。
+fn codex_message_texts(payload: &Value, content_type: &str) -> Vec<String> {
+    let mut texts = Vec::new();
+    if let Some(Value::Array(items)) = payload.get("content") {
+        for item in items {
+            let Some(kind) = item.get("type").and_then(Value::as_str) else {
+                continue;
+            };
+            if kind != content_type {
+                continue;
+            }
+            if let Some(raw) = item.get("text").and_then(Value::as_str) {
+                let stripped = strip_codex_wrappers(raw);
+                if !stripped.trim().is_empty() {
+                    texts.push(stripped);
+                }
+            }
+        }
     }
-    TranscriptOutcome::Ready {
-        messages: messages.into_iter().collect(),
-        session_truncated,
+    texts
+}
+
+/// 剥离 Codex 注入的系统包装块（可带属性）：<environment_context>、
+/// <user_instructions>、<codex_internal_context …>、<heartbeat>。
+fn strip_codex_wrappers(text: &str) -> String {
+    const WRAPPERS: &[&str] = &[
+        "environment_context",
+        "user_instructions",
+        "codex_internal_context",
+        "heartbeat",
+    ];
+    let mut output = text.to_owned();
+    for tag in WRAPPERS {
+        let open = format!("<{tag}");
+        let close = format!("</{tag}>");
+        while let Some(start) = output.find(&open) {
+            let Some(open_end) = output[start..].find('>') else {
+                break;
+            };
+            let Some(relative) = output[start + open_end..].find(&close) else {
+                break;
+            };
+            let end = start + open_end + relative + close.len();
+            output.replace_range(start..end, "");
+        }
     }
+    output
+}
+
+/// Antigravity 转录：USER_EXPLICIT（USER_INPUT）是用户输入（常包在
+/// <USER_REQUEST> 里）；MODEL 的 PLANNER_RESPONSE 是助手文本；
+/// 其余 MODEL 步骤（VIEW_FILE / RUN_COMMAND / GENERIC 等）是工具活动，只计数；
+/// SYSTEM 全部跳过。转录不是严格 JSONL（写入中断留下坏行），坏行整行跳过。
+fn read_antigravity_transcript(task: &TaskSnapshot) -> TranscriptOutcome {
+    let mut reader = match open_session_file(task) {
+        Ok(reader) => reader,
+        Err(outcome) => return outcome,
+    };
+    let mut builder = SessionBuilder::new();
+    let mut buffer = Vec::new();
+
+    loop {
+        buffer.clear();
+        match reader.read_until(b'\n', &mut buffer) {
+            Ok(0) => break,
+            Ok(_) => {}
+            Err(error) => return TranscriptOutcome::error(format!("读取源文件失败：{error}")),
+        }
+        let Ok(line) = std::str::from_utf8(&buffer) else {
+            continue;
+        };
+        let Ok(value) = serde_json::from_str::<Value>(line.trim()) else {
+            continue;
+        };
+        match value.get("source").and_then(Value::as_str) {
+            Some("USER_EXPLICIT") => {
+                if let Some(content) = value.get("content").and_then(Value::as_str) {
+                    let text = unwrap_user_request(content);
+                    if !text.trim().is_empty() {
+                        builder.push_text(TranscriptRole::User, text);
+                    }
+                }
+            }
+            Some("MODEL") => match value.get("type").and_then(Value::as_str) {
+                Some("PLANNER_RESPONSE") => {
+                    if let Some(content) = value.get("content").and_then(Value::as_str) {
+                        if !content.trim().is_empty() {
+                            builder.push_text(TranscriptRole::Assistant, content.to_owned());
+                        }
+                    }
+                }
+                // 非对话的模型活动步骤折叠为工具计数。
+                Some(_) => builder.add_tools(1),
+                None => {}
+            },
+            // SYSTEM / 缺失来源：系统消息、检查点、对话历史等，不属于对话。
+            _ => {}
+        }
+    }
+
+    builder.finish()
+}
+
+/// Antigravity 用户输入被 <USER_REQUEST>…</USER_REQUEST> 包裹时取内部文本。
+fn unwrap_user_request(content: &str) -> String {
+    let inner = match content
+        .find("<USER_REQUEST>")
+        .zip(content.find("</USER_REQUEST>"))
+        .filter(|(start, end)| end > start)
+    {
+        Some((start, end)) => &content[start + "<USER_REQUEST>".len()..end],
+        None => content,
+    };
+    inner.trim().to_owned()
+}
+
+/// MiniMax messages.jsonl：message.role 区分 user / assistant / toolResult。
+/// user 的 text 内容剥离注入的 reminder 块；assistant 的 thinking 不渲染、
+/// toolCall 只计数、text 是可见文本；toolResult / custom 整条跳过。
+fn read_minimax_transcript(task: &TaskSnapshot) -> TranscriptOutcome {
+    let mut reader = match open_session_file(task) {
+        Ok(reader) => reader,
+        Err(outcome) => return outcome,
+    };
+    let mut builder = SessionBuilder::new();
+    let mut buffer = Vec::new();
+
+    loop {
+        buffer.clear();
+        match reader.read_until(b'\n', &mut buffer) {
+            Ok(0) => break,
+            Ok(_) => {}
+            Err(error) => return TranscriptOutcome::error(format!("读取源文件失败：{error}")),
+        }
+        let Ok(line) = std::str::from_utf8(&buffer) else {
+            continue;
+        };
+        let Ok(value) = serde_json::from_str::<Value>(line.trim()) else {
+            continue;
+        };
+        let Some(message) = value.get("message").filter(|m| m.is_object()) else {
+            continue;
+        };
+        match message.get("role").and_then(Value::as_str) {
+            Some("user") => {
+                let text = minimax_user_text(message);
+                if !text.trim().is_empty() {
+                    builder.push_text(TranscriptRole::User, text);
+                }
+            }
+            Some("assistant") => {
+                let (texts, tool_calls) = minimax_assistant_parts(message);
+                if let Some(text) = joined_visible_text(&texts) {
+                    builder.push_text(TranscriptRole::Assistant, text);
+                }
+                builder.add_tools(tool_calls);
+            }
+            // toolResult 是工具输出（工具调用已在 assistant 记录计数）；
+            // custom 是内部消息，均不属于对话。
+            _ => {}
+        }
+    }
+
+    builder.finish()
+}
+
+/// MiniMax user message 的 content：字符串或 text 分块数组，剥离注入 reminder。
+fn minimax_user_text(message: &Value) -> String {
+    let joined = match message.get("content") {
+        Some(Value::String(raw)) => raw.clone(),
+        Some(Value::Array(parts)) => {
+            let mut texts = Vec::new();
+            for part in parts {
+                if part.get("type").and_then(Value::as_str) == Some("text") {
+                    if let Some(raw) = part.get("text").and_then(Value::as_str) {
+                        texts.push(raw.to_owned());
+                    }
+                }
+            }
+            texts.join("\n")
+        }
+        _ => String::new(),
+    };
+    crate::collectors::minimax::strip_reminder_blocks(&joined)
+        .trim()
+        .to_owned()
+}
+
+/// MiniMax assistant message 的 content 分块 →（可见文本块, toolCall 计数）。
+fn minimax_assistant_parts(message: &Value) -> (Vec<String>, usize) {
+    let mut texts = Vec::new();
+    let mut tool_calls = 0usize;
+    match message.get("content") {
+        Some(Value::String(raw)) => texts.push(raw.clone()),
+        Some(Value::Array(parts)) => {
+            for part in parts {
+                match part.get("type").and_then(Value::as_str) {
+                    Some("text") => {
+                        if let Some(raw) = part.get("text").and_then(Value::as_str) {
+                            texts.push(raw.to_owned());
+                        }
+                    }
+                    Some("toolCall") => tool_calls += 1,
+                    // thinking 是思考过程，不读取不渲染。
+                    _ => {}
+                }
+            }
+        }
+        _ => {}
+    }
+    (texts, tool_calls)
 }
 
 fn tool_call_message(count: usize) -> TranscriptMessage {
