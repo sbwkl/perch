@@ -39,12 +39,14 @@ fn open_transcript_db(label: &str, path: &Path) -> Result<Connection, Transcript
         .map_err(|error| TranscriptOutcome::error(format!("打开{label}数据库失败：{error}")))
 }
 
-/// 会话级存在性检查：找不到会话与「空会话」区分开；会话表缺失时跳过检查。
+/// 会话级存在性检查：Some(false) 表示源库注册表里没有该会话；
+/// 表缺失等查询错误返回 None（跳过检查，交由消息查询自然落到空会话）。
 fn source_session_exists(conn: &Connection, exists_sql: &str, source_id: &str) -> Option<bool> {
-    let found: Option<i64> = conn
-        .query_row(exists_sql, [source_id], |row| row.get(0))
-        .ok();
-    found.map(|value| value == 1)
+    match conn.query_row(exists_sql, [source_id], |row| row.get::<_, i64>(0)) {
+        Ok(_) => Some(true),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Some(false),
+        Err(_) => None,
+    }
 }
 
 fn read_claude_transcript(task: &TaskSnapshot) -> TranscriptOutcome {
@@ -190,35 +192,32 @@ fn read_qoder_transcript(task: &TaskSnapshot) -> TranscriptOutcome {
         let Ok(value) = serde_json::from_str::<Value>(&payload) else {
             continue;
         };
-        let Some(record) = qoder_record(&value) else {
-            continue;
-        };
-        // 与 Claude 同构的折叠：先冲刷累积的工具计数再落文本，本条工具计入下一轮。
-        if let Some(text) = record.text.filter(|text| !text.trim().is_empty()) {
-            if pending_tools > 0 {
-                push_message(
-                    &mut messages,
-                    &mut session_chars,
-                    &mut session_truncated,
-                    tool_call_message(pending_tools),
-                );
-                pending_tools = 0;
-            }
-            let (text, truncated) = clip_message_text(text);
-            if !text.is_empty() {
-                push_message(
-                    &mut messages,
-                    &mut session_chars,
-                    &mut session_truncated,
-                    TranscriptMessage {
-                        role: record.role,
-                        text,
-                        truncated,
-                    },
-                );
+        for event in qoder_events(&value) {
+            match event {
+                QoderEvent::Text { role, text } => {
+                    // 先冲刷累积的工具计数再落文本；行内后置工具计入下一轮。
+                    if pending_tools > 0 {
+                        push_message(
+                            &mut messages,
+                            &mut session_chars,
+                            &mut session_truncated,
+                            tool_call_message(pending_tools),
+                        );
+                        pending_tools = 0;
+                    }
+                    let (text, truncated) = clip_message_text(text);
+                    if !text.is_empty() {
+                        push_message(
+                            &mut messages,
+                            &mut session_chars,
+                            &mut session_truncated,
+                            TranscriptMessage { role, text, truncated },
+                        );
+                    }
+                }
+                QoderEvent::Tools(count) => pending_tools += count,
             }
         }
-        pending_tools += record.tools;
     }
 
     if pending_tools > 0 {
@@ -239,20 +238,25 @@ fn read_qoder_transcript(task: &TaskSnapshot) -> TranscriptOutcome {
     }
 }
 
-struct QoderRecord {
-    role: TranscriptRole,
-    text: Option<String>,
-    tools: usize,
+enum QoderEvent {
+    Text {
+        role: TranscriptRole,
+        text: String,
+    },
+    Tools(usize),
 }
 
-/// payload_json 归一：role 取 payload.role，缺失时按结构判定（finalTextId → 助手）；
-/// text 现行格式取顶层、为空时回退 parts 的 text 块；tool 块只计数。
-fn qoder_record(value: &Value) -> Option<QoderRecord> {
+/// payload_json 归一为事件序列：role 取 payload.role，缺失时按结构判定
+/// （finalTextId → 助手，其余 → 用户）；system 等角色整条跳过。
+/// 现行格式正文在顶层 text（parts 的 text 是流式分块，不重复产出），行内工具
+/// 计到其后；旧格式正文只在 parts 的 text 块里，按 parts 顺序回放，文本前的
+/// 工具块先冲刷成计数行。
+fn qoder_events(value: &Value) -> Vec<QoderEvent> {
     let role_raw = value.get("role").and_then(Value::as_str);
     let role = match role_raw {
         Some("user") => TranscriptRole::User,
         Some("assistant") => TranscriptRole::Assistant,
-        Some(_) => return None,
+        Some(_) => return Vec::new(),
         None if value.get("finalTextId").is_some() => TranscriptRole::Assistant,
         None => TranscriptRole::User,
     };
@@ -273,18 +277,57 @@ fn qoder_record(value: &Value) -> Option<QoderRecord> {
         }
     }
 
-    let text = match role_raw {
+    match role_raw {
         Some(_) => {
             let top = value.get("text").and_then(Value::as_str).unwrap_or("");
-            if top.trim().is_empty() {
+            let text = if top.trim().is_empty() {
                 joined_visible_text(&parts_texts)
             } else {
                 Some(top.to_owned())
+            };
+            let mut events = Vec::new();
+            if let Some(text) = text.filter(|text| !text.trim().is_empty()) {
+                events.push(QoderEvent::Text { role, text });
             }
+            if tools > 0 {
+                events.push(QoderEvent::Tools(tools));
+            }
+            events
         }
-        None => joined_visible_text(&parts_texts),
-    };
-    Some(QoderRecord { role, text, tools })
+        None => {
+            // 旧格式：按 parts 顺序回放；相邻 text 块合并为一条，文本前的 tool 块
+            // 先冲刷成计数行，尾部 tool 块计到其后。
+            let mut events = Vec::new();
+            let mut tool_run = 0usize;
+            let mut text_run: Vec<String> = Vec::new();
+            if let Some(parts) = value.get("parts").and_then(Value::as_array) {
+                for part in parts {
+                    match part.get("type").and_then(Value::as_str) {
+                        Some("text") => {
+                            if tool_run > 0 {
+                                events.push(QoderEvent::Tools(tool_run));
+                                tool_run = 0;
+                            }
+                            if let Some(raw) = part.get("text").and_then(Value::as_str) {
+                                if !raw.trim().is_empty() {
+                                    text_run.push(raw.to_owned());
+                                }
+                            }
+                        }
+                        Some("tool") => tool_run += 1,
+                        _ => {}
+                    }
+                }
+            }
+            if let Some(text) = joined_visible_text(&text_run) {
+                events.push(QoderEvent::Text { role, text });
+            }
+            if tool_run > 0 {
+                events.push(QoderEvent::Tools(tool_run));
+            }
+            events
+        }
+    }
 }
 
 enum ClaudeRecord {

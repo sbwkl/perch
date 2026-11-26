@@ -471,6 +471,115 @@ fn qoder_transcript_reads_turns_in_sequence_order() {
 }
 
 #[test]
+fn qoder_transcript_maps_legacy_rows_and_skips_system_records() {
+    let _guard = lock_sqlite_fixtures();
+    let temp = TempDir::new().unwrap();
+    let db = temp.path().join("main.sqlite");
+    let conn = create_qoder_fixture(&db);
+    insert_qoder_session(&conn, "q-legacy");
+    // 旧格式：user 回合正文在 parts；system 角色整条跳过；assistant 带 finalTextId。
+    insert_qoder_message(
+        &conn,
+        "q-legacy",
+        "m1",
+        1,
+        concat!(
+            r#"{"id":"m1","turnId":"t1","timestamp":1,"attachments":[],"#,
+            r#""parts":[{"type":"text","text":"旧格式提问"}]}"#
+        ),
+    );
+    insert_qoder_message(
+        &conn,
+        "q-legacy",
+        "m2",
+        2,
+        r#"{"id":"m2","role":"system","subtype":"notice","text":"系统提示不渲染","timestamp":2}"#,
+    );
+    insert_qoder_message(
+        &conn,
+        "q-legacy",
+        "m3",
+        3,
+        concat!(
+            r#"{"id":"m3","turnId":"t1","timestamp":3,"finalTextId":"pt1","#,
+            r#""parts":[{"type":"tool","id":"p1"},{"type":"text","text":"旧格式回答"}]}"#
+        ),
+    );
+    // 纯 hook 记录（无角色、无正文、无工具）不产出。
+    insert_qoder_message(
+        &conn,
+        "q-legacy",
+        "m4",
+        4,
+        r#"{"id":"m4","parts":[{"type":"hook","id":"p2"}],"timestamp":4}"#,
+    );
+    // 现行格式：assistant 顶层 text 优先，parts 里的流式分块不重复产出。
+    insert_qoder_message(
+        &conn,
+        "q-legacy",
+        "m5",
+        5,
+        concat!(
+            r#"{"id":"m5","role":"assistant","text":"顶层完整正文","timestamp":5,"#,
+            r#""parts":[{"type":"text","text":"分块一"},{"type":"text","text":"分块二"}]}"#
+        ),
+    );
+    drop(conn);
+    let before_files = dir_file_names(temp.path());
+    let before_bytes = fs::read(&db).unwrap();
+    std::env::set_var("PERCH_QODER_DB", &db);
+
+    let outcome = read_transcript(&qoder_task("q-legacy"));
+
+    let TranscriptOutcome::Ready { messages, .. } = outcome else {
+        panic!("期望 Ready，实际：{outcome:?}");
+    };
+    let rendered: Vec<(TranscriptRole, &str)> = messages
+        .iter()
+        .map(|message| (message.role, message.text.as_str()))
+        .collect();
+    assert_eq!(
+        rendered,
+        vec![
+            (TranscriptRole::User, "旧格式提问"),
+            (TranscriptRole::ToolCall, "工具调用 1 次"),
+            (TranscriptRole::Assistant, "旧格式回答"),
+            (TranscriptRole::Assistant, "顶层完整正文"),
+        ]
+    );
+    assert_db_untouched(&db, &before_files, &before_bytes);
+    std::env::remove_var("PERCH_QODER_DB");
+}
+
+#[test]
+fn qoder_transcript_distinguishes_empty_session_from_missing_one() {
+    let _guard = lock_sqlite_fixtures();
+    let temp = TempDir::new().unwrap();
+    let db = temp.path().join("main.sqlite");
+    let conn = create_qoder_fixture(&db);
+    // 注册了会话但没有任何消息行 → 空会话；未注册的会话 id → 不存在。
+    insert_qoder_session(&conn, "q-empty");
+    drop(conn);
+    let before_files = dir_file_names(temp.path());
+    let before_bytes = fs::read(&db).unwrap();
+    std::env::set_var("PERCH_QODER_DB", &db);
+
+    let empty = read_transcript(&qoder_task("q-empty"));
+    let TranscriptOutcome::Error { reason } = empty else {
+        panic!("期望 Error，实际：{empty:?}");
+    };
+    assert!(reason.contains("没有可显示的对话内容"), "{reason}");
+
+    let missing = read_transcript(&qoder_task("q-ghost"));
+    let TranscriptOutcome::Error { reason } = missing else {
+        panic!("期望 Error，实际：{missing:?}");
+    };
+    assert!(reason.contains("会话不存在"), "{reason}");
+    assert_db_untouched(&db, &before_files, &before_bytes);
+    std::env::remove_var("PERCH_QODER_DB");
+}
+
+#[test]
 fn qoder_transcript_folds_tool_parts_into_one_count_line() {
     let _guard = lock_sqlite_fixtures();
     let temp = TempDir::new().unwrap();
