@@ -1770,20 +1770,39 @@ fn create_cline_db(path: &Path) {
         [],
     )
     .unwrap();
+    conn.execute(
+        "INSERT INTO sessions VALUES ('../evil', 'cli', 'completed', \
+         '2026-11-06T04:00:00.000Z', '2026-11-06T04:30:00.000Z', \
+         '/Users/x/work/gamma', '', NULL, NULL, '{}')",
+        [],
+    )
+    .unwrap();
 }
 
 #[test]
 fn cline_collector_maps_sessions_and_keeps_source_read_only() {
     let temp = TempDir::new().unwrap();
-    let db_path = temp.path().join("sessions.db");
+    // 真实布局：<data>/db/sessions.db 与 <data>/sessions/<id>/<id>.messages.json 同级。
+    let db_path = temp.path().join(".cline/data/db/sessions.db");
+    fs::create_dir_all(db_path.parent().unwrap()).unwrap();
     create_cline_db(&db_path);
-    let before = fs::read(&db_path).unwrap();
+    let messages_dir = temp.path().join(".cline/data/sessions/desk1");
+    fs::create_dir_all(&messages_dir).unwrap();
+    let messages_file = messages_dir.join("desk1.messages.json");
+    fs::write(
+        &messages_file,
+        "{\"version\":1,\"messages\":[{\"id\":\"m1\",\"role\":\"user\",\"ts\":1,\
+         \"content\":[{\"type\":\"text\",\"text\":\"fixture\"}]}]}",
+    )
+    .unwrap();
+    let before_db = fs::read(&db_path).unwrap();
+    let before_messages = fs::read(&messages_file).unwrap();
 
     let result = ClineCollector::new(db_path.clone()).scan();
 
     assert_eq!(result.status, SourceScanStatus::Ok);
     assert_eq!(result.source, SOURCE_CLINE);
-    assert_eq!(result.tasks.len(), 6);
+    assert_eq!(result.tasks.len(), 7);
     assert_eq!(result.files_seen, 1);
     assert_eq!(result.probe_kind, "sqlite");
 
@@ -1805,6 +1824,21 @@ fn cline_collector_maps_sessions_and_keeps_source_read_only() {
     assert_eq!(
         desktop.resume_cmd.as_deref(),
         Some("cd '/Users/x/work/alpha' && cline --id desk1")
+    );
+    assert_eq!(
+        desktop.source_path.as_deref(),
+        Some(messages_file.to_str().unwrap()),
+        "扫描时必须写入可重建的 messages.json 指针"
+    );
+
+    let evil = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "../evil")
+        .unwrap();
+    assert_eq!(
+        evil.source_path, None,
+        "字符集外的 session id 不得生成文件指针"
     );
 
     let cli = result
@@ -1854,10 +1888,15 @@ fn cline_collector_maps_sessions_and_keeps_source_read_only() {
     assert_eq!(cwd.status_source.as_deref(), Some("idle"));
     assert_eq!(cwd.status_raw.as_deref(), Some("cancelled"));
 
-    let after = fs::read(&db_path).unwrap();
+    let after_db = fs::read(&db_path).unwrap();
     assert_eq!(
-        before, after,
+        before_db, after_db,
         "collector must not write the source database"
+    );
+    let after_messages = fs::read(&messages_file).unwrap();
+    assert_eq!(
+        before_messages, after_messages,
+        "扫描不得打开或改写 messages.json"
     );
 }
 
