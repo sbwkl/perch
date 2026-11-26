@@ -398,6 +398,175 @@ fn claude_collector_pointer_feeds_the_reader_end_to_end() {
     assert_source_unchanged(&session, &before);
 }
 
+#[test]
+fn cline_transcript_clips_single_message_to_eight_thousand_chars() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("session.messages.json");
+    // 9,000 个 CJK 字符：若按字节截断会得到约 2,666 字符，测试据此钉住「按字符」口径。
+    let long_text = "甲".repeat(9_000);
+    write_cline_messages(
+        &session,
+        json!([
+            {"id": "m1", "role": "assistant", "ts": 1, "content": [
+                {"type": "text", "text": long_text}
+            ]}
+        ]),
+    );
+    let before = fs::read(&session).unwrap();
+
+    let outcome = read_transcript(&cline_task(&session));
+
+    let TranscriptOutcome::Ready { messages, .. } = outcome else {
+        panic!("期望 Ready，实际：{outcome:?}");
+    };
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0].text.chars().count(), 8_000);
+    assert!(messages[0].truncated);
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn cline_transcript_keeps_the_recent_part_of_oversized_sessions() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("session.messages.json");
+    // 30 条 × 9,000 字符（截后 8,000）：总 240,000 超预算，保留最近 25 条（200,000 恰不超限）。
+    let records: Vec<serde_json::Value> = (1..=30)
+        .map(|index| {
+            json!({
+                "id": format!("m{index}"),
+                "role": "assistant",
+                "ts": index,
+                "content": [
+                    {"type": "text", "text": format!("第{index:02}条{}", "甲".repeat(9_000))}
+                ]
+            })
+        })
+        .collect();
+    write_cline_messages(&session, serde_json::Value::Array(records));
+    let before = fs::read(&session).unwrap();
+
+    let outcome = read_transcript(&cline_task(&session));
+
+    let TranscriptOutcome::Ready {
+        messages,
+        session_truncated,
+    } = outcome
+    else {
+        panic!("期望 Ready，实际：{outcome:?}");
+    };
+    assert!(session_truncated, "超预算会话必须标记丢弃");
+    assert_eq!(messages.len(), 25);
+    assert_eq!(messages[0].text.chars().count(), 8_000);
+    assert!(messages[0].text.starts_with("第06条"), "{}", &messages[0].text[..12]);
+    assert!(messages[24].text.starts_with("第30条"));
+    let total: usize = messages
+        .iter()
+        .map(|message| message.text.chars().count())
+        .sum();
+    assert!(total <= 200_000, "保留部分不得超过会话预算：{total}");
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn cline_transcript_empty_session_reports_no_displayable_content() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("session.messages.json");
+    write_cline_messages(&session, json!([]));
+    let before = fs::read(&session).unwrap();
+
+    let outcome = read_transcript(&cline_task(&session));
+
+    let TranscriptOutcome::Error { reason } = outcome else {
+        panic!("期望 Error，实际：{outcome:?}");
+    };
+    assert!(reason.contains("没有可显示的对话内容"), "{reason}");
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn cline_transcript_whitespace_only_session_reports_no_displayable_content() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("session.messages.json");
+    write_cline_messages(
+        &session,
+        json!([
+            {"id": "m1", "role": "user", "ts": 1, "content": [
+                {"type": "text", "text": "   \n  "}
+            ]},
+            {"id": "m2", "role": "assistant", "ts": 2, "content": [
+                {"type": "thinking", "thinking": "只有推理"}
+            ]}
+        ]),
+    );
+    let before = fs::read(&session).unwrap();
+
+    let outcome = read_transcript(&cline_task(&session));
+
+    let TranscriptOutcome::Error { reason } = outcome else {
+        panic!("期望 Error，实际：{outcome:?}");
+    };
+    assert!(reason.contains("没有可显示的对话内容"), "{reason}");
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn cline_transcript_corrupt_json_reports_parse_error() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("session.messages.json");
+    fs::write(&session, "{\"messages\": [ {\"role\": \"user\", ").unwrap();
+    let before = fs::read(&session).unwrap();
+
+    let outcome = read_transcript(&cline_task(&session));
+
+    let TranscriptOutcome::Error { reason } = outcome else {
+        panic!("期望 Error，实际：{outcome:?}");
+    };
+    assert!(reason.contains("JSON"), "{reason}");
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn cline_transcript_missing_messages_array_reports_shape_error() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("session.messages.json");
+    fs::write(&session, "{\"version\": 1, \"sessionId\": \"x\"}").unwrap();
+    let before = fs::read(&session).unwrap();
+
+    let outcome = read_transcript(&cline_task(&session));
+
+    let TranscriptOutcome::Error { reason } = outcome else {
+        panic!("期望 Error，实际：{outcome:?}");
+    };
+    assert!(reason.contains("messages"), "{reason}");
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn cline_transcript_reports_missing_source_file() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("missing.messages.json");
+
+    let outcome = read_transcript(&cline_task(&session));
+
+    let TranscriptOutcome::Error { reason } = outcome else {
+        panic!("期望 Error，实际：{outcome:?}");
+    };
+    assert!(reason.contains("源文件不存在"), "{reason}");
+}
+
+#[test]
+fn cline_transcript_reports_missing_cache_pointer() {
+    let mut task = TaskSnapshot::new(SOURCE_CLINE, "session-no-pointer");
+    task.source_path = None;
+
+    let outcome = read_transcript(&task);
+
+    let TranscriptOutcome::Error { reason } = outcome else {
+        panic!("期望 Error，实际：{outcome:?}");
+    };
+    assert!(reason.contains("源文件指针"), "{reason}");
+}
+
 /// 合成 Cline messages.json：顶层 dict + messages 数组，块类型与真实探针一致
 /// （user 携 text/tool_result，assistant 携 text/thinking/tool_use）。
 fn write_cline_messages(path: &Path, messages: serde_json::Value) {
