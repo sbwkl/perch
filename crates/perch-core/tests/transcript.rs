@@ -769,6 +769,113 @@ fn opencode_family_reads_shared_schema_identically_for_all_three_sources() {
 }
 
 #[test]
+fn opencode_family_clips_message_and_keeps_recent_session_tail() {
+    let _guard = lock_sqlite_fixtures();
+    let temp = TempDir::new().unwrap();
+    let db = temp.path().join("opencode.db");
+    let conn = create_opencode_fixture(&db);
+    insert_oc_session(&conn, "ses-caps");
+    // 30 条 × 9,000 字符（截后 8,000）：总 240,000 超预算，保留最近 25 条。
+    for index in 1..=30i64 {
+        let time = 1_000 + index;
+        let text = format!("第{index:02}条{}", "甲".repeat(9_000));
+        insert_oc_message(&conn, "ses-caps", &format!("m{index}"), time, "assistant");
+        insert_oc_part(
+            &conn,
+            &format!("m{index}"),
+            &format!("p{index}"),
+            time,
+            &format!(r#"{{"type":"text","text":"{text}"}}"#),
+        );
+    }
+    // 单条超限：12,000 个 CJK 字符按字符截到 8,000。
+    insert_oc_message(&conn, "ses-caps", "m-long", 2_000, "user");
+    insert_oc_part(
+        &conn,
+        "m-long",
+        "p-long",
+        2_000,
+        &format!(r#"{{"type":"text","text":"{}"}}"#, "乙".repeat(12_000)),
+    );
+    drop(conn);
+    let before_files = dir_file_names(temp.path());
+    let before_bytes = fs::read(&db).unwrap();
+    std::env::set_var("PERCH_KILO_DB", &db);
+
+    let mut task = TaskSnapshot::new(SOURCE_KILO, "ses-caps");
+    task.title = "合成会话".to_owned();
+    let outcome = read_transcript(&task);
+
+    let TranscriptOutcome::Ready {
+        messages,
+        session_truncated,
+    } = outcome
+    else {
+        panic!("期望 Ready，实际：{outcome:?}");
+    };
+    assert!(session_truncated, "超预算会话必须标记丢弃");
+    assert_eq!(messages.len(), 25, "31 条 × 8,000 = 248k，保留最近 25 条");
+    assert_eq!(messages[0].text.chars().count(), 8_000);
+    assert!(messages[0].text.starts_with("第07条"));
+    assert_eq!(messages[24].role, TranscriptRole::User);
+    assert_eq!(messages[24].text.chars().count(), 8_000);
+    assert!(messages[24].truncated);
+    let total: usize = messages
+        .iter()
+        .map(|message| message.text.chars().count())
+        .sum();
+    assert!(total <= 200_000, "保留部分不得超过会话预算：{total}");
+    assert_db_untouched(&db, &before_files, &before_bytes);
+    std::env::remove_var("PERCH_KILO_DB");
+}
+
+#[test]
+fn opencode_family_distinguishes_empty_missing_and_db_absent() {
+    let _guard = lock_sqlite_fixtures();
+    // 空会话（注册了 session 但无消息）与不存在会话共用一个库；缺库单独一个目录。
+    let temp = TempDir::new().unwrap();
+    let db = temp.path().join("opencode.db");
+    let conn = create_opencode_fixture(&db);
+    insert_oc_session(&conn, "ses-empty");
+    drop(conn);
+    let before_files = dir_file_names(temp.path());
+    let before_bytes = fs::read(&db).unwrap();
+    std::env::set_var("PERCH_CODEARTS_DB", &db);
+
+    let mut empty_task = TaskSnapshot::new(SOURCE_CODEARTS, "ses-empty");
+    empty_task.title = "合成会话".to_owned();
+    let empty = read_transcript(&empty_task);
+    let TranscriptOutcome::Error { reason } = empty else {
+        panic!("期望 Error，实际：{empty:?}");
+    };
+    assert!(reason.contains("没有可显示的对话内容"), "{reason}");
+
+    let mut missing_task = TaskSnapshot::new(SOURCE_CODEARTS, "ses-ghost");
+    missing_task.title = "合成会话".to_owned();
+    let missing = read_transcript(&missing_task);
+    let TranscriptOutcome::Error { reason } = missing else {
+        panic!("期望 Error，实际：{missing:?}");
+    };
+    assert!(reason.contains("会话不存在"), "{reason}");
+    assert_db_untouched(&db, &before_files, &before_bytes);
+    std::env::remove_var("PERCH_CODEARTS_DB");
+
+    // 数据库文件缺失：错误指向配置路径。
+    let absent_temp = TempDir::new().unwrap();
+    let absent_db = absent_temp.path().join("absent.db");
+    std::env::set_var("PERCH_KILO_DB", &absent_db);
+    let mut absent_task = TaskSnapshot::new(SOURCE_KILO, "ses-absent");
+    absent_task.title = "合成会话".to_owned();
+    let absent = read_transcript(&absent_task);
+    let TranscriptOutcome::Error { reason } = absent else {
+        panic!("期望 Error，实际：{absent:?}");
+    };
+    assert!(reason.contains("未找到Kilo数据库"), "{reason}");
+    assert!(reason.contains(&absent_db.to_string_lossy().as_ref()), "{reason}");
+    std::env::remove_var("PERCH_KILO_DB");
+}
+
+#[test]
 fn qoder_transcript_folds_tool_parts_into_one_count_line() {
     let _guard = lock_sqlite_fixtures();
     let temp = TempDir::new().unwrap();
