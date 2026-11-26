@@ -23,7 +23,7 @@
 | 文档 | 领域 | 状态 | 当前事实源 / 代码入口 |
 |---|---|---|---|
 | [adr/claude-session-title-read-scope.md](adr/claude-session-title-read-scope.md) | Claude 标题读取范围、缓存最小化与 sidecar 生命周期 | partial | 读取范围表述被 [ADR：按需读取会话正文](adr/session-transcript-on-demand-read.md) 部分取代；标题口径仍以 `crates/perch-core/src/collectors/claude.rs`、`agent-sources.md` R1 为准 |
-| [adr/session-transcript-on-demand-read.md](adr/session-transcript-on-demand-read.md) | 会话正文按需读取、隐私与缓存边界 | proposed | [session-transcript.md](../product-specs/session-transcript.md)；`SECURITY.md` |
+| [adr/session-transcript-on-demand-read.md](adr/session-transcript-on-demand-read.md) | 会话正文按需读取、隐私与缓存边界 | current | [session-transcript.md](../product-specs/session-transcript.md)；`SECURITY.md`；`crates/perch-core/src/transcript.rs` |
 
 只有已做出、难回退且影响架构 / 数据模型 / 安全边界的决策才建 ADR；文件按主题命名。
 
