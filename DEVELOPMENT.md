@@ -23,6 +23,8 @@ npm run check            # svelte-check 类型检查
 npm run build            # 前端生产构建
 npm run tauri build      # 打包 Perch.app / .dmg
 npm run demo             # 仅前端演示模式（端口 1421，假数据，不启动 Tauri）
+npm run cdp              # demo + headless Chrome 行为验收（自动起 1421，CHROME_BIN 可覆盖）
+bash scripts/gates.sh    # 六条门禁一次跑完（提交前）
 
 cargo fmt --all --check
 cargo clippy -p perch-core --all-targets -- -D warnings
@@ -131,17 +133,18 @@ http://localhost:1421/?select=接入 OAuth 登录回调
 
 ## 测试与检查
 
-提交前至少运行：
+提交前运行：
 
 ```bash
-npm run check
-cargo fmt --all --check
-cargo clippy -p perch-core --all-targets -- -D warnings
-cargo test -p perch-core
+bash scripts/gates.sh
 ```
 
-CI（`.github/workflows/ci.yml`）在 Linux 上执行相同的检查，使用 `perch-core` 的单元/集成测试；
-macOS 打包与 Tauri 壳的实机行为目前靠手工冒烟验证。
+六条门禁：`cargo fmt --all --check`、`cargo clippy -p perch-core --all-targets -- -D warnings`、`cargo test -p perch-core`、`cargo test -p perch --lib`、`npm run check`、`npm run build`。
+
+UI 行为验收：`npm run cdp`——自动起 demo（1421）与 headless Chrome（`CHROME_BIN` 可覆盖路径），顺序执行 `demo/cdp/` 下全部套件。
+
+CI（`.github/workflows/ci.yml`）在 Linux 上执行跨平台子集（`npm run check` + `npm run build`；`perch-core` 的 fmt / clippy / 单元与集成测试）；
+`cargo test -p perch --lib` 与 CDP 套件目前只在本地跑；macOS 打包与 Tauri 壳的实机行为靠手工冒烟验证。
 
 ## 常见问题
 
