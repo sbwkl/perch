@@ -742,6 +742,182 @@ kbd {
   background: #fff;
 }
 
+/* —— #27 对话面板：占满第 2、3 列，侧栏保持可交互 —— */
+
+.transcript-pane {
+  display: flex;
+  flex-direction: column;
+  grid-column: 2 / -1;
+  min-width: 0;
+  min-height: 0;
+  background: var(--pane);
+}
+
+.transcript-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 14px 22px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.transcript-ident {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.transcript-source-label {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.transcript-title {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14.5px;
+  font-weight: 650;
+}
+
+.transcript-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.transcript-actions .continue-note {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+}
+
+.transcript-actions button {
+  flex: none;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.transcript-actions button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.transcript-actions button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.transcript-actions .transcript-continue {
+  border-color: color-mix(in srgb, var(--source, var(--accent)) 45%, var(--border));
+  color: var(--source, var(--accent));
+}
+
+.transcript-actions .transcript-continue:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.transcript-session-truncated {
+  margin: 8px 22px 0;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--hover);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.transcript-messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 22px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.transcript-msg {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--hover);
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.transcript-msg[data-role="user"] {
+  background: var(--accent-soft);
+}
+
+.transcript-msg[data-role="tool_call"] {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.transcript-truncated {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  vertical-align: 1px;
+}
+
+.transcript-state {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--hover);
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.transcript-state.error {
+  color: var(--danger);
+}
+
+.transcript-state.loading {
+  color: var(--text-tertiary);
+}
+
+.transcript-earlier {
+  display: block;
+  margin: 8px 22px 14px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.transcript-earlier:hover {
+  background: var(--hover);
+}
+
 .flat-list {
   display: flex;
   flex-direction: column;
@@ -753,7 +929,8 @@ kbd {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: 8px 10px;
   border: none;
   border-radius: 7px;
@@ -762,12 +939,47 @@ kbd {
   text-align: left;
 }
 
-.task:hover {
+.task-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+  border-radius: 7px;
+}
+
+.task-row:hover {
   background: var(--hover);
 }
 
-.task.selected {
+/* 选中 / 悬停绘制集中在行容器，主按钮与对话图标共享一块底色；
+   .task.selected 保留为选中态标记（滚动定位与测试用）。 */
+.task-row:has(.task.selected) {
   background: var(--accent-soft);
+}
+
+.task-transcript {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-top: 3px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.task-transcript svg {
+  width: 14px;
+  height: 14px;
+}
+
+.task-transcript:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 

@@ -10,9 +10,12 @@
     SearchResponse,
     SyncReport,
     TaskView,
+    TranscriptMessage,
+    TranscriptOutcome,
     UsageOverview,
     UsageReportOutcome,
   } from "./lib/types";
+  import { transcriptSupported } from "./lib/transcript";
   import { sourceIconMarkup } from "./lib/source-icons";
 
   type TaskViewSelection = "recent" | "older" | "archived";
@@ -31,6 +34,7 @@
     pin: "M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z",
     report: "M18 20V10M12 20V4M6 20v-6",
     search: "M21 21l-4.35-4.35M11 19a8 8 0 1 1 0-16 8 8 0 0 1 0 16z",
+    transcript: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
   } as const;
 
   const SOURCE_COLORS: Record<string, string> = {
@@ -109,6 +113,16 @@
   let searchResultList = $state<HTMLDivElement>();
   let listLimit = $state(60);
   let searchLimit = $state(50);
+  // 对话面板（#27）：按需读取、只在内存中；打开时替换第 2、3 列，侧栏保持可交互。
+  // transcriptKey 是唯一开关；读取 Err 与 Outcome error 统一为面板内一行原因。
+  type TranscriptPhase = "loading" | "ready";
+  const TRANSCRIPT_PAGE_SIZE = 50;
+  let transcriptKey = $state<string | null>(null);
+  let transcriptPhase = $state<TranscriptPhase>("loading");
+  let transcriptOutcome = $state<TranscriptOutcome | null>(null);
+  let transcriptShown = $state(TRANSCRIPT_PAGE_SIZE);
+  let transcriptSeq = 0;
+  let transcriptMessagesEl = $state<HTMLDivElement>();
 
   const NAV_VISIBLE_LIMIT = 8;
   const RECENT_WINDOW_SECONDS = 7 * 24 * 60 * 60;
@@ -342,6 +356,92 @@
 
   const searchActive = $derived(query.trim().length > 0);
 
+  // —— 对话面板（#27）——
+  const transcriptTask = $derived<TaskView | null>(
+    transcriptKey ? (allTasks.get(transcriptKey) ?? null) : null,
+  );
+  // 打开中 = key 存在且任务仍在快照里；刷新后任务消失会先由 refresh 清理 key。
+  const transcriptOpen = $derived(transcriptKey !== null && transcriptTask !== null);
+  const transcriptMessages = $derived<TranscriptMessage[]>(
+    transcriptPhase === "ready" && transcriptOutcome?.status === "ready"
+      ? transcriptOutcome.messages
+      : [],
+  );
+  const transcriptSessionTruncated = $derived(
+    transcriptPhase === "ready" && transcriptOutcome?.status === "ready"
+      ? transcriptOutcome.session_truncated
+      : false,
+  );
+  // 正序渲染；「最近 50 条」= 尾部切片，加载更早向前扩窗。
+  const transcriptVisible = $derived(
+    transcriptMessages.slice(Math.max(0, transcriptMessages.length - transcriptShown)),
+  );
+  const transcriptEarlierCount = $derived(
+    transcriptMessages.length - transcriptVisible.length,
+  );
+  const transcriptReason = $derived(
+    transcriptPhase === "ready" && transcriptOutcome?.status === "error"
+      ? transcriptOutcome.reason
+      : "",
+  );
+
+  function closeTranscript() {
+    transcriptSeq += 1; // 使在途读取失效
+    transcriptKey = null;
+    transcriptPhase = "loading";
+    transcriptOutcome = null;
+    transcriptShown = TRANSCRIPT_PAGE_SIZE;
+  }
+
+  async function loadTranscript(key: string, seq: number) {
+    transcriptPhase = "loading";
+    transcriptOutcome = null;
+    transcriptShown = TRANSCRIPT_PAGE_SIZE;
+    try {
+      const outcome = await invoke<TranscriptOutcome>("read_session_content", { taskKey: key });
+      if (seq !== transcriptSeq || transcriptKey !== key) return;
+      transcriptOutcome = outcome;
+      transcriptPhase = "ready";
+      // 首屏定位最新消息（正序渲染，最新在底部）。
+      void tick().then(() => {
+        const el = transcriptMessagesEl;
+        if (el) el.scrollTop = el.scrollHeight;
+      });
+    } catch (error) {
+      if (seq !== transcriptSeq || transcriptKey !== key) return;
+      // Err 三变体（非法 key / 任务不存在 / 来源不支持）与读取失败同权：面板内一行原因。
+      transcriptOutcome = {
+        status: "error",
+        reason: error instanceof Error ? error.message : String(error),
+      };
+      transcriptPhase = "ready";
+    }
+  }
+
+  function openTranscript(key: string) {
+    selectTask(key);
+    const seq = ++transcriptSeq;
+    transcriptKey = key;
+    void loadTranscript(key, seq);
+  }
+
+  function rereadTranscript() {
+    if (!transcriptKey) return;
+    void loadTranscript(transcriptKey, ++transcriptSeq);
+  }
+
+  // 追加更早消息后把滚动锚回原来的阅读位置：新增高度只出现在顶部。
+  function showEarlierMessages() {
+    const el = transcriptMessagesEl;
+    const beforeHeight = el?.scrollHeight ?? 0;
+    const beforeTop = el?.scrollTop ?? 0;
+    transcriptShown += TRANSCRIPT_PAGE_SIZE;
+    void tick().then(() => {
+      const node = transcriptMessagesEl;
+      if (node) node.scrollTop = node.scrollHeight - beforeHeight + beforeTop;
+    });
+  }
+
   const searchResults = $derived.by(() => {
     const results: Array<{ hit: SearchHit; task: TaskView }> = [];
     for (const hit of searchHits) {
@@ -470,6 +570,11 @@
       if (selectedKey && !flatTasks.some((task) => task.key === selectedKey)) {
         selectedKey = null;
       }
+      // 刷新后任务不在当前筛选列表：关闭对话并清除选中（T8，与列表选中规则一致）。
+      if (transcriptKey && !flatTasks.some((task) => task.key === transcriptKey)) {
+        closeTranscript();
+        if (selectedKey) selectedKey = null;
+      }
     } catch (error) {
       errorMessage = error instanceof Error ? error.message : String(error);
     } finally {
@@ -589,6 +694,7 @@
   }
 
   function openUsageReport() {
+    closeTranscript();
     taskReturnView = view;
     // 报告不计入三组：进入时清空任务组选中（workspaces / 来源筛选保留），
     // 返回时经 taskReturnView 恢复原任务视图。
@@ -609,6 +715,7 @@
 
   function selectView(next: TaskViewSelection) {
     // 任务组点击总是退出报告；组内转移或取消经 setTaskView 守门。
+    closeTranscript();
     reportView = false;
     setTaskView(view === next ? null : next);
     clearSelection();
@@ -646,6 +753,7 @@
       : task.is_recent
         ? "recent"
         : "older";
+    closeTranscript();
     reportView = false;
     setTaskView(nextView);
     workspaceFilter = task.workspace_key;
@@ -683,11 +791,13 @@
   }
 
   function selectWorkspace(key: string) {
+    closeTranscript();
     setWorkspaceFilter(workspaceFilter === key ? null : key);
     clearSelection();
   }
 
   function selectSource(source: string) {
+    closeTranscript();
     setSourceFilter(sourceFilter === source ? null : source);
     clearSelection();
   }
@@ -695,6 +805,7 @@
   function clearSearchScope() {
     // 清除作用域只针对 workspace / 来源；若任务组本来就未选中，
     // 清除会让三组全空，此时任务组回落「最近」而不是保持空。
+    closeTranscript();
     if (view === null) setTaskView("recent");
     setWorkspaceFilter(null);
     setSourceFilter(null);
@@ -840,7 +951,11 @@
       }
       return;
     }
-    if (event.key === "Escape") selectedKey = null;
+    if (event.key === "Escape") {
+      // 对话面板优先于清空选中：Esc 只关对话，任务保持选中（T6）。
+      if (transcriptKey) closeTranscript();
+      else selectedKey = null;
+    }
   }
 
   onMount(() => {
@@ -864,7 +979,12 @@
         } catch {
           return;
         }
-        if (disposed || !reportView) return;
+        if (disposed) return;
+        // 实时刷新后任务不在当前列表：关闭对话（T8）；选中沿用既有规则。
+        if (transcriptKey && !flatTasks.some((task) => task.key === transcriptKey)) {
+          closeTranscript();
+        }
+        if (!reportView) return;
         // `usage html` rewrites db mtimes on every run, so as_of cannot gate
         // regeneration; only a change in usage totals reloads the iframe.
         if (usageContentKey(payload?.usage) !== reportUsageKey) {
@@ -923,37 +1043,51 @@
 {/snippet}
 
 {#snippet taskRow(task: TaskView, showWorkspace: boolean)}
-  <button
-    class="task"
-    class:selected={selectedKey === task.key}
-    onclick={() => selectTask(task.key)}
-  >
-    <span class="task-main">
-      <span class="task-title">
-        {#if task.source_unread}<span class="unread-dot"></span>{/if}
-        {task.title}
-      </span>
-      <span class="task-meta">
-        {#if showWorkspace}
-          <span class="task-workspace" title={task.project_path ?? task.workspace_name}>
-            {task.workspace_name}
-          </span>
+  <div class="task-row">
+    <button
+      class="task"
+      class:selected={selectedKey === task.key}
+      onclick={() => selectTask(task.key)}
+    >
+      <span class="task-main">
+        <span class="task-title">
+          {#if task.source_unread}<span class="unread-dot"></span>{/if}
+          {task.title}
+        </span>
+        <span class="task-meta">
+          {#if showWorkspace}
+            <span class="task-workspace" title={task.project_path ?? task.workspace_name}>
+              {task.workspace_name}
+            </span>
+            <span class="dot-sep">·</span>
+          {/if}
+          <span>{task.source_label}</span>
           <span class="dot-sep">·</span>
-        {/if}
-        <span>{task.source_label}</span>
-        <span class="dot-sep">·</span>
-        <span>{relativeTime(task.updated_at)}</span>
-        {#if task.todo_total > 0}
-          <span class="todo-chip">{task.todo_done}/{task.todo_total}</span>
-        {/if}
-        {#if task.source_pinned}<span class="pin-badge" title="源置顶" aria-label="源置顶">{@render pinIcon()}</span>{/if}
-        {#if task.is_child}<span class="mini-badge">子会话</span>{/if}
-        {#if task.is_automation}<span class="mini-badge">自动化</span>{/if}
-        {#if task.source_missing}<span class="mini-badge danger">源已删除</span>{/if}
+          <span>{relativeTime(task.updated_at)}</span>
+          {#if task.todo_total > 0}
+            <span class="todo-chip">{task.todo_done}/{task.todo_total}</span>
+          {/if}
+          {#if task.source_pinned}<span class="pin-badge" title="源置顶" aria-label="源置顶">{@render pinIcon()}</span>{/if}
+          {#if task.is_child}<span class="mini-badge">子会话</span>{/if}
+          {#if task.is_automation}<span class="mini-badge">自动化</span>{/if}
+          {#if task.source_missing}<span class="mini-badge danger">源已删除</span>{/if}
+        </span>
       </span>
-    </span>
-    <span class="status {statusClass(task)}">{statusLabel(task)}</span>
-  </button>
+      <span class="status {statusClass(task)}">{statusLabel(task)}</span>
+    </button>
+    {#if transcriptSupported(task.source)}
+      <button
+        class="task-transcript"
+        aria-label="查看对话"
+        title="查看对话"
+        onclick={() => openTranscript(task.key)}
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d={ICONS.transcript} />
+        </svg>
+      </button>
+    {/if}
+  </div>
 {/snippet}
 
 <div class="app">
@@ -1121,6 +1255,7 @@
     </footer>
   </aside>
 
+  {#if !transcriptOpen}
   <main class="list-pane" class:report-wide={reportView}>
     <header class="list-head">
       <div class="head-text">
@@ -1250,8 +1385,68 @@
       </div>
     {/if}
   </main>
+  {/if}
 
-  {#if !reportView}
+  {#if transcriptOpen && transcriptTask}
+  <section class="transcript-pane" aria-label="会话对话记录">
+    <header class="transcript-head">
+      <div class="transcript-ident">
+        <span class="source-icon">{@html sourceIconMarkup(transcriptTask.source)}</span>
+        <span class="transcript-source-label">{transcriptTask.source_label}</span>
+        <span class="status {statusClass(transcriptTask)}">{statusLabel(transcriptTask)}</span>
+        <h2 class="transcript-title">{transcriptTask.title}</h2>
+      </div>
+      <div class="transcript-actions">
+        {#if continueError}<span class="continue-note error">{continueError}</span>{/if}
+        <button
+          class="transcript-continue"
+          style={`--source:${sourceColor(transcriptTask.source)};--on-source:${contrastText(sourceColor(transcriptTask.source))}`}
+          onclick={() => void continueTask()}
+          disabled={continuing}
+        >
+          继续工作
+        </button>
+        <button
+          class="transcript-reread"
+          onclick={rereadTranscript}
+          disabled={transcriptPhase === "loading"}
+        >
+          重新读取
+        </button>
+        <button class="transcript-return" onclick={closeTranscript}>返回</button>
+      </div>
+    </header>
+
+    {#if transcriptSessionTruncated}
+      <p class="transcript-session-truncated">会话过长，仅保留最近部分。</p>
+    {/if}
+
+    <div class="transcript-messages" bind:this={transcriptMessagesEl}>
+      {#if transcriptPhase === "loading"}
+        <div class="transcript-state loading">正在读取对话…</div>
+      {:else if transcriptReason}
+        <div class="transcript-state error">{transcriptReason}</div>
+      {:else if transcriptVisible.length === 0}
+        <div class="transcript-state error">会话没有可显示的对话内容</div>
+      {:else}
+        {#each transcriptVisible as message, index (index)}
+          <div class="transcript-msg" data-role={message.role}>
+            <span class="transcript-text">{message.text}</span>
+            {#if message.truncated}<span class="transcript-truncated">已截断</span>{/if}
+          </div>
+        {/each}
+      {/if}
+    </div>
+
+    {#if transcriptEarlierCount > 0}
+      <button class="transcript-earlier" onclick={showEarlierMessages}>
+        加载更早（还有 {transcriptEarlierCount} 条）
+      </button>
+    {/if}
+  </section>
+  {/if}
+
+  {#if !reportView && !transcriptOpen}
   <aside class="inspector">
     {#if selected}
       <div class="inspector-content">

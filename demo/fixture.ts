@@ -5,6 +5,7 @@ import type {
   TaskUsage,
   TaskView,
   TodoView,
+  TranscriptMessage,
   WorkspaceGroup,
 } from "../src/lib/types";
 
@@ -401,6 +402,134 @@ const TASKS: TaskView[] = [
     messages: 12,
   }),
 ];
+// —— #27 对话面板合成场景 ——
+// 仅在 ?transcript=1 时注入任务；默认列表口径（计数与标题）不变，S1 断言不受影响。
+const TRANSCRIPT_SCENARIO = new URLSearchParams(location.search).get("transcript") === "1";
+
+interface TranscriptSpec {
+  messages?: TranscriptMessage[];
+  sessionTruncated?: boolean;
+  error?: string;
+  failFirst?: boolean;
+  failReason?: string;
+}
+
+function demoDialogue(count: number, label: string): TranscriptMessage[] {
+  return Array.from({ length: count }, (_, index) => ({
+    role: index % 2 === 0 ? ("user" as const) : ("assistant" as const),
+    text: `${label}演示消息 ${index + 1}。`,
+    truncated: false,
+  }));
+}
+
+const LONG_MESSAGES: TranscriptMessage[] = Array.from({ length: 120 }, (_, index) => ({
+  role: index % 2 === 0 ? ("user" as const) : ("assistant" as const),
+  text: `长会话演示第 ${index + 1} 条消息，用于分页验收。`,
+  truncated: false,
+}));
+
+// 单条 8000 字符的合成消息：正文读取通道会截断并标注「已截断」。
+const LONG_TEXT = "报错堆栈行，用于演示单条消息截断。".repeat(500);
+
+const TRANSCRIPT_SPECS: Record<string, TranscriptSpec> = {
+  "合成对话 · 分页长会话": { messages: LONG_MESSAGES },
+  "合成对话 · 工具轮与截断": {
+    messages: [
+      { role: "user", text: "帮我看一下结账页的报错。", truncated: false },
+      { role: "tool_call", text: "工具调用 3 次", truncated: false },
+      { role: "assistant", text: "我看完了日志：报错来自价格计算里的除零分支。", truncated: false },
+      { role: "assistant", text: LONG_TEXT, truncated: true },
+      { role: "user", text: "好，帮我顺手修掉。", truncated: false },
+      { role: "assistant", text: "已提交修复，等 CI 结果。", truncated: false },
+    ],
+  },
+  "合成对话 · 超大会话截断": {
+    sessionTruncated: true,
+    messages: [
+      { role: "user", text: "继续刚才的修复。", truncated: false },
+      { role: "assistant", text: "修复已验证通过，回归用例全绿。", truncated: false },
+      { role: "user", text: "辛苦，我合并了。", truncated: false },
+      { role: "assistant", text: "好的，我更新任务状态。", truncated: false },
+    ],
+  },
+  "合成对话 · 首读失败后成功": {
+    failFirst: true,
+    failReason: "源文件不存在：/Users/demo/.claude/projects/demo/missing-session.jsonl",
+    messages: [
+      { role: "user", text: "重新读取成功：这条会话可以正常显示了。", truncated: false },
+      { role: "assistant", text: "好的，我继续。", truncated: false },
+    ],
+  },
+  "合成对话 · 空会话": {
+    error: "会话没有可显示的对话内容",
+  },
+  "合成对话 · Antigravity 来源": { messages: demoDialogue(4, "Antigravity 来源") },
+  "合成对话 · MiniMax 来源": { messages: demoDialogue(4, "MiniMax 来源") },
+  "合成对话 · CodeArts 来源": { messages: demoDialogue(4, "CodeArts 来源") },
+};
+
+// 不在剧本表内的任务给一段通用合成对话，保证默认任务也能打开对话面板。
+function genericConversation(title: string): TranscriptMessage[] {
+  return [1, 2, 3, 4, 5, 6].map((n) => ({
+    role: n % 2 === 1 ? ("user" as const) : ("assistant" as const),
+    text: `「${title}」的演示消息 ${n}。`,
+    truncated: false,
+  }));
+}
+
+export interface DemoTranscriptOutcome {
+  status: "ready" | "error";
+  reason?: string;
+  messages: TranscriptMessage[];
+  session_truncated: boolean;
+}
+
+export function demoTranscriptOutcome(
+  title: string,
+  options: { firstAttempt: boolean },
+): DemoTranscriptOutcome {
+  const spec = TRANSCRIPT_SPECS[title];
+  if (!spec) {
+    return {
+      status: "ready",
+      messages: genericConversation(title),
+      session_truncated: false,
+    };
+  }
+  if (spec.error) {
+    return { status: "error", reason: spec.error, messages: [], session_truncated: false };
+  }
+  if (spec.failFirst && options.firstAttempt) {
+    return {
+      status: "error",
+      reason: spec.failReason ?? "源文件暂不可读",
+      messages: [],
+      session_truncated: false,
+    };
+  }
+  return {
+    status: "ready",
+    messages: spec.messages ?? [],
+    session_truncated: spec.sessionTruncated ?? false,
+  };
+}
+
+if (TRANSCRIPT_SCENARIO) {
+  const scenarioTasks: TaskSeed[] = [
+    { source: "claude", title: "合成对话 · 分页长会话", workspace: 0, status: "idle", updated_minutes_ago: 18, created_days_ago: 1, messages: 120 },
+    { source: "claude", title: "合成对话 · 工具轮与截断", workspace: 0, status: "running", updated_minutes_ago: 12, created_days_ago: 1, unread: true },
+    { source: "claude", title: "合成对话 · 超大会话截断", workspace: 0, status: "idle", updated_minutes_ago: 40, created_days_ago: 2 },
+    { source: "claude", title: "合成对话 · 首读失败后成功", workspace: 0, status: "idle", updated_minutes_ago: 65, created_days_ago: 2 },
+    { source: "claude", title: "合成对话 · 空会话", workspace: 0, status: "idle", updated_minutes_ago: 90, created_days_ago: 3 },
+    { source: "antigravity", title: "合成对话 · Antigravity 来源", workspace: 0, status: "idle", updated_minutes_ago: 24, created_days_ago: 1 },
+    { source: "minimax", title: "合成对话 · MiniMax 来源", workspace: 0, status: "complete", updated_minutes_ago: 55, created_days_ago: 2 },
+    { source: "codearts", title: "合成对话 · CodeArts 来源", workspace: 0, status: "idle", updated_minutes_ago: 70, created_days_ago: 2 },
+    { source: "trae-cn", title: "合成对话 · Trae CN 无图标", workspace: 0, status: "idle", updated_minutes_ago: 30, created_days_ago: 1 },
+    { source: "codebuddy", title: "合成对话 · CodeBuddy 无图标", workspace: 0, status: "idle", updated_minutes_ago: 45, created_days_ago: 1 },
+  ];
+  for (const seed of scenarioTasks) TASKS.push(makeTask(seed));
+}
+
 const STRESS_COUNT = Number(new URLSearchParams(location.search).get("stress") ?? 0);
 if (STRESS_COUNT > 0) {
   for (let index = 0; index < 12; index += 1) {
@@ -456,10 +585,12 @@ if (STRESS_COUNT > 0) {
   }
 }
 
-function buildWorkspaces(): WorkspaceGroup[] {
+function buildWorkspaces(excludeTitle: string | null = null): WorkspaceGroup[] {
   return WORKSPACES.map((workspace) => {
     const tasks = TASKS.filter(
-      (task) => task.workspace_key === workspace.path,
+      (task) =>
+        task.workspace_key === workspace.path &&
+        (!excludeTitle || task.title !== excludeTitle),
     ).sort((left, right) => (right.updated_at ?? 0) - (left.updated_at ?? 0));
     return {
       key: workspace.path,
@@ -497,7 +628,7 @@ function demoContinueHint(
   return { channel: "app" };
 }
 
-function buildSources(): SourceView[] {
+function buildSources(tasks: TaskView[]): SourceView[] {
   return SOURCES.map((source) => ({
     source,
     label: SOURCE_LABELS[source],
@@ -505,25 +636,28 @@ function buildSources(): SourceView[] {
     last_scan_at: NOW,
     last_ok_at: NOW,
     last_trigger: "demo",
-    task_count: TASKS.filter((task) => task.source === source).length,
+    task_count: tasks.filter((task) => task.source === source).length,
     files_seen: 6,
     error: null,
   }));
 }
 
-export function demoPayload(): BootstrapPayload {
-  const workspaces = buildWorkspaces();
-  const visible = TASKS.filter((task) => !task.source_archived);
+export function demoPayload(options: { excludeTitle?: string | null } = {}): BootstrapPayload {
+  // excludeTitle 仅供 T8 驱动（?vanish=<标题>）：刷新后任务从快照中消失。
+  const excludeTitle = options.excludeTitle ?? null;
+  const tasks = excludeTitle ? TASKS.filter((task) => task.title !== excludeTitle) : TASKS;
+  const workspaces = buildWorkspaces(excludeTitle);
+  const visible = tasks.filter((task) => !task.source_archived);
   return {
     generated_at: NOW,
-    sources: buildSources(),
+    sources: buildSources(tasks),
     workspaces,
     counts: {
       total: visible.length,
       recent: visible.filter((task) => task.is_recent).length,
       older: visible.filter((task) => !task.is_recent).length,
-      archived: TASKS.filter((task) => task.source_archived).length,
-      attention: TASKS.filter(
+      archived: tasks.filter((task) => task.source_archived).length,
+      attention: tasks.filter(
         (task) =>
           task.source_unread ||
           task.source_missing ||
@@ -546,7 +680,7 @@ export function demoPayload(): BootstrapPayload {
           credits_billable_7d: 18.42,
           est_total: 1_216_000,
           last_day: DEMO_DAY,
-          matched_tasks: TASKS.filter(
+          matched_tasks: tasks.filter(
             (task) => task.source === "qoder" && task.usage,
           ).length,
         },
@@ -557,7 +691,7 @@ export function demoPayload(): BootstrapPayload {
           credits_billable_7d: 0,
           est_total: 0,
           last_day: DEMO_DAY,
-          matched_tasks: TASKS.filter(
+          matched_tasks: tasks.filter(
             (task) => task.source === "claude" && task.usage,
           ).length,
         },
@@ -568,7 +702,7 @@ export function demoPayload(): BootstrapPayload {
           credits_billable_7d: 0,
           est_total: 0,
           last_day: DEMO_DAY,
-          matched_tasks: TASKS.filter(
+          matched_tasks: tasks.filter(
             (task) => task.source === "codex" && task.usage,
           ).length,
         },

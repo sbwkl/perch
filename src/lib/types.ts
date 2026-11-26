@@ -140,6 +140,20 @@ export interface UsageReportOutcome {
   path: string;
 }
 
+// —— 会话对话正文（#27；与 perch_core::models 的 Transcript* 同构）——
+
+export type TranscriptRole = "user" | "assistant" | "tool_call";
+
+export interface TranscriptMessage {
+  role: TranscriptRole;
+  text: string;
+  truncated: boolean;
+}
+
+export type TranscriptOutcome =
+  | { status: "ready"; messages: TranscriptMessage[]; session_truncated: boolean }
+  | { status: "error"; reason: string };
+
 export interface SearchHit {
   task_key: string;
   score: number;
