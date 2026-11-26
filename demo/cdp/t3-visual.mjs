@@ -21,6 +21,44 @@ async function openPanel(page) {
   );
 }
 
+async function openTask(page, title) {
+  await page.evaluate(`(() => {
+    const row = ${rowExpr(title)};
+    row.querySelector('.task-transcript').click();
+  })()`);
+  await page.waitFor("Boolean(document.querySelector('.transcript-pane'))");
+  await page.waitFor(
+    "document.querySelectorAll('.transcript-pane .transcript-msg').length > 0",
+  );
+}
+
+// 用户气泡与消息列内容盒的几何关系（不依赖滚动位置）。
+function bubbleProbe() {
+  return `(() => {
+    const el = document.querySelector('.transcript-pane .transcript-messages');
+    const cs = getComputedStyle(el);
+    const padL = parseFloat(cs.paddingLeft);
+    const padR = parseFloat(cs.paddingRight);
+    const left = el.getBoundingClientRect().left + el.clientLeft + padL;
+    const contentWidth = el.clientWidth - padL - padR;
+    const rect = (m) => {
+      const r = m.getBoundingClientRect();
+      return { left: r.left, right: r.right, width: r.width };
+    };
+    const pick = (role) => [...el.querySelectorAll('.transcript-msg')]
+      .filter((m) => m.dataset.role === role)
+      .map(rect);
+    return {
+      left,
+      right: left + contentWidth,
+      contentWidth,
+      overflowX: el.scrollWidth > el.clientWidth,
+      user: pick('user'),
+      assistant: pick('assistant'),
+    };
+  })()`;
+}
+
 function layoutProbe() {
   return `(() => {
     const doc = document.documentElement;
@@ -84,6 +122,29 @@ async function run(page) {
       assertEqual(layout.messagesScrollable, true, "消息区内部滚动");
       assertEqual(layout.headInPane, true, "头部未超出面板");
       assertEqual(layout.buttonOverlap, false, "头部按钮不重叠");
+      // 长用户输入：气泡不越出消息列、仍右对齐，助手回复仍整行宽。
+      await page.goto(URL);
+      await openTask(page, "合成对话 · 长用户输入");
+      const bubbles = await page.evaluate(bubbleProbe());
+      const user = bubbles.user[0];
+      const assistant = bubbles.assistant[0];
+      assertEqual(bubbles.overflowX, false, "长用户气泡无横向溢出");
+      assert(
+        Math.abs(user.right - bubbles.right) <= 2,
+        `用户气泡右边界在消息列内（偏差 ${(user.right - bubbles.right).toFixed(1)}px）`,
+      );
+      assert(user.left >= bubbles.left - 1, "用户气泡左边界不越出消息列");
+      assert(
+        user.width <= bubbles.contentWidth * 0.78 + 0.5,
+        `用户气泡宽度不超过内容宽 78%（实际 ${((user.width / bubbles.contentWidth) * 100).toFixed(1)}%）`,
+      );
+      assert(
+        assistant.width >= bubbles.contentWidth * 0.96,
+        `助手回复仍占整行宽（实际 ${((assistant.width / bubbles.contentWidth) * 100).toFixed(1)}%）`,
+      );
+      const longLayout = await page.evaluate(layoutProbe());
+      assertEqual(longLayout.overflowX, false, "长用户输入下文档无横向溢出");
+      assertEqual(longLayout.headInPane, true, "长用户输入下头部未超出面板");
     } finally {
       await page.setViewport(1200, 780);
     }
