@@ -11,7 +11,8 @@
 
 - **只读**：SQLite 用 `SQLITE_OPEN_READ_ONLY` + `PRAGMA query_only=ON`；JSONL 只读打开。
 - **只取元数据**：标题、项目路径、时间、模型、分支、计数、todo 的 subject、状态、置顶/未读标志。
-  不读消息正文、prompt、tool 输出、附件、思考过程。
+  默认不读消息正文、prompt、tool 输出、附件、思考过程；唯一例外是对话正文视图——用户打开
+  任务行对话图标时按需、只读、内存内读取该会话的可见文本（见[对话正文读取（按需）](#对话正文读取按需)）。
 - **故障隔离**：单个来源或文件失败只影响该来源，其他来源照常；失败时保留上一次快照。
 - **任务身份**：`source + source_id`，例如 `qoder:<session_id>`、`claude:<session_id>`。
 - **缺失判定**：只有一次完整成功扫描后才把未出现的任务标记为 `source_missing`；
@@ -378,7 +379,8 @@ Trae CN 没有确认的会话级深链，只能 `open -b cn.trae.app` 激活窗�
   `updated_at`、`cwd`、`workspace_root`、`parent_session_id`、`model`、`metadata_json`。
 - 标题取自 `metadata_json.title`（SQLite `json_extract`，先用 `json_valid` 校验）；
   不加载 `metadata_json` 中的 `systemPrompt` 等其他字段。
-- 消息正文存放在 `<id>/<id>.messages.json`，Perch 不打开该文件，也不统计消息数。
+- 消息正文存放在 `<id>/<id>.messages.json`：扫描不打开该文件、不统计消息数；
+  用户打开对话视图时按需只读解析（见[对话正文读取（按需）](#对话正文读取按需)）。
 
 **标题 / 状态**
 
@@ -448,6 +450,8 @@ IDE 与 agy CLI 各写一个 app data dir，格式一致、互不复用，Perch 
 
 - 不读 `chunks/transcript_full/` 镜像（内容与主转录一致，只用于用量统计）。
 - conversation_summaries.db 的变化不触发增量重扫（仅转录变化触发）。
+- collector 测试 fixture 的 MODEL 步骤造数为 `type=RESPONSE`（现实数据中不存在）；
+  真实数据的助手正文来自 `MODEL.PLANNER_RESPONSE`，以本机探针结论为准。
 
 **变化探测**：转录文件的 JSONL 签名（文件数 + 最新 mtime）。
 
@@ -562,6 +566,38 @@ IDE 与 agy CLI 各写一个 app data dir，格式一致、互不复用，Perch 
 - genie 解码出的工作区可能是 CodeBuddy 沙箱目录（如 `~/CodeBuddy/<时间戳>`），原样展示。
 
 **变化探测**：两处日志目录的 `.log` 签名。
+
+---
+
+## 对话正文读取（按需）
+
+用户在任务行点击对话图标时，`transcript.rs` 按 `task.source` 分派读取器做**单次快照**解析。
+9 个来源提供正文；Trae CN（只有摘要）与 CodeBuddy（只有日志行）不提供，任务行不渲染对话图标。
+统一口径：只产出 user / assistant 可见纯文本；工具调用折叠为「工具调用 N 次」；不渲染 tool
+输入/输出、思考过程、附件、系统注入包装；坏行 / 非 UTF-8 行跳过继续；单条 8,000 字符、
+单会话 200,000 字符只保留最近部分；JSONL 为流式逐行 + 有界驻留（保最近），SQLite 按序查询消息表，
+Cline 整文件单次 JSON 解析。读取一律只读打开；失败只影响该次对话视图，不写 `sync_state`。
+
+| 来源 | 正文位置 | 读取方式 |
+| --- | --- | --- |
+| Qoder | `chat_session_messages.payload_json` | `ORDER BY sequence, rowid`；顶层 `text` 优先，`parts` 只数 tool |
+| Claude Code | `projects/**/<session>.jsonl` | 流式逐行；只取 `message.content` 的 text 块，复用标题派生的注入剥离 |
+| Codex | rollout JSONL | 只取 `response_item.message`（`input_text` / `output_text`）；剥离 `<environment_context>` 等注入块 |
+| OpenCode | `message` + `part` JOIN | `part.type=text` 且非 `synthetic` 产文本，`type=tool` 计数 |
+| Kilo | `part.data`（`type=text`） | 与 OpenCode 同一适配器（共享 schema） |
+| CodeArts | `message` + `part` JOIN | 复用 OpenCode 适配器；无 `message` 表时回退旧 `session_message` |
+| Cline | `<sessions>/<id>/<id>.messages.json` | 整文件单次 JSON 解析；数组顺序即时间序（`ts` 单调） |
+| Antigravity | `brain/<conv>/.system_generated/logs/transcript_full.jsonl` | `USER_EXPLICIT.USER_INPUT` 与 `MODEL.PLANNER_RESPONSE` 产文本，其余 MODEL 步骤计为工具 |
+| MiniMax Code | `v2/sessions/**/messages.jsonl` | 按 `role` 分派；剥离 reminder 块，`toolResult` / `custom` 整条跳过 |
+
+**防御性推断口径**：Qoder 旧格式（payload 无 `role` 字段时按 `finalTextId` / 结构判定角色并按
+`parts` 顺序回放）与 OpenCode / Kilo / CodeArts 的旧 `session_message` 表回退，均基于本机真实库
+探测 + 防御性推断实现；上游 schema 变化时该来源的正文读取报错，不影响扫描与其他来源。
+OpenCode / Kilo / CodeArts 共享同一 schema 家族，CodeArts 无单独实现（同 fixture 同结果由测试钉住）。
+
+**能力集合同步义务**：`crates/perch-core/src/models.rs` 的 `SUPPORTED_TRANSCRIPT_SOURCES`（9 个）
+是事实源；前端 `src/lib/transcript.ts` 为手工同步的镜像，改动能力集合时必须双侧同时修改
+（测试以「报指针错误而非『来源不支持』」钉住已接入来源）。
 
 ---
 
