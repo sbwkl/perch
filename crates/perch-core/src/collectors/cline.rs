@@ -183,7 +183,9 @@ fn messages_pointer(sessions_root: Option<&Path>, session_id: &str) -> Option<St
     if !valid_session_id_charset(session_id) {
         return None;
     }
-    let pointer = root.join(session_id).join(format!("{session_id}.messages.json"));
+    let pointer = root
+        .join(session_id)
+        .join(format!("{session_id}.messages.json"));
     Some(pointer.to_string_lossy().into_owned())
 }
 

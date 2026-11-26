@@ -457,7 +457,11 @@ fn cline_transcript_keeps_the_recent_part_of_oversized_sessions() {
     assert!(session_truncated, "超预算会话必须标记丢弃");
     assert_eq!(messages.len(), 25);
     assert_eq!(messages[0].text.chars().count(), 8_000);
-    assert!(messages[0].text.starts_with("第06条"), "{}", &messages[0].text[..12]);
+    assert!(
+        messages[0].text.starts_with("第06条"),
+        "{}",
+        &messages[0].text[..12]
+    );
     assert!(messages[24].text.starts_with("第30条"));
     let total: usize = messages
         .iter()
@@ -565,6 +569,97 @@ fn cline_transcript_reports_missing_cache_pointer() {
         panic!("期望 Error，实际：{outcome:?}");
     };
     assert!(reason.contains("源文件指针"), "{reason}");
+}
+
+#[test]
+fn cline_collector_pointer_feeds_the_reader_end_to_end() {
+    use perch_core::collectors::cline::ClineCollector;
+    use perch_core::collectors::Collector;
+    use perch_core::store::CacheStore;
+
+    let temp = TempDir::new().unwrap();
+    let db_path = temp.path().join(".cline/data/db/sessions.db");
+    fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+    {
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE sessions (
+               session_id TEXT PRIMARY KEY, source TEXT NOT NULL, status TEXT NOT NULL,
+               started_at TEXT NOT NULL, updated_at TEXT NOT NULL, cwd TEXT NOT NULL,
+               workspace_root TEXT NOT NULL, parent_session_id TEXT, model TEXT,
+               metadata_json TEXT);
+             INSERT INTO sessions VALUES ('syn1', 'cli', 'completed',
+               '2026-11-10T01:00:00.000Z', '2026-11-10T02:00:00.000Z',
+               '/Users/x/work/delta', '/Users/x/work/delta', NULL, NULL, '{}');",
+        )
+        .unwrap();
+    }
+    let messages_file = temp
+        .path()
+        .join(".cline/data/sessions/syn1/syn1.messages.json");
+    fs::create_dir_all(messages_file.parent().unwrap()).unwrap();
+    write_cline_messages(
+        &messages_file,
+        json!([
+            {"id": "m1", "role": "user", "ts": 1, "content": [
+                {"type": "text", "text": "端到端问题"}
+            ]},
+            {"id": "m2", "role": "assistant", "ts": 2, "content": [
+                {"type": "tool_use", "name": "read_file"}
+            ]},
+            {"id": "m3", "role": "assistant", "ts": 3, "content": [
+                {"type": "text", "text": "端到端回答"}
+            ]}
+        ]),
+    );
+    let before_db = fs::read(&db_path).unwrap();
+    let before_messages = fs::read(&messages_file).unwrap();
+
+    let result = ClineCollector::new(db_path.clone()).scan();
+    let task = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "syn1")
+        .expect("collector 应产出该会话任务")
+        .clone();
+    assert_eq!(
+        task.source_path.as_deref(),
+        Some(messages_file.to_str().unwrap()),
+        "扫描时必须写入可重建的源文件指针"
+    );
+
+    let store = CacheStore::open_in_memory().unwrap();
+    let scan_id = store.begin_scan("cline", "full", "source", "test").unwrap();
+    store
+        .save_result(
+            &perch_core::models::SourceResult::ok("cline", vec![task], Vec::new()),
+            scan_id,
+        )
+        .unwrap();
+    let loaded = store.load_task("cline:syn1").unwrap().unwrap();
+
+    let outcome = read_transcript(&loaded);
+    let TranscriptOutcome::Ready { messages, .. } = outcome else {
+        panic!("期望 Ready，实际：{outcome:?}");
+    };
+    let rendered: Vec<(TranscriptRole, &str)> = messages
+        .iter()
+        .map(|message| (message.role, message.text.as_str()))
+        .collect();
+    assert_eq!(
+        rendered,
+        vec![
+            (TranscriptRole::User, "端到端问题"),
+            (TranscriptRole::ToolCall, "工具调用 1 次"),
+            (TranscriptRole::Assistant, "端到端回答"),
+        ]
+    );
+    assert_eq!(
+        before_db,
+        fs::read(&db_path).unwrap(),
+        "端到端后源数据库字节必须一致"
+    );
+    assert_source_unchanged(&messages_file, &before_messages);
 }
 
 /// 合成 Cline messages.json：顶层 dict + messages 数组，块类型与真实探针一致
