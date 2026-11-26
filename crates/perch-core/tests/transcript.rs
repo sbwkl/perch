@@ -243,6 +243,79 @@ fn claude_transcript_reports_missing_cache_pointer() {
 }
 
 #[test]
+fn codex_collector_pointer_feeds_the_reader_end_to_end() {
+    use perch_core::collectors::codex::CodexCollector;
+    use perch_core::collectors::Collector;
+    use perch_core::store::CacheStore;
+
+    let temp = TempDir::new().unwrap();
+    let sessions = temp.path().join("sessions/2026/11");
+    fs::create_dir_all(&sessions).unwrap();
+    let session = sessions.join("rollout-transcript.jsonl");
+    fs::write(
+        &session,
+        concat!(
+            "{\"timestamp\":\"2026-11-01T08:00:00Z\",\"type\":\"session_meta\",\"payload\":\
+             {\"id\":\"sess-transcript\",\"cwd\":\"/tmp/work\"}}\n",
+            "{\"timestamp\":\"2026-11-01T08:01:00Z\",\"type\":\"response_item\",\"payload\":\
+             {\"type\":\"message\",\"role\":\"user\",\"content\":[\
+             {\"type\":\"input_text\",\"text\":\"端到端问题\"}]}}\n",
+            "{\"timestamp\":\"2026-11-01T08:02:00Z\",\"type\":\"response_item\",\"payload\":\
+             {\"type\":\"function_call\",\"name\":\"shell\",\"arguments\":\"{}\"}}\n",
+            "{\"timestamp\":\"2026-11-01T08:03:00Z\",\"type\":\"response_item\",\"payload\":\
+             {\"type\":\"message\",\"role\":\"assistant\",\"content\":[\
+             {\"type\":\"output_text\",\"text\":\"端到端回答\"}]}}\n",
+        ),
+    )
+    .unwrap();
+    let before = fs::read(&session).unwrap();
+
+    let result = CodexCollector::new(temp.path().to_path_buf()).scan();
+    let task = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sess-transcript")
+        .expect("collector 应产出该会话任务")
+        .clone();
+    assert_eq!(
+        task.source_path.as_deref(),
+        Some(session.to_str().unwrap()),
+        "扫描时必须写入 rollout 源文件指针"
+    );
+
+    let store = CacheStore::open_in_memory().unwrap();
+    let scan_id = store.begin_scan("codex", "full", "source", "test").unwrap();
+    store
+        .save_result(
+            &perch_core::models::SourceResult::ok("codex", vec![task], Vec::new()),
+            scan_id,
+        )
+        .unwrap();
+    let loaded = store
+        .load_task("codex:sess-transcript")
+        .unwrap()
+        .unwrap();
+
+    let outcome = read_transcript(&loaded);
+    let TranscriptOutcome::Ready { messages, .. } = outcome else {
+        panic!("期望 Ready，实际：{outcome:?}");
+    };
+    let rendered: Vec<(TranscriptRole, &str)> = messages
+        .iter()
+        .map(|message| (message.role, message.text.as_str()))
+        .collect();
+    assert_eq!(
+        rendered,
+        vec![
+            (TranscriptRole::User, "端到端问题"),
+            (TranscriptRole::ToolCall, "工具调用 1 次"),
+            (TranscriptRole::Assistant, "端到端回答"),
+        ]
+    );
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
 fn claude_transcript_marks_unsupported_and_pending_sources() {
     // Trae CN / CodeBuddy 明确不提供正文。
     let trae = TaskSnapshot::new("trae-cn", "t-1");

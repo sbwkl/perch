@@ -180,6 +180,8 @@ impl CodexCollector {
             task.title_source = title_source.to_owned();
             task.project_path = project_path;
             task.project_name = project_name;
+            // 可重建的源文件定位指针：对话正文按需读取时据此定位 rollout。
+            task.source_path = Some(entry.path.to_string_lossy().into_owned());
             task.created_at = entry.tail_at;
             task.updated_at = updated_at;
             task.status_source = status_source;
