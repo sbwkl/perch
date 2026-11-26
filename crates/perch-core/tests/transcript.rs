@@ -875,6 +875,170 @@ fn opencode_family_distinguishes_empty_missing_and_db_absent() {
     std::env::remove_var("PERCH_KILO_DB");
 }
 
+/// WAL 库 + 存活写连接（模拟 agent 应用正开着）：只读打开不得产生任何新文件，
+/// 数据库文件字节一致，且能经 -wal 读到未 checkpoint 的已提交数据。
+#[test]
+fn opencode_family_wal_db_stays_byte_identical_with_live_writer() {
+    let _guard = lock_sqlite_fixtures();
+    let temp = TempDir::new().unwrap();
+    let db = temp.path().join("opencode.db");
+    let conn = create_opencode_fixture(&db);
+    conn.execute_batch("PRAGMA journal_mode=WAL;").unwrap();
+    insert_oc_session(&conn, "ses-wal");
+    insert_oc_message(&conn, "ses-wal", "m1", 100, "user");
+    insert_oc_part(&conn, "m1", "p1", 100, r#"{"type":"text","text":"WAL 会话提问"}"#);
+    insert_oc_message(&conn, "ses-wal", "m2", 110, "assistant");
+    insert_oc_part(&conn, "m2", "p2", 110, r#"{"type":"text","text":"WAL 会话回答"}"#);
+    // 写连接保持打开（-shm/-wal 存在，数据可能未 checkpoint），模拟应用运行中。
+    let before_files = dir_file_names(temp.path());
+    assert!(
+        before_files.iter().any(|name| name.ends_with("-wal")),
+        "fixture 必须处于 WAL 模式"
+    );
+    let before_bytes = fs::read(&db).unwrap();
+    std::env::set_var("PERCH_OPENCODE_DB", &db);
+
+    let mut task = TaskSnapshot::new(SOURCE_OPENCODE, "ses-wal");
+    task.title = "合成会话".to_owned();
+    let outcome = read_transcript(&task);
+
+    let TranscriptOutcome::Ready { messages, .. } = outcome else {
+        panic!("期望 Ready，实际：{outcome:?}");
+    };
+    let rendered: Vec<(TranscriptRole, &str)> = messages
+        .iter()
+        .map(|message| (message.role, message.text.as_str()))
+        .collect();
+    assert_eq!(
+        rendered,
+        vec![
+            (TranscriptRole::User, "WAL 会话提问"),
+            (TranscriptRole::Assistant, "WAL 会话回答"),
+        ]
+    );
+    assert_db_untouched(&db, &before_files, &before_bytes);
+    std::env::remove_var("PERCH_OPENCODE_DB");
+    drop(conn);
+}
+
+#[test]
+fn opencode_family_skips_broken_payloads_and_keeps_the_rest() {
+    let _guard = lock_sqlite_fixtures();
+    let temp = TempDir::new().unwrap();
+    let db = temp.path().join("opencode.db");
+    let conn = create_opencode_fixture(&db);
+    insert_oc_session(&conn, "ses-broken");
+    insert_oc_message(&conn, "ses-broken", "m1", 100, "user");
+    insert_oc_part(&conn, "m1", "p1", 100, r#"{"type":"text","text":"损坏行之前"}"#);
+    // 消息 data 损坏：整条消息无法判角色，其 part 一并跳过。
+    conn.execute(
+        "INSERT INTO message (id, session_id, time_created, time_updated, data) \
+         VALUES ('m2', 'ses-broken', 110, 110, '{\"role\":')",
+        [],
+    )
+    .unwrap();
+    insert_oc_part(&conn, "m2", "p2", 110, r#"{"type":"text","text":"不该出现"}"#);
+    // part data 损坏：跳过该块，其余照常。
+    insert_oc_part(&conn, "m3", "p3-broken", 120, "{\"type\":");
+    insert_oc_message(&conn, "ses-broken", "m3", 120, "assistant");
+    insert_oc_part(&conn, "m3", "p3", 121, r#"{"type":"text","text":"损坏行之后"}"#);
+    drop(conn);
+    let before_files = dir_file_names(temp.path());
+    let before_bytes = fs::read(&db).unwrap();
+    std::env::set_var("PERCH_KILO_DB", &db);
+
+    let mut task = TaskSnapshot::new(SOURCE_KILO, "ses-broken");
+    task.title = "合成会话".to_owned();
+    let outcome = read_transcript(&task);
+
+    let TranscriptOutcome::Ready { messages, .. } = outcome else {
+        panic!("期望 Ready，实际：{outcome:?}");
+    };
+    let rendered: Vec<(TranscriptRole, &str)> = messages
+        .iter()
+        .map(|message| (message.role, message.text.as_str()))
+        .collect();
+    assert_eq!(
+        rendered,
+        vec![
+            (TranscriptRole::User, "损坏行之前"),
+            (TranscriptRole::Assistant, "损坏行之后"),
+        ]
+    );
+    assert_db_untouched(&db, &before_files, &before_bytes);
+    std::env::remove_var("PERCH_KILO_DB");
+}
+
+/// 旧库没有 message/part 表时回退 session_message（data 内嵌 parts）。
+#[test]
+fn opencode_family_falls_back_to_legacy_session_message_table() {
+    let _guard = lock_sqlite_fixtures();
+    let temp = TempDir::new().unwrap();
+    let db = temp.path().join("opencode.db");
+    let conn = rusqlite::Connection::open(&db).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE session (id TEXT PRIMARY KEY, title TEXT NOT NULL);
+         CREATE TABLE session_message (
+           id TEXT PRIMARY KEY,
+           session_id TEXT NOT NULL,
+           type TEXT NOT NULL,
+           time_created INTEGER NOT NULL,
+           time_updated INTEGER NOT NULL,
+           data TEXT NOT NULL);",
+    )
+    .unwrap();
+    insert_oc_session(&conn, "ses-legacy");
+    for (id, row_type, time, data) in [
+        (
+            "s1",
+            "user",
+            100,
+            r#"{"role":"user","parts":[{"type":"text","text":"旧库提问"}]}"#,
+        ),
+        (
+            "s2",
+            "assistant",
+            110,
+            r#"{"role":"assistant","parts":[{"type":"tool","tool":"read"},{"type":"text","text":"旧库回答"}]}"#,
+        ),
+        ("s3", "assistant", 120, r#"{"role":"assistant","text":"纯文本旧格式"}"#),
+    ] {
+        conn.execute(
+            "INSERT INTO session_message (id, session_id, type, time_created, time_updated, data) \
+             VALUES (?1, 'ses-legacy', ?2, ?3, ?3, ?4)",
+            rusqlite::params![id, row_type, time, data],
+        )
+        .unwrap();
+    }
+    drop(conn);
+    let before_files = dir_file_names(temp.path());
+    let before_bytes = fs::read(&db).unwrap();
+    std::env::set_var("PERCH_CODEARTS_DB", &db);
+
+    let mut task = TaskSnapshot::new(SOURCE_CODEARTS, "ses-legacy");
+    task.title = "合成会话".to_owned();
+    let outcome = read_transcript(&task);
+
+    let TranscriptOutcome::Ready { messages, .. } = outcome else {
+        panic!("期望 Ready，实际：{outcome:?}");
+    };
+    let rendered: Vec<(TranscriptRole, &str)> = messages
+        .iter()
+        .map(|message| (message.role, message.text.as_str()))
+        .collect();
+    assert_eq!(
+        rendered,
+        vec![
+            (TranscriptRole::User, "旧库提问"),
+            (TranscriptRole::ToolCall, "工具调用 1 次"),
+            (TranscriptRole::Assistant, "旧库回答"),
+            (TranscriptRole::Assistant, "纯文本旧格式"),
+        ]
+    );
+    assert_db_untouched(&db, &before_files, &before_bytes);
+    std::env::remove_var("PERCH_CODEARTS_DB");
+}
+
 #[test]
 fn qoder_transcript_folds_tool_parts_into_one_count_line() {
     let _guard = lock_sqlite_fixtures();
