@@ -1,15 +1,17 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::common::{
     fallback_title, normalize_project_path, open_read_only, parse_timestamp_str, project_name,
     shell_cd_command, table_exists, truncate_chars,
 };
 use super::Collector;
+use crate::continue_work::valid_session_id_charset;
 use crate::models::{SourceResult, TaskSnapshot, SOURCE_CLINE};
 
 /// Cline CLI and the Cline macOS app share one session index at
-/// `~/.cline/data/db/sessions.db`. The table is metadata-only; per-session
-/// message files and their prompts are never opened.
+/// `~/.cline/data/db/sessions.db`. The table is metadata-only; scanning never
+/// opens the per-session message files, it only records a rebuildable pointer
+/// to `<sessions>/<id>/<id>.messages.json` for the on-demand transcript reader.
 pub struct ClineCollector {
     db_path: PathBuf,
 }
@@ -57,8 +59,9 @@ impl ClineCollector {
         })?;
 
         let mut tasks = Vec::new();
+        let sessions_root = sessions_root(&self.db_path);
         for row in rows {
-            tasks.push(build_task(row?));
+            tasks.push(build_task(row?, sessions_root.as_deref()));
         }
         tasks.sort_by(|left, right| {
             right
@@ -88,7 +91,7 @@ impl Collector for ClineCollector {
     }
 }
 
-fn build_task(row: SessionRow) -> TaskSnapshot {
+fn build_task(row: SessionRow, sessions_root: Option<&Path>) -> TaskSnapshot {
     let raw_directory = if row.workspace_root.trim().is_empty() {
         row.cwd.as_str()
     } else {
@@ -150,6 +153,7 @@ fn build_task(row: SessionRow) -> TaskSnapshot {
         .filter(|value| !value.is_empty())
         .map(|value| truncate_chars(value, 80));
     task.agent_kind = Some(agent_kind.to_owned());
+    task.source_path = messages_pointer(sessions_root, &row.session_id);
     // Mirror what continue_task executes: cwd comes from the filtered
     // project_path, so internal chat workspaces get a bare command.
     let command = format!("cline --id {}", row.session_id);
@@ -161,6 +165,26 @@ fn build_task(row: SessionRow) -> TaskSnapshot {
 
 fn is_internal_workspace(path: &str) -> bool {
     path.contains("/.cline/data/workspaces/")
+}
+
+/// 会话目录与数据库同源：`<data>/db/sessions.db` 旁的 `<data>/sessions`。
+/// 覆盖 `PERCH_CLINE_DB` 时按同样相对布局推导，fixture 由此获得独立目录。
+fn sessions_root(db_path: &Path) -> Option<PathBuf> {
+    db_path
+        .parent()
+        .and_then(Path::parent)
+        .map(|data_dir| data_dir.join("sessions"))
+}
+
+/// 指针列只记录可重建的 messages.json 绝对路径；session id 来自 Cline 自己的
+/// 数据库，仍按任务 key 的 sessionId 字符集过滤，杜绝路径片段拼进指针。
+fn messages_pointer(sessions_root: Option<&Path>, session_id: &str) -> Option<String> {
+    let root = sessions_root?;
+    if !valid_session_id_charset(session_id) {
+        return None;
+    }
+    let pointer = root.join(session_id).join(format!("{session_id}.messages.json"));
+    Some(pointer.to_string_lossy().into_owned())
 }
 
 struct SessionRow {
