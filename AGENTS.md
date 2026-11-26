@@ -6,22 +6,21 @@
 
 1. **只读源数据**：源 SQLite 只用 `SQLITE_OPEN_READ_ONLY` 并设 `PRAGMA query_only=ON`；源 JSONL / JSON 只读打开。不得写入、重命名、删除任何 agent 源文件。
 2. **只写自己的缓存**：扫描路径只写 Perch 自己的 `cache.db`，不持有任何源写连接；删除 `cache.db` 只能导致重建，不能影响 agent。
-4. **口径不可混加**：token / credits / est / activity 四轨分表分示，任何两轨都不相加；不同来源不做跨来源汇总。
-5. **命令边界固定**：`continue_task` 只接受任务 key，由 Rust 侧固定模板决定 `open` 的会话深链 / App 激活；session id 必须先做字符集校验，前端不能传入任意 shell 命令或 URL；继续工作不启动终端。
-7. **最小 IPC**：前端只调用窄命令；不引入远程页面 / 字体 / 图片 / 脚本，不启用 Tauri `fs` / `shell` / `http` 插件；`{@html}` 仅用于内联固定来源图标。
-8. **隐私与 fixture**：测试与文档截图只能用合成数据；不得提交真实会话标题、项目路径、数据库或日志。日志 / PR 贴出前先脱敏。
-9. `main` 是保护分支，只接受合并，不直接提交；**任何分支合并进 main 都必须先征得用户同意**
-10. **需求先行**：产品行为变化先更新对应 `docs/product-specs/` 文档；新功能 / 跨模块行为变更先建变更文档并链接对应产品规格，验收覆盖正常 / 异常 / 边界后再写代码。历史 `REQ-xxxx` / `CHG-xxxx` / `ADR-xxxx` 编号冻结，不再为新文档分配顺序编号；新增文档使用语义化主题路径（变更文档用 `YYYY-MM-DD-<主题>.md`，开发中放 `docs/exec-plans/active/`，验证后移入 `docs/exec-plans/completed/`）。
+3. **口径不可混加**：token / credits / est / activity 四轨分表分示，任何两轨都不相加；不同来源不做跨来源汇总。
+4. **命令边界固定**：`continue_task` 只接受任务 key，由 Rust 侧固定模板决定 `open` 的会话深链 / App 激活；session id 必须先做字符集校验，前端不能传入任意 shell 命令或 URL；继续工作不启动终端。
+5. **最小 IPC**：前端只调用窄命令；不引入远程页面 / 字体 / 图片 / 脚本，不启用 Tauri `fs` / `shell` / `http` 插件；`{@html}` 仅用于内联固定来源图标。
+6. **隐私与 fixture**：测试与文档截图只能用合成数据；不得提交真实会话标题、项目路径、数据库或日志。日志 / PR 贴出前先脱敏。
+7. `main` 是保护分支，只接受合并，不直接提交；**任何分支合并进 main 都必须先征得用户同意**
+8. **需求先行**：产品行为变化先更新对应 `docs/product-specs/` 文档；新功能 / 跨模块行为变更先建变更文档并链接对应产品规格，验收覆盖正常 / 异常 / 边界后再写代码。历史 `REQ-xxxx` / `CHG-xxxx` / `ADR-xxxx` 编号冻结，不再为新文档分配顺序编号；新增文档使用语义化主题路径（变更文档用 `YYYY-MM-DD-<主题>.md`，开发中放 `docs/exec-plans/active/`，验证后移入 `docs/exec-plans/completed/`）。
 
 ## 核心设计要点（已定，勿反复）
 
-- **只读聚合**：各 agent 自己落盘的元数据是真值；Perch 的 `cache.db` 是可重建的快照索引。
-- **来源事实源**：当前支持 Qoder、Claude Code、Codex、OpenCode、Kilo、Trae CN、Cline、Antigravity、MiniMax Code、CodeArts、CodeBuddy；新增来源按 `ARCHITECTURE.md` 扩展点实现 `Collector`、路径、probe、continue、前端图标与测试。
-- **用量可选**：只读 usage-ledger 的 `usage.db`，按 `session_id` 关联；报告仍由 usage-ledger 自己渲染。四轨分开展示，永不相加。
-- **实时性**：窗口可见时检查 SQLite `data_version`，节流计算 JSONL / 日志签名；变化经去抖 / 冷却后只重扫到期来源，可暂停实时刷新；`⌘R` 手动刷新优先。
-- **搜索**：P0 元数据搜索已实现（标题、项目、路径、待办、模型、分支、状态、来源、类型、会话 ID；中文 / 拼音 / 拉丁模糊匹配）；P1 内容搜索仅为 opt-in 设计，未实现。
-- **覆盖层未实现**：置顶、标签、备注、隐藏、重命名等只写独立 `overlay.db`，扫描永不写覆盖层（见 ROADMAP）。
-- **当前边界**：v0.1.0，仅 macOS（Apple Silicon 实测）；未启用 CSP（`csp: null`）；未 codesign / notarize；无 Windows / Linux 计划。
+设计事实源是 [ARCHITECTURE.md](ARCHITECTURE.md)，此处不缓存其内容。涉及以下主题的判断先读它，不要重新讨论已定结论：
+
+- **只读不变量**与只写自有缓存（`cache.db` 可重建）；
+- **来源扩展点**与当前支持的来源清单（新增来源直接按下方「扩展点」执行）；
+- **实时刷新**（`data_version` / 签名节流）、**搜索能力边界**（P0 元数据已实现，P1 内容搜索未实现）、**用量四轨分表**、**覆盖层**（未实现）；
+- **版本与平台边界**（当前版本、仅 macOS 等）以 `ARCHITECTURE.md` 与 [ROADMAP.md](ROADMAP.md) 为准。
 
 ## 文档地图（真相在这里）
 
