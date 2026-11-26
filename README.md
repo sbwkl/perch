@@ -23,8 +23,12 @@ Perch 只读取各 agent 已落盘的会话元数据，把散落在不同侧边�
 - **简洁导航**：最近（近 7 天）、更早（7 天之外）、已归档、搜索；Workspaces / 来源按近 7 天会话数倒排，超过 8 项折叠，workspace 只显示源数据名称，不显示路径父目录 / 分组后缀；任务视图可组合 workspace / 来源筛选（仅侧栏选中态表达、不在第二栏显示 tag），长列表按页展开；用量报告由页脚图标进入。
 - **搜索**：`⌘F` 或侧边栏入口打开搜索弹层，即时搜索标题、项目、路径、待办、模型、分支、状态、来源、类型与会话 ID；
   支持中文、拼音与拉丁模糊匹配；忽略当前任务视图、默认包含归档，当前 workspace / 来源筛选会叠加并显示作用域；返回全部命中并在弹层分页展示，`↑`/`↓` 选择、`Enter` 打开。
-- **实时感知**：窗口可见时检查 SQLite 变化、节流计算 JSONL / 日志签名；变化经去抖与冷却后重扫，界面显示扫描来源 / 耗时并允许暂停实时刷新；`⌘R` 手动刷新优先。
+- **实时感知**：窗口可见时检查 SQLite 变化、节流计算 JSONL / 日志签名；变化经去抖与冷却后重扫，实时刷新常开、没有暂停入口，扫描进度只由刷新按钮的「扫描中」文案表达；`⌘R` 手动刷新优先。
 - **详情面板**：展示模型、分支、消息数、待办进度、恢复命令（只读展示）与单个继续工作按钮；Perch 不执行恢复命令。
+- **对话正文视图（按需）**：任务行点击对话图标，第 2、3 列整体切换为该会话的对话记录；
+  9 个来源提供正文（Trae CN 只有摘要、CodeBuddy 只有日志行，不显示图标）。只读解析 user /
+  assistant 可见文本，工具调用折叠为「工具调用 N 次」；单条 8,000 字符、单会话 200,000 字符截断，
+  默认最近 50 条、可「加载更早」；正文只在内存中渲染，不写入缓存、不写日志、不联网，关闭即丢弃。
 - **用量附加（可选）**：按会话关联 usage-ledger 的 token 真值、Qoder credits 与 est 估算，
   四轨分开展示、永不相加；选中单一来源时，顶部显示该来源的摘要（不同来源单位不同，
   不做跨来源汇总）。侧边栏页脚的用量报告图标调用 usage-ledger 自己的 `usage html`，
@@ -61,7 +65,8 @@ Trae CN 的会话列表在服务端，本地 agent 库加密；Perch 只读 usag
 （读取文件名、日期目录、mtime 与首条 `intent` 摘要作为标题，不读消息正文）。
 需要先安装 hook（`usage hooks install trae-cn --scope global`），未安装时该来源显示不可用。
 Cline 的 CLI 与桌面 App 共用 `sessions.db`，Perch 只读其中的会话元数据（标题、项目、状态、
-模型、父子关系），不读取消息正文；Cline 没有会话级深链，App 会话只能激活窗口。
+模型、父子关系）；对话正文存于 `<id>/<id>.messages.json`，仅在打开对话视图时按需只读解析。
+Cline 没有会话级深链，App 会话只能激活窗口。
 ChatGPT 桌面仅 Codex 会话写入本地并计入 Codex，普通聊天仍存于云端。
 
 ### 用量来源（可选）
@@ -97,12 +102,15 @@ npm run tauri build
 
 ## 只读与隐私
 
-- 采集只使用 SQLite `SQLITE_OPEN_READ_ONLY` + `PRAGMA query_only=ON`，JSONL 只读打开。
+- 采集只使用 SQLite `SQLITE_OPEN_READ_ONLY` + `PRAGMA query_only=ON`，JSONL / JSON 只读打开。
 - usage-ledger 的 `usage.db` 同样只读打开，Perch 不会写入、迁移或触发它的 sync。
-- Claude Code 标题派生是唯一放宽读取范围的例外：读取首条候选用户文本并在内存中清洗为单行标题，
-  缓存只保存结果标题。其他来源不读取消息正文、prompt、tool 输出、附件或思考过程；只读取标题、
-  项目路径、时间、模型、分支、计数、待办 subject、状态与置顶/未读标志等元数据。用量块只读取来源、
-  会话 ID、模型、日期与计数。
+- 默认不读取消息正文、prompt、tool 输出、附件或思考过程；只读取标题、项目路径、时间、模型、
+  分支、计数、待办 subject、状态与置顶/未读标志等元数据。用量块只读取来源、会话 ID、模型、
+  日期与计数。读取范围只有两个显式例外：
+  - **对话正文视图**：你点击对话图标时，`read_session_content` 按需只读解析该会话的
+    user / assistant 可见文本，仅在本机内存中渲染，单次快照、不写入 `cache.db`、不写日志、
+    不联网，关闭视图即丢弃（见 [ADR](docs/design-docs/adr/session-transcript-on-demand-read.md)）。
+  - **Claude Code 标题派生**：读取首条候选用户文本并在内存中清洗为单行标题，缓存只保存结果标题。
 - 不发起任何网络请求，没有遥测、账号或云同步。
 - 本地缓存位于 `~/Library/Application Support/app.perch.desktop/cache.db`，可随时删除重建，
   不影响源 agent 数据。标题由 agent 生成，可能包含 prompt 片段；Perch 只在本机保存。
@@ -114,14 +122,14 @@ npm run tauri build
 
 - 全局置顶、标签、备注、隐藏、重命名等覆盖层操作（`overlay.db` 尚未实现）。
 - 完整的用量报表、按 workspace 汇总、图表与导出；这些仍以 usage-ledger 的 `html` / CLI 为准。
-- 全文搜索、跨来源自动合并、伴生 CLI。
+- 全文（内容）搜索、对话正文索引 / 导出 / 后台预读（正文只在打开对话视图时按需读取）、跨来源自动合并、伴生 CLI。
 - Windows / Linux 支持。
 
 这些能力在 [ROADMAP.md](ROADMAP.md) 中按里程碑排列。
 
 ## 需求、变更与文档
 
-- 产品规格事实源：应用内用量报告见 [usage-report.md](docs/product-specs/usage-report.md)，来源覆盖见 [agent-sources.md](docs/product-specs/agent-sources.md)。
+- 产品规格事实源：应用内用量报告见 [usage-report.md](docs/product-specs/usage-report.md)，来源覆盖见 [agent-sources.md](docs/product-specs/agent-sources.md)，对话正文视图见 [session-transcript.md](docs/product-specs/session-transcript.md)。
 - 设计知识库：入口见 [docs/design-docs/index.md](docs/design-docs/index.md)，核心工程信念见 [core-beliefs.md](docs/design-docs/core-beliefs.md)，源设计见 [source-designs/SOURCES.md](docs/design-docs/source-designs/SOURCES.md)。
 - 当前实现总图见 [ARCHITECTURE.md](ARCHITECTURE.md)；历史设计稿见 [v0.3.3-design-review.md](docs/design-docs/history/v0.3.3-design-review.md)，不作为当前验收标准。
 - 变更记录见 [docs/exec-plans/completed/](docs/exec-plans/completed/)；进行中变更见 [docs/exec-plans/active/](docs/exec-plans/active/)，状态以文档头为准。
