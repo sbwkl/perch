@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 | --- | --- |
-| 状态 | 开发中 |
+| 状态 | 已验证 |
 | 类型 | 变更文档 |
 | Owner | wayne + agent |
 | 所属模块 / 入口 | 前端侧栏样式与对话视图渲染层、demo 合成数据与 CDP 验收套件、产品规格 |
@@ -151,4 +151,4 @@
 | --- | --- | --- |
 | 提议 → 就绪 | wayne + agent | 2026-11-26 由规格 [#35](https://github.com/sbwkl/perch/issues/35) 拆出；本票 [#36](https://github.com/sbwkl/perch/issues/36) 先行交付，先于代码 |
 | 待实现 | — | 等待切片 #37 / #38 / #39 按第 5 节顺序推进；规格由各切片在同票内更新 |
-| 已验证并归档 | 待 #40 | 收口时补验证命令输出摘要、规格索引状态与归档链接；本文件随即移入 `completed/` |
+| 已验证并归档 | wayne + agent | 2026-11-26 #40 收口：`npm run check` 94 文件 0 错误 0 警告；`npm run build` 114 模块构建成功；`npm run cdp` 全 10 套件通过（S1 17/17、S2 7/7、S3 8/8、S4 5/5、S5 3/3、T1 6/6、T2 9/9、T3 4/4、T8 2/2、T8 兜底 3/3）；`bash scripts/gates.sh` 六条一次全绿（core 174 项、perch lib 11 项）；规格索引已同步，本文件移入 `docs/exec-plans/completed/` |

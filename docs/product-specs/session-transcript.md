@@ -4,8 +4,8 @@
 |---|---|
 | 原需求卡 | 无（语义化主题规格；历史 `REQ-xxxx` 编号冻结） |
 | 文档类型 | 产品规格 |
-| 当前版本 | v0.1.0 |
-| 状态 | 已实现（当前版本行为；变更记录见 [2026-11-26 变更文档](../exec-plans/completed/2026-11-26-ui-convergence-and-transcript-view.md)） |
+| 当前版本 | v0.1.1 |
+| 状态 | 已实现（当前版本行为；变更记录见 [2026-11-26 变更文档](../exec-plans/completed/2026-11-26-ui-convergence-and-transcript-view.md)；排版调整见 [2026-11-26 侧栏选中态回退柔色底与对话视图排版变更文档](../exec-plans/completed/2026-11-26-sidebar-selection-and-transcript-layout.md)） |
 | 适用范围 | 对话正文视图的入口、内容口径、读取边界与验收 |
 | 关联 | [agent-sources.md](agent-sources.md) R22 / R23；[ADR：按需读取会话正文](../design-docs/adr/session-transcript-on-demand-read.md) |
 
@@ -44,7 +44,7 @@ Perch 的详情面板呈现会话元数据；用户在任务行点击对话图�
 - T12：When 对话视图打开, the system shall 在头部显示来源图标、标题、状态徽标、「继续工作」、「重新读取」与「返回」，且不显示一次性隐私说明或常驻只读小字。
 - 边界：空会话、只有工具轮、消息全为截断超限、子会话、归档任务、源文件读取中被删除、非 UTF-8 / 损坏 JSON 行（跳过该行并继续）、900×560 小窗口、浅色 / 深色主题均须可回到列表，不得卡死或静默白屏。
 
-验证位置：T1–T10 / T12 见 2026-11-26 变更文档的 core / Tauri 测试与 demo UI 验收；T11（只读、内存内、
+验证位置：T1–T10 / T12 见 [2026-11-26 变更文档](../exec-plans/completed/2026-11-26-ui-convergence-and-transcript-view.md) 的 core / Tauri 测试与 demo UI 验收；T3 / T4 的排版调整另见 [2026-11-26 侧栏选中态回退柔色底与对话视图排版变更文档](../exec-plans/completed/2026-11-26-sidebar-selection-and-transcript-layout.md)；T11（只读、内存内、
 不落盘）见 core 测试的源文件字节一致断言与 `cache.db` 无正文字段断言；每个来源的字段映射见
 [SOURCES.md](../design-docs/source-designs/SOURCES.md)；隐私与读取范围见 [ADR](../design-docs/adr/session-transcript-on-demand-read.md)。
 
@@ -53,6 +53,7 @@ Perch 的详情面板呈现会话元数据；用户在任务行点击对话图�
 | 变更 | 标题 | 状态 | 链接 |
 |---|---|---|---|
 | 2026-11-26 | 三组选中收敛、状态栏 / 提示语删除与会话对话视图 | 已验证 | [../exec-plans/completed/2026-11-26-ui-convergence-and-transcript-view.md](../exec-plans/completed/2026-11-26-ui-convergence-and-transcript-view.md) |
+| 2026-11-26 | 侧栏选中态回退柔色底与对话视图排版（用户气泡 / 顶部加载更早） | 已验证 | [../exec-plans/completed/2026-11-26-sidebar-selection-and-transcript-layout.md](../exec-plans/completed/2026-11-26-sidebar-selection-and-transcript-layout.md) |
 
 ## 6. 链接
 
