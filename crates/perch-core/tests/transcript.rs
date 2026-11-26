@@ -471,6 +471,73 @@ fn qoder_transcript_reads_turns_in_sequence_order() {
 }
 
 #[test]
+fn qoder_transcript_folds_tool_parts_into_one_count_line() {
+    let _guard = lock_sqlite_fixtures();
+    let temp = TempDir::new().unwrap();
+    let db = temp.path().join("main.sqlite");
+    let conn = create_qoder_fixture(&db);
+    insert_qoder_session(&conn, "q-tools");
+    insert_qoder_message(
+        &conn,
+        "q-tools",
+        "m1",
+        1,
+        r#"{"id":"m1","role":"user","text":"先改这个文件","timestamp":1}"#,
+    );
+    // 助手回合：文本 + 两个工具块（thinking/hook 不计），随后一条纯工具回合。
+    insert_qoder_message(
+        &conn,
+        "q-tools",
+        "m2",
+        2,
+        concat!(
+            r#"{"id":"m2","role":"assistant","text":"先读一下","#,
+            r#""parts":[{"type":"thinking","text":"思考"},{"type":"tool","tool":"read","#,
+            r#""id":"p1"},{"type":"tool","tool":"grep","id":"p2"},{"type":"hook","id":"p3"}]}"#
+        ),
+    );
+    insert_qoder_message(
+        &conn,
+        "q-tools",
+        "m3",
+        3,
+        r#"{"id":"m3","role":"assistant","text":"","parts":[{"type":"tool","tool":"edit","id":"p4"}],"timestamp":3}"#,
+    );
+    insert_qoder_message(
+        &conn,
+        "q-tools",
+        "m4",
+        4,
+        r#"{"id":"m4","role":"assistant","text":"结论如下","timestamp":4}"#,
+    );
+    drop(conn);
+    let before_files = dir_file_names(temp.path());
+    let before_bytes = fs::read(&db).unwrap();
+    std::env::set_var("PERCH_QODER_DB", &db);
+
+    let outcome = read_transcript(&qoder_task("q-tools"));
+
+    let TranscriptOutcome::Ready { messages, .. } = outcome else {
+        panic!("期望 Ready，实际：{outcome:?}");
+    };
+    let rendered: Vec<(TranscriptRole, &str)> = messages
+        .iter()
+        .map(|message| (message.role, message.text.as_str()))
+        .collect();
+    assert_eq!(
+        rendered,
+        vec![
+            (TranscriptRole::User, "先改这个文件"),
+            (TranscriptRole::Assistant, "先读一下"),
+            (TranscriptRole::ToolCall, "工具调用 3 次"),
+            (TranscriptRole::Assistant, "结论如下"),
+        ]
+    );
+    assert_db_untouched(&db, &before_files, &before_bytes);
+    std::env::remove_var("PERCH_QODER_DB");
+}
+
+#[test]
 fn claude_collector_pointer_feeds_the_reader_end_to_end() {
     use perch_core::collectors::claude::ClaudeCollector;
     use perch_core::collectors::Collector;
