@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const BASE = "http://localhost:1421/";
+const DEMO_MARKER = "Perch · Demo";
 const SUITES = [
   "s1-selection.mjs",
   "s2-style.mjs",
@@ -19,24 +20,53 @@ const SUITES = [
   "t8-subsession-keep.mjs",
 ];
 
-async function reachable() {
+// 1421 的三种状态：demo 就绪 / 端口被别的进程占着 / 没有服务。
+async function demoState() {
   try {
-    return (await fetch(BASE)).ok;
+    const response = await fetch(BASE);
+    if (!response.ok) return "foreign";
+    return (await response.text()).includes(DEMO_MARKER) ? "ready" : "foreign";
   } catch {
-    return false;
+    return "down";
   }
 }
 
 async function ensureDemo() {
-  if (await reachable()) return null;
+  const state = await demoState();
+  if (state === "ready") return null;
+  if (state === "foreign") {
+    throw new Error("端口 1421 被其它进程占用（不是 Perch demo），请先释放端口");
+  }
   const proc = spawn("npm", ["run", "demo"], { stdio: "ignore", detached: true });
   proc.unref();
   const started = Date.now();
   while (Date.now() - started < 30_000) {
-    if (await reachable()) return proc;
+    if ((await demoState()) === "ready") return proc;
     await sleep(200);
   }
+  await stopDemo(proc);
   throw new Error("demo 服务未在 30s 内就绪（npm run demo，端口 1421）");
+}
+
+// 只收拾自己启动的 demo：SIGTERM 整个进程组，5s 内不退出再 SIGKILL，
+// 避免遗留 vite 进程占着 1421 影响下一次运行。
+async function stopDemo(proc) {
+  let exited = false;
+  proc.on("exit", () => {
+    exited = true;
+  });
+  try {
+    process.kill(-proc.pid, "SIGTERM");
+  } catch {
+    return;
+  }
+  for (let i = 0; i < 25 && !exited; i += 1) await sleep(200);
+  if (exited) return;
+  try {
+    process.kill(-proc.pid, "SIGKILL");
+  } catch {
+    // 进程已退出
+  }
 }
 
 function sleep(ms) {
@@ -50,13 +80,7 @@ for (const suite of SUITES) {
   const result = spawnSync(process.execPath, [join(here, suite)], { stdio: "inherit" });
   if (result.status !== 0) failed += 1;
 }
-if (demo) {
-  try {
-    process.kill(-demo.pid, "SIGTERM");
-  } catch {
-    // 进程已退出
-  }
-}
+if (demo) await stopDemo(demo);
 console.log(
   failed === 0
     ? `\n全部 ${SUITES.length} 个套件通过`

@@ -1,9 +1,13 @@
 // S3：扫描状态栏整条消失 / 副标题只剩「N 个任务 · 快照 X」/ usage-strip 只留三数值 pill
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { launchChrome, Page, Suite, assert, assertEqual } from "./harness.mjs";
 
 const URL = "http://localhost:1421/";
-const APP = "/Users/wayne/workspace/perch-wt-t25/src/App.svelte";
+// 验收不依赖当前工作目录：所有路径相对套件文件解析到仓库根。
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const APP = join(ROOT, "src/App.svelte");
 
 const q = (s) => JSON.stringify(s);
 

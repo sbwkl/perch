@@ -1,11 +1,15 @@
 // S4：图标统一——品牌位 / 详情空态 / demo 社交预览全部使用 app icon 图形，线描鸟移除
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { launchChrome, Page, Suite, assert, assertEqual } from "./harness.mjs";
 
 const URL = "http://localhost:1421/";
-const APP = "/Users/wayne/workspace/perch-wt-t25/src/App.svelte";
-const SOCIAL = "/Users/wayne/workspace/perch-wt-t25/demo/social.html";
-const ICON = "/Users/wayne/workspace/perch-wt-t25/src-tauri/icons/icon.svg";
+// 验收不依赖当前工作目录：所有路径相对套件文件解析到仓库根。
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const APP = join(ROOT, "src/App.svelte");
+const SOCIAL = join(ROOT, "demo/social.html");
+const ICON = join(ROOT, "src-tauri/icons/icon.svg");
 
 // app icon 的可识别特征
 const SIGNATURES = [
