@@ -861,6 +861,10 @@ kbd {
 }
 
 .transcript-msg[data-role="user"] {
+  /* 用户消息靠右气泡：限宽 76%，气泡内文字仍左对齐；助手与工具行样式不变。 */
+  align-self: flex-end;
+  max-width: 76%;
+  text-align: left;
   background: var(--accent-soft);
 }
 
