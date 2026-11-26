@@ -223,8 +223,8 @@ fn read_jsonl_transcript(
 
 /// 从 `end` 向前读取一块原始字节：目标 `JSONL_TAIL_BLOCK_BYTES`，起点对齐到
 /// 完整行边界（块首残行属于更早的块，由下一块完整带回，不重复解析）；
-/// 单行超过块大小时继续向前扩块直到行首或文件头。返回（块字节，块起点
-/// 文件偏移；0 表示已到文件头）。
+/// 单行超过块大小时保留已读字节继续向前扩块，直到块内出现完整行或到文件头。
+/// 返回（块字节，块起点文件偏移；0 表示已到文件头）。
 fn read_tail_block(file: &mut File, end: u64) -> std::io::Result<(Vec<u8>, u64)> {
     let mut block: Vec<u8> = Vec::new();
     let mut start = end;
@@ -237,16 +237,17 @@ fn read_tail_block(file: &mut File, end: u64) -> std::io::Result<(Vec<u8>, u64)>
         block = chunk;
         start = chunk_start;
         if start == 0 {
+            // 文件头：从 0 起整段都是完整行，无需对齐。
             return Ok((block, 0));
         }
         match block.iter().position(|&byte| byte == b'\n') {
-            // 块首残行（起点到首个换行为止）丢弃：它会更早块里完整出现。
-            Some(index) => {
-                block.drain(..=index);
-                return Ok((block, start + index as u64 + 1));
+            // 首个换行之后还有内容：块首残行（起点到首个换行为止）丢弃，
+            // 它会在更早的块里完整出现；其余部分按完整行返回。
+            Some(index) if index + 1 < block.len() => {
+                return Ok((block[index + 1..].to_vec(), start + index as u64 + 1));
             }
-            // 256KB 内无换行：单行超长，继续向前扩块。
-            None => continue,
+            // 唯一换行在末尾或无换行：块内没有完整行，继续向前扩块。
+            _ => continue,
         }
     }
 }

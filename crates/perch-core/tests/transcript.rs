@@ -2561,3 +2561,266 @@ fn cline_transcript_reads_turns_in_order_and_counts_tools() {
     );
     assert_source_unchanged(&session, &before);
 }
+
+// —— JSONL 尾部优先读取（评审修复 A）：块收集 / 向前补齐 / 预算停止的两侧用例 ——
+
+/// 定长文本：`第NNN条` 前缀（5 字符）+ 补齐到 total 个字符，便于按条数精算预算。
+fn sized_text(index: usize, total_chars: usize) -> String {
+    format!("第{index:03}条{}", "甲".repeat(total_chars - 5))
+}
+
+fn claude_text_line(role: &str, text: &str) -> String {
+    format!(
+        "{{\"type\":\"{role}\",\"message\":{{\"role\":\"{role}\",\
+         \"content\":[{{\"type\":\"text\",\"text\":\"{text}\"}}]}}}}\n"
+    )
+}
+
+fn claude_tool_line() -> String {
+    "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[\
+      {\"type\":\"tool_use\",\"name\":\"Read\",\"input\":{}}]}}\n"
+        .to_owned()
+}
+
+#[test]
+fn claude_transcript_large_file_keeps_only_the_recent_window() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("session-large-window.jsonl");
+    // 300 条 × 700 字符 = 210,000 超预算（文件约 650KB，多块）：保留最近 285 条。
+    let mut body = String::new();
+    for index in 1..=300 {
+        let role = if index % 2 == 1 { "user" } else { "assistant" };
+        body.push_str(&claude_text_line(role, &sized_text(index, 700)));
+    }
+    fs::write(&session, body).unwrap();
+    let before = fs::read(&session).unwrap();
+
+    let outcome = read_transcript(&claude_task(&session));
+
+    let TranscriptOutcome::Ready {
+        messages,
+        session_truncated,
+    } = outcome
+    else {
+        panic!("期望 Ready，实际：{outcome:?}");
+    };
+    assert!(session_truncated, "超预算会话必须标记丢弃");
+    assert_eq!(messages.len(), 285, "保留 285 × 700 = 199,500 ≤ 预算");
+    assert!(
+        messages[0].text.starts_with("第016条"),
+        "窗口最早应是第 16 条：{}",
+        &messages[0].text[..10]
+    );
+    assert!(messages[284].text.starts_with("第300条"));
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn claude_transcript_backfills_earlier_blocks_when_tail_is_under_budget() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("session-backfill.jsonl");
+    // 150 条 × 700 = 105,000 未超预算（文件约 320KB，尾部一块装不下）：
+    // 必须向前补齐，输出包含最早的 第001条。
+    let mut body = String::new();
+    for index in 1..=150 {
+        let role = if index % 2 == 1 { "user" } else { "assistant" };
+        body.push_str(&claude_text_line(role, &sized_text(index, 700)));
+    }
+    fs::write(&session, body).unwrap();
+    let before = fs::read(&session).unwrap();
+    assert!(
+        fs::metadata(&session).unwrap().len() > 256 * 1024,
+        "fixture 必须超过单个读取块，否则测不到向前补齐"
+    );
+
+    let outcome = read_transcript(&claude_task(&session));
+
+    let TranscriptOutcome::Ready {
+        messages,
+        session_truncated,
+    } = outcome
+    else {
+        panic!("期望 Ready，实际：{outcome:?}");
+    };
+    assert!(!session_truncated, "预算内不得标记丢弃");
+    assert_eq!(messages.len(), 150, "预算内全量保留");
+    assert!(
+        messages[0].text.starts_with("第001条"),
+        "向前补齐必须包含最早一条：{}",
+        &messages[0].text[..10]
+    );
+    assert!(messages[149].text.starts_with("第150条"));
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn claude_transcript_keeps_full_window_when_text_exactly_matches_budget() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("session-exact-budget.jsonl");
+    // 200 条 × 1,000 字符 = 200,000 恰等于预算（文件约 600KB，多块）：
+    // 「达到预算」不触发提前停止，仍向前读到文件头，全量保留且不标记丢弃。
+    let mut body = String::new();
+    for index in 1..=200 {
+        let role = if index % 2 == 1 { "user" } else { "assistant" };
+        body.push_str(&claude_text_line(role, &sized_text(index, 1_000)));
+    }
+    fs::write(&session, body).unwrap();
+    let before = fs::read(&session).unwrap();
+
+    let outcome = read_transcript(&claude_task(&session));
+
+    let TranscriptOutcome::Ready {
+        messages,
+        session_truncated,
+    } = outcome
+    else {
+        panic!("期望 Ready，实际：{outcome:?}");
+    };
+    assert!(!session_truncated, "恰等于预算不算超限");
+    assert_eq!(messages.len(), 200);
+    assert!(messages[0].text.starts_with("第001条"));
+    assert!(messages[199].text.starts_with("第200条"));
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn claude_transcript_merges_tool_runs_spanning_block_boundaries() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("session-tool-run-across-blocks.jsonl");
+    // 3,000 条纯工具记录（约 320KB）横跨块边界：跨块的连续工具轮必须
+    // 合并为一行「工具调用 3000 次」，不得因切块重复或漏计。
+    let mut body = String::new();
+    body.push_str(&claude_text_line("user", &sized_text(1, 700)));
+    body.push_str(&claude_text_line("assistant", &sized_text(2, 700)));
+    for _ in 0..3_000 {
+        body.push_str(&claude_tool_line());
+    }
+    body.push_str(&claude_text_line("assistant", "收尾结论"));
+    fs::write(&session, body).unwrap();
+    let before = fs::read(&session).unwrap();
+
+    let outcome = read_transcript(&claude_task(&session));
+
+    let TranscriptOutcome::Ready { messages, .. } = outcome else {
+        panic!("期望 Ready，实际：{outcome:?}");
+    };
+    let rendered: Vec<(TranscriptRole, &str)> = messages
+        .iter()
+        .map(|message| (message.role, message.text.as_str()))
+        .collect();
+    assert_eq!(
+        rendered,
+        vec![
+            (TranscriptRole::User, sized_text(1, 700).as_str()),
+            (TranscriptRole::Assistant, sized_text(2, 700).as_str()),
+            (TranscriptRole::ToolCall, "工具调用 3000 次"),
+            (TranscriptRole::Assistant, "收尾结论"),
+        ]
+    );
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn claude_transcript_skips_corrupt_lines_in_multi_block_files() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("session-corrupt-multiblock.jsonl");
+    // 多块文件混入中断写留下的残缺行 / 非 UTF-8 行 / 非 JSON 行：
+    // 全部整行跳过，合法消息全量保留。
+    let mut body: Vec<u8> = Vec::new();
+    for index in 1..=260 {
+        let role = if index % 2 == 1 { "user" } else { "assistant" };
+        body.extend_from_slice(claude_text_line(role, &sized_text(index, 700)).as_bytes());
+        if index % 50 == 0 {
+            // 中断写：JSON 在中途断掉。
+            body.extend_from_slice(
+                b"{\"type\":\"user\",\"message\":{\"role\":\"user\", \"content\":\n",
+            );
+            body.extend_from_slice(&[0xFF, 0xFE, b'\n']);
+            body.extend_from_slice("不是 JSON 的一行\n".as_bytes());
+        }
+    }
+    fs::write(&session, body).unwrap();
+    let before = fs::read(&session).unwrap();
+
+    let outcome = read_transcript(&claude_task(&session));
+
+    let TranscriptOutcome::Ready {
+        messages,
+        session_truncated,
+    } = outcome
+    else {
+        panic!("期望 Ready，实际：{outcome:?}");
+    };
+    assert!(!session_truncated);
+    assert_eq!(messages.len(), 260, "只有合法消息产出");
+    assert!(messages[0].text.starts_with("第001条"));
+    assert!(messages[259].text.starts_with("第260条"));
+    assert!(
+        messages
+            .iter()
+            .all(|message| message.text.starts_with('第')),
+        "坏行内容不得混入输出"
+    );
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn claude_transcript_single_block_file_degenerates_to_full_read() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("session-single-block.jsonl");
+    // 20 条 × 700 字符，文件远小于一个读取块：退化为全量读取。
+    let mut body = String::new();
+    for index in 1..=20 {
+        let role = if index % 2 == 1 { "user" } else { "assistant" };
+        body.push_str(&claude_text_line(role, &sized_text(index, 700)));
+    }
+    fs::write(&session, body).unwrap();
+    let before = fs::read(&session).unwrap();
+
+    let outcome = read_transcript(&claude_task(&session));
+
+    let TranscriptOutcome::Ready {
+        messages,
+        session_truncated,
+    } = outcome
+    else {
+        panic!("期望 Ready，实际：{outcome:?}");
+    };
+    assert!(!session_truncated);
+    assert_eq!(messages.len(), 20);
+    assert!(messages[0].text.starts_with("第001条"));
+    assert!(messages[19].text.starts_with("第020条"));
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn claude_transcript_single_line_larger_than_block_window_is_read_in_full() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("session-giant-line.jsonl");
+    // 单行约 300KB，超过 256KB 读取块：向前扩块到行首，行内容按 8k 口径截断。
+    let mut body = String::new();
+    body.push_str(&claude_text_line("user", &sized_text(1, 700)));
+    body.push_str(&format!(
+        "{{\"type\":\"user\",\"message\":{{\"role\":\"user\",\"content\":\"{}\"}}}}\n",
+        "乙".repeat(100_000)
+    ));
+    body.push_str(&claude_text_line("assistant", &sized_text(3, 700)));
+    fs::write(&session, body).unwrap();
+    let before = fs::read(&session).unwrap();
+
+    let outcome = read_transcript(&claude_task(&session));
+
+    let TranscriptOutcome::Ready { messages, .. } = outcome else {
+        panic!("期望 Ready，实际：{outcome:?}");
+    };
+    assert_eq!(messages.len(), 3);
+    assert_eq!(messages[0].text, sized_text(1, 700));
+    assert_eq!(
+        messages[1].text.chars().count(),
+        8_000,
+        "超长单行按 8k 截断"
+    );
+    assert!(messages[1].truncated);
+    assert_eq!(messages[2].text, sized_text(3, 700));
+    assert_source_unchanged(&session, &before);
+}
