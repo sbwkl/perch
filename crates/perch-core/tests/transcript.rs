@@ -861,10 +861,8 @@ fn minimax_collector_pointer_feeds_the_reader_end_to_end() {
     fs::create_dir_all(&session_dir).unwrap();
     fs::write(
         session_dir.join("manifest.json"),
-        concat!(
-            "{\"sessionId\":\"sess-mm-transcript\",\"createdAtMs\":1730427600000,\
-             \"updatedAtMs\":1730427700000}"
-        ),
+        "{\"sessionId\":\"sess-mm-transcript\",\"createdAtMs\":1730427600000,\
+         \"updatedAtMs\":1730427700000}",
     )
     .unwrap();
     let session = session_dir.join("messages.jsonl");
