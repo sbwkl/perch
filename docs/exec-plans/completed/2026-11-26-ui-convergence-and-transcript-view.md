@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 | --- | --- |
-| 状态 | 就绪 |
+| 状态 | 已验证 |
 | 类型 | 变更文档 |
 | Owner | wayne + agent |
 | 所属模块 / 入口 | `src/App.svelte`、`src/app.css`、`src/lib/types.ts`、`src-tauri/src/lib.rs`、`crates/perch-core`、`demo/`、文档 |
@@ -130,6 +130,9 @@
 
 ## 7. 文档同步清单（实现阶段完成）
 
+> 以下同步已随票据 #31（文档收口）完成：产品规格与「当前事实与边界」、状态行、变更索引、
+> ADR 状态（proposed → accepted）、根文档口径（按需读取、七窄命令、对话面板布局）均已写回。
+
 - 产品规格：[agent-sources.md](../../product-specs/agent-sources.md)（R5 / R8 / R11 / R12 / R22 / R23、摘要与「当前事实与边界」、变更索引）、[session-transcript.md](../../product-specs/session-transcript.md)、[index.md](../../product-specs/index.md)。
 - 设计：[ADR：按需读取会话正文](../../design-docs/adr/session-transcript-on-demand-read.md)、[claude-session-title-read-scope.md](../../design-docs/adr/claude-session-title-read-scope.md)（读取范围表述）、[design-docs/index.md](../../design-docs/index.md)、[SEARCH.md](../../design-docs/source-designs/SEARCH.md)（隐私表述）、[SOURCES.md](../../design-docs/source-designs/SOURCES.md)（逐源正文位置）。
 - 根文档：`ARCHITECTURE.md`（只读不变量、命令清单与数量、布局与视图）、`SECURITY.md`（读取范围、命令清单）、`README.md`（覆盖能力、详情内容、不包含列表）、`FAQ.md`（「会读取聊天正文吗」）、`ROADMAP.md`（「当前默认不做」去掉读取正文）、`CHANGELOG.md`、`GLOSSARY.md`。
@@ -147,3 +150,5 @@
 | --- | --- | --- |
 | 提议 → 就绪 | wayne + agent | 2026-11-26 逐轮问答定稿 Q1–Q20；本文件先于代码；产品规格、ADR 与词表已同步 |
 | 规格发布 | agent | 2026-11-26 规格发布为 [#24](https://github.com/sbwkl/perch/issues/24)，标签 `ready-for-agent`；测试 seam 已与用户确认（core 读取入口 / 命令层 / demo+CDP / 缓存迁移） |
+| 实现完成 | agent | 2026-11-26 票据 #25–#30 逐个以 merge commit 并入集成 `integration/ui-convergence-transcript`（tip 0896735）：#25 界面收敛（CDP S1–S5 共 39 断言）、#26 Claude 正文通道与 `source_path` 迁移、#27 对话面板（CDP T1–T3 共 17 断言 + S1–S5 回归）、#28 / #29 / #30 逐源读取器；门禁全绿：`cargo fmt --all --check` / `cargo clippy -p perch-core --all-targets -- -D warnings` / `cargo test -p perch-core`（165 用例，transcript 59）/ `cargo test -p perch --lib`（11 用例）/ `npm run check`（94 文件 0 错 0 警）/ `npm run build`。T11 只读断言为 core 测试源文件字节一致 + `cache.db` 无正文字段 |
+| 已验证并归档 | agent | 2026-11-26 文档收口（票据 #31）：事实源（ARCHITECTURE / SECURITY / FAQ / core-beliefs / SOURCES / SEARCH / DATA-PROBE / README / ROADMAP / CHANGELOG / GLOSSARY）与产品规格改为按需读取口径；本文件移入 `completed/`。P1 内容搜索保持未实现口径 |
