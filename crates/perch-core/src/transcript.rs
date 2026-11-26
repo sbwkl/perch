@@ -148,6 +148,12 @@ impl SessionBuilder {
         }
     }
 
+    /// 外部信号（字节上限提前停止等）合并进会话截断标记：
+    /// 即使预算内没丢消息，更早的内容没被读到也属于「仅保留最近部分」。
+    fn mark_truncated(&mut self) {
+        self.session_truncated = true;
+    }
+
     /// 追加消息并按单会话预算保留最近部分：超出时从最早的消息开始整条丢弃。
     fn push_message(&mut self, message: TranscriptMessage) {
         self.session_chars += message.text.chars().count();
@@ -174,9 +180,13 @@ const JSONL_TAIL_MAX_BYTES: u64 = 64 * 1024 * 1024;
 /// SessionBuilder 承担，输出与整文件顺序读取完全一致；文件不足一块时
 /// 退化为全量读取。块首残行留给更早的块，不重复解析；非 UTF-8 行与
 /// 损坏 JSON 行跳过并继续，不整屏失败。
+/// `max_bytes` 是防失控字节上限（生产为 JSONL_TAIL_MAX_BYTES，测试可注入
+/// 小值）：因它提前停止且未到文件头时，更早的字节没有被读到，即便可见
+/// 正文不足预算也必须置 session_truncated，提示「仅保留最近部分」。
 fn read_jsonl_transcript(
     task: &TaskSnapshot,
     dispatch: impl Fn(&Value, &mut SessionBuilder),
+    max_bytes: u64,
 ) -> TranscriptOutcome {
     let mut file = match open_session_file(task) {
         Ok(file) => file,
@@ -187,12 +197,15 @@ fn read_jsonl_transcript(
         Err(error) => return TranscriptOutcome::error(format!("读取源文件失败：{error}")),
     };
 
-    // 第一遍：尾 → 头收集块；64MB 字节上限是防失控阀门，覆盖不到它说明
+    // 第一遍：尾 → 头收集块；字节上限是防失控阀门，覆盖不到它说明
     // 会话几乎没有可见文本，整文件解析也远小于常见的内存驻留顾虑。
     let mut segments: Vec<Vec<u8>> = Vec::new();
     let mut visible_chars = 0usize;
     let mut collected_bytes = 0u64;
     let mut end = file_len;
+    // 循环唯一出口必先赋值；到文件头（block_start == 0）说明全文件都已
+    // 读入，不算截断，因字节上限提前停在这里（block_start > 0）才算。
+    let byte_capped;
     loop {
         let (block, block_start) = match read_tail_block(&mut file, end) {
             Ok(result) => result,
@@ -203,8 +216,9 @@ fn read_jsonl_transcript(
         segments.push(block);
         if block_start == 0
             || visible_chars > crate::models::TRANSCRIPT_SESSION_CHAR_LIMIT
-            || collected_bytes >= JSONL_TAIL_MAX_BYTES
+            || collected_bytes >= max_bytes
         {
+            byte_capped = block_start > 0 && collected_bytes >= max_bytes;
             break;
         }
         end = block_start;
@@ -217,6 +231,9 @@ fn read_jsonl_transcript(
         for piece in block.split(|&byte| byte == b'\n') {
             parse_jsonl_line(piece, &mut builder, &dispatch);
         }
+    }
+    if byte_capped {
+        builder.mark_truncated();
     }
     builder.finish()
 }
@@ -282,7 +299,7 @@ fn parse_jsonl_line(
 }
 
 fn read_claude_transcript(task: &TaskSnapshot) -> TranscriptOutcome {
-    read_jsonl_transcript(task, claude_dispatch)
+    read_jsonl_transcript(task, claude_dispatch, JSONL_TAIL_MAX_BYTES)
 }
 
 /// Claude 行分派：user / assistant 可见文本与工具计数。
@@ -302,7 +319,7 @@ fn claude_dispatch(value: &Value, builder: &mut SessionBuilder) {
 }
 
 fn read_codex_transcript(task: &TaskSnapshot) -> TranscriptOutcome {
-    read_jsonl_transcript(task, codex_dispatch)
+    read_jsonl_transcript(task, codex_dispatch, JSONL_TAIL_MAX_BYTES)
 }
 
 /// Codex 行分派：只取 response_item 的 message（user input_text / assistant
@@ -391,7 +408,7 @@ fn strip_codex_wrappers(text: &str) -> String {
 }
 
 fn read_antigravity_transcript(task: &TaskSnapshot) -> TranscriptOutcome {
-    read_jsonl_transcript(task, antigravity_dispatch)
+    read_jsonl_transcript(task, antigravity_dispatch, JSONL_TAIL_MAX_BYTES)
 }
 
 /// Antigravity 行分派：USER_EXPLICIT（USER_INPUT）是用户输入（常包在
@@ -439,7 +456,7 @@ fn unwrap_user_request(content: &str) -> String {
 }
 
 fn read_minimax_transcript(task: &TaskSnapshot) -> TranscriptOutcome {
-    read_jsonl_transcript(task, minimax_dispatch)
+    read_jsonl_transcript(task, minimax_dispatch, JSONL_TAIL_MAX_BYTES)
 }
 
 /// MiniMax 行分派：message.role 区分 user / assistant / toolResult。
@@ -1099,4 +1116,112 @@ fn legacy_session_message_events(value: &Value, role: TranscriptRole) -> Vec<Tra
         events.push(TranscriptEvent::Tools(tool_run));
     }
     events
+}
+
+#[cfg(test)]
+mod jsonl_byte_cap_tests {
+    use super::*;
+
+    fn tool_line(id: usize) -> String {
+        format!(
+            "{{\"type\":\"assistant\",\"message\":{{\"role\":\"assistant\",\"content\":\
+             [{{\"type\":\"tool_use\",\"id\":\"tool-{id:06}\",\"name\":\"Bash\",\
+             \"input\":{{\"command\":\"echo {id}\"}}}}]}}}}\n"
+        )
+    }
+
+    fn text_user_line(text: &str) -> String {
+        format!("{{\"type\":\"user\",\"message\":{{\"role\":\"user\",\"content\":\"{text}\"}}}}\n")
+    }
+
+    fn text_assistant_line(text: &str) -> String {
+        format!(
+            "{{\"type\":\"assistant\",\"message\":{{\"role\":\"assistant\",\"content\":\
+             [{{\"type\":\"text\",\"text\":\"{text}\"}}]}}}}\n"
+        )
+    }
+
+    fn claude_task_with(path: &Path) -> TaskSnapshot {
+        let mut task = TaskSnapshot::new(SOURCE_CLAUDE, "byte-cap-test");
+        task.source_path = Some(path.to_string_lossy().into_owned());
+        task
+    }
+
+    fn ready_or_panic(outcome: TranscriptOutcome) -> (Vec<TranscriptMessage>, bool) {
+        match outcome {
+            TranscriptOutcome::Ready {
+                messages,
+                session_truncated,
+            } => (messages, session_truncated),
+            other => panic!("期望 Ready，实际：{other:?}"),
+        }
+    }
+
+    /// 字节上限提前停止（未到文件头）：可见正文远小于会话预算，但更早的
+    /// 内容没被读到，必须置 session_truncated 提示「仅保留最近部分」。
+    #[test]
+    fn byte_cap_stop_marks_session_truncated() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let path = temp.path().join("session-cap.jsonl");
+        let mut body = String::new();
+        for id in 0..2400 {
+            body.push_str(&tool_line(id));
+        }
+        body.push_str(&text_user_line("尾部用户消息"));
+        body.push_str(&text_assistant_line("尾部助手消息"));
+        std::fs::write(&path, &body).unwrap();
+        assert!(
+            path.metadata().unwrap().len() > 256 * 1024,
+            "fixture 必须跨多块"
+        );
+
+        let task = claude_task_with(&path);
+        let outcome = read_jsonl_transcript(&task, claude_dispatch, 250 * 1024);
+        let (messages, session_truncated) = ready_or_panic(outcome);
+
+        assert!(
+            session_truncated,
+            "字节上限提前停止必须置 session_truncated"
+        );
+        let texts: Vec<&str> = messages
+            .iter()
+            .filter(|message| message.role != TranscriptRole::ToolCall)
+            .map(|message| message.text.as_str())
+            .collect();
+        assert_eq!(texts, vec!["尾部用户消息", "尾部助手消息"]);
+        let tool_rows = messages
+            .iter()
+            .filter(|message| message.role == TranscriptRole::ToolCall)
+            .count();
+        assert_eq!(tool_rows, 1, "窗口内的工具轮折叠为一行计数");
+    }
+
+    /// 字节上限在到达文件头时命中（block_start == 0）：全文件已读入，
+    /// 没有内容被跳过，不得置 session_truncated。
+    #[test]
+    fn byte_cap_reached_at_file_head_does_not_mark_truncated() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let path = temp.path().join("session-head.jsonl");
+        let mut body = String::new();
+        for id in 0..200 {
+            body.push_str(&tool_line(id));
+        }
+        body.push_str(&text_user_line("头部用户消息"));
+        body.push_str(&text_assistant_line("头部助手消息"));
+        std::fs::write(&path, &body).unwrap();
+        let file_len = path.metadata().unwrap().len();
+        assert!(file_len <= 256 * 1024, "fixture 必须单块可读");
+
+        let task = claude_task_with(&path);
+        let outcome = read_jsonl_transcript(&task, claude_dispatch, file_len);
+        let (messages, session_truncated) = ready_or_panic(outcome);
+
+        assert!(!session_truncated, "到达文件头的命中不算截断");
+        let texts: Vec<&str> = messages
+            .iter()
+            .filter(|message| message.role != TranscriptRole::ToolCall)
+            .map(|message| message.text.as_str())
+            .collect();
+        assert_eq!(texts, vec!["头部用户消息", "头部助手消息"]);
+    }
 }
