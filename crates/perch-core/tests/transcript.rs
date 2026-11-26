@@ -12,6 +12,23 @@ fn claude_task(source_path: &Path) -> TaskSnapshot {
     task
 }
 
+fn codex_task(source_path: &Path) -> TaskSnapshot {
+    let mut task = TaskSnapshot::new("codex", "sess-transcript");
+    task.title = "合成会话".to_owned();
+    task.source_path = Some(source_path.to_string_lossy().into_owned());
+    task
+}
+
+fn rendered_roles(outcome: TranscriptOutcome) -> Vec<(TranscriptRole, String)> {
+    let TranscriptOutcome::Ready { messages, .. } = outcome else {
+        panic!("期望 Ready，实际：{outcome:?}");
+    };
+    messages
+        .into_iter()
+        .map(|message| (message.role, message.text))
+        .collect()
+}
+
 fn assert_source_unchanged(path: &Path, before: &[u8]) {
     assert_eq!(
         before,
@@ -313,6 +330,229 @@ fn codex_collector_pointer_feeds_the_reader_end_to_end() {
         ]
     );
     assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn codex_transcript_maps_roles_and_skips_non_message_records() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("rollout-roles.jsonl");
+    fs::write(
+        &session,
+        concat!(
+            "{\"timestamp\":\"2026-11-01T08:00:00Z\",\"type\":\"session_meta\",\"payload\":\
+             {\"id\":\"sess-transcript\",\"cwd\":\"/tmp/work\"}}\n",
+            "{\"timestamp\":\"2026-11-01T08:01:00Z\",\"type\":\"turn_context\",\"payload\":\
+             {\"cwd\":\"/tmp/work\"}}\n",
+            "{\"timestamp\":\"2026-11-01T08:02:00Z\",\"type\":\"response_item\",\"payload\":\
+             {\"type\":\"message\",\"role\":\"user\",\"content\":[\
+             {\"type\":\"input_text\",\"text\":\"<environment_context>\\n  <cwd>/tmp/work</cwd>\\n</environment_context>\"},\
+             {\"type\":\"input_text\",\"text\":\"先看这个函数\"}]}}\n",
+            "{\"timestamp\":\"2026-11-01T08:03:00Z\",\"type\":\"response_item\",\"payload\":\
+             {\"type\":\"message\",\"role\":\"developer\",\"content\":[\
+             {\"type\":\"input_text\",\"text\":\"项目说明注入\"}]}}\n",
+            "{\"timestamp\":\"2026-11-01T08:04:00Z\",\"type\":\"event_msg\",\"payload\":\
+             {\"type\":\"agent_message\",\"message\":\"不该出现的事件副本\"}}\n",
+            "{\"timestamp\":\"2026-11-01T08:05:00Z\",\"type\":\"response_item\",\"payload\":\
+             {\"type\":\"reasoning\",\"summary\":[]}}\n",
+            "{\"timestamp\":\"2026-11-01T08:06:00Z\",\"type\":\"response_item\",\"payload\":\
+             {\"type\":\"message\",\"role\":\"assistant\",\"content\":[\
+             {\"type\":\"output_text\",\"text\":\"函数缺少错误处理\"}]}}\n",
+        ),
+    )
+    .unwrap();
+    let before = fs::read(&session).unwrap();
+
+    let outcome = read_transcript(&codex_task(&session));
+
+    let rendered = rendered_roles(outcome);
+    assert_eq!(
+        rendered,
+        vec![
+            (TranscriptRole::User, "先看这个函数".to_owned()),
+            (TranscriptRole::Assistant, "函数缺少错误处理".to_owned()),
+        ]
+    );
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn codex_transcript_folds_tool_calls_between_texts() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("rollout-tools.jsonl");
+    fs::write(
+        &session,
+        concat!(
+            "{\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",",
+            "\"content\":[{\"type\":\"input_text\",\"text\":\"修一下\"}]}}\n",
+            "{\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"assistant\",",
+            "\"content\":[{\"type\":\"output_text\",\"text\":\"我先看\"}]}}\n",
+            "{\"type\":\"response_item\",\"payload\":{\"type\":\"function_call\",",
+            "\"name\":\"shell\",\"arguments\":\"ls\"}}\n",
+            "{\"type\":\"response_item\",\"payload\":{\"type\":\"function_call_output\",",
+            "\"output\":\"文件列表不渲染\"}}\n",
+            "{\"type\":\"response_item\",\"payload\":{\"type\":\"custom_tool_call\",",
+            "\"name\":\"apply_patch\"}}\n",
+            "{\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"assistant\",",
+            "\"content\":[{\"type\":\"output_text\",\"text\":\"修好了\"}]}}\n",
+        ),
+    )
+    .unwrap();
+    let before = fs::read(&session).unwrap();
+
+    let outcome = read_transcript(&codex_task(&session));
+
+    let rendered = rendered_roles(outcome);
+    assert_eq!(
+        rendered,
+        vec![
+            (TranscriptRole::User, "修一下".to_owned()),
+            (TranscriptRole::Assistant, "我先看".to_owned()),
+            (TranscriptRole::ToolCall, "工具调用 2 次".to_owned()),
+            (TranscriptRole::Assistant, "修好了".to_owned()),
+        ]
+    );
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn codex_transcript_clips_single_message_to_eight_thousand_chars() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("rollout-long-message.jsonl");
+    let long_text = "甲".repeat(9_000);
+    let record = format!(
+        concat!(
+            "{{\"type\":\"response_item\",\"payload\":{{\"type\":\"message\",\"role\":\"assistant\",",
+            "\"content\":[{{\"type\":\"output_text\",\"text\":\"{long_text}\"}}]}}}}\n"
+        ),
+        long_text = long_text
+    );
+    fs::write(&session, record).unwrap();
+    let before = fs::read(&session).unwrap();
+
+    let outcome = read_transcript(&codex_task(&session));
+
+    let TranscriptOutcome::Ready { messages, .. } = outcome else {
+        panic!("期望 Ready，实际：{outcome:?}");
+    };
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0].text.chars().count(), 8_000);
+    assert!(messages[0].truncated);
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn codex_transcript_keeps_the_recent_part_of_oversized_sessions() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("rollout-oversize.jsonl");
+    // 30 条 × 9,000 字符（截后 8,000）：总 240,000 超预算，保留最近 25 条。
+    let mut body = String::new();
+    for index in 1..=30 {
+        let text = format!("第{index:02}条{}", "甲".repeat(9_000));
+        body.push_str(&format!(
+            concat!(
+                "{{\"type\":\"response_item\",\"payload\":{{\"type\":\"message\",\"role\":\"assistant\",",
+                "\"content\":[{{\"type\":\"output_text\",\"text\":\"{text}\"}}]}}}}\n"
+            ),
+            text = text
+        ));
+    }
+    fs::write(&session, body).unwrap();
+    let before = fs::read(&session).unwrap();
+
+    let outcome = read_transcript(&codex_task(&session));
+
+    let TranscriptOutcome::Ready {
+        messages,
+        session_truncated,
+    } = outcome
+    else {
+        panic!("期望 Ready，实际：{outcome:?}");
+    };
+    assert!(session_truncated, "超预算会话必须标记丢弃");
+    assert_eq!(messages.len(), 25);
+    assert!(messages[0].text.starts_with("第06条"), "{}", &messages[0].text[..12]);
+    assert!(messages[24].text.starts_with("第30条"));
+    let total: usize = messages
+        .iter()
+        .map(|message| message.text.chars().count())
+        .sum();
+    assert!(total <= 200_000, "保留部分不得超过会话预算：{total}");
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn codex_transcript_skips_corrupt_and_non_utf8_lines() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("rollout-corrupt.jsonl");
+    let mut body: Vec<u8> = Vec::new();
+    body.extend_from_slice(
+        "{\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\
+         \"content\":[{\"type\":\"input_text\",\"text\":\"损坏行之前\"}]}}\n"
+            .as_bytes(),
+    );
+    body.extend_from_slice(b"{\"type\":\"response_item\",\"payload\":{ broken\n");
+    body.extend_from_slice(&[0xFF, 0xFE, b'\n']);
+    body.extend_from_slice(
+        "{\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"assistant\",\
+         \"content\":[{\"type\":\"output_text\",\"text\":\"损坏行之后\"}]}}\n"
+            .as_bytes(),
+    );
+    fs::write(&session, &body).unwrap();
+    let before = fs::read(&session).unwrap();
+
+    let outcome = read_transcript(&codex_task(&session));
+
+    let rendered = rendered_roles(outcome);
+    assert_eq!(
+        rendered,
+        vec![
+            (TranscriptRole::User, "损坏行之前".to_owned()),
+            (TranscriptRole::Assistant, "损坏行之后".to_owned()),
+        ]
+    );
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn codex_transcript_reports_empty_sessions() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("rollout-empty.jsonl");
+    fs::write(
+        &session,
+        concat!(
+            "{\"type\":\"session_meta\",\"payload\":{\"id\":\"sess-transcript\"}}\n",
+            "{\"type\":\"response_item\",\"payload\":{\"type\":\"reasoning\",\"summary\":[]}}\n",
+            "\n\n",
+        ),
+    )
+    .unwrap();
+    let before = fs::read(&session).unwrap();
+
+    let outcome = read_transcript(&codex_task(&session));
+
+    let TranscriptOutcome::Error { reason } = outcome else {
+        panic!("期望 Error，实际：{outcome:?}");
+    };
+    assert!(reason.contains("没有可显示的对话内容"), "{reason}");
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn codex_transcript_reports_missing_file_and_pointer() {
+    let temp = TempDir::new().unwrap();
+    let outcome = read_transcript(&codex_task(&temp.path().join("rollout-missing.jsonl")));
+    let TranscriptOutcome::Error { reason } = outcome else {
+        panic!("期望 Error，实际：{outcome:?}");
+    };
+    assert!(reason.contains("源文件不存在"), "{reason}");
+
+    let mut task = TaskSnapshot::new("codex", "sess-no-pointer");
+    task.source_path = None;
+    let outcome = read_transcript(&task);
+    let TranscriptOutcome::Error { reason } = outcome else {
+        panic!("期望 Error，实际：{outcome:?}");
+    };
+    assert!(reason.contains("源文件指针"), "{reason}");
 }
 
 #[test]
