@@ -62,6 +62,8 @@ npm run check            # svelte-check 类型检查
 npm run build            # 前端生产构建
 npm run tauri build      # 打包 Perch.app / .dmg
 npm run demo             # 无 Tauri 的 UI 演示 / 截图（端口 1421，假数据）
+npm run cdp              # demo + headless Chrome 行为验收（demo/cdp/ 套件）
+bash scripts/gates.sh    # 六条门禁（提交前一次跑完）
 
 cargo fmt --all --check
 cargo clippy -p perch-core --all-targets -- -D warnings

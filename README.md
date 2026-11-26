@@ -141,7 +141,7 @@ npm run tauri build
 工作流：`main` 是保护分支，只接受合并；新特性从最新 `main` 切 `feat/<特性名>`；集成测试用临时 `tmp/integration-<特性名>` 分支，测完即删；有未提交改动时用 `git worktree` 并行开发；合并 `main` 前必须获得用户同意。完整流程见根 [AGENTS.md](AGENTS.md)。
 
 - 产品行为变化先更新对应产品规格；新功能 / 跨模块行为变更先建变更文档并链接产品规格，验收覆盖正常 / 异常 / 边界后再写代码。
-- 提交前检查：`npm run check`、`cargo fmt --all --check`、`cargo clippy -p perch-core --all-targets -- -D warnings`、`cargo test -p perch-core`。
+- 提交前检查：`bash scripts/gates.sh`（六条门禁：fmt / clippy / perch-core 测试 / perch --lib 测试 / svelte-check / build）；前端行为验收：`npm run cdp`（自动起 demo 与 headless Chrome）。
 - 测试与 demo 只允许合成数据；不得提交真实会话标题、项目路径、数据库或日志。
 - 只读红线、代码风格与 PR 要求见 [CONTRIBUTING.md](CONTRIBUTING.md)；安全边界见 [SECURITY.md](SECURITY.md)。
 

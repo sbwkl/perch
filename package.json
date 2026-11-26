@@ -9,6 +9,8 @@
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "demo": "vite --config demo/vite.config.ts",
+    "cdp": "node demo/cdp/run.mjs",
+    "gates": "bash scripts/gates.sh",
     "tauri": "tauri"
   },
   "dependencies": {
