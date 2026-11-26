@@ -890,7 +890,7 @@ kbd {
 
 .transcript-earlier {
   display: block;
-  margin: 8px 22px 14px;
+  margin: 0;
   padding: 5px 10px;
   border: 1px solid var(--border);
   border-radius: 6px;

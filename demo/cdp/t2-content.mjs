@@ -24,6 +24,23 @@ async function open(page, title) {
   );
 }
 
+// 等首开「定位最新消息」的滚动落定（tick 后 scrollTop = scrollHeight）。
+async function waitAtBottom(page) {
+  await page.waitFor(
+    "(() => { const el = document.querySelector('.transcript-pane .transcript-messages'); return el && el.scrollHeight > el.clientHeight && el.scrollHeight - el.scrollTop - el.clientHeight < 8; })()",
+  );
+}
+
+// 把消息列滚到最顶部并等待生效（「加载更早」是第一个内容行，只有滚到顶部才可见）。
+async function scrollMessagesTop(page) {
+  await page.evaluate(
+    "(() => { const el = document.querySelector('.transcript-pane .transcript-messages'); el.scrollTop = 0; })()",
+  );
+  await page.waitFor(
+    "(() => { const el = document.querySelector('.transcript-pane .transcript-messages'); return el && el.scrollTop === 0; })()",
+  );
+}
+
 // 气泡几何探针：以消息滚动容器的内容盒为基准，读出各角色消息的边界、宽度与对齐。
 function bubbleProbeExpr() {
   return `(() => {
@@ -148,64 +165,144 @@ async function run(page) {
     assertEqual(geo.overflowX, false, "长用户气泡无横向溢出");
   });
 
-  s.add("T4 首屏 50 条 + 加载更早每次 50 条直至见底", async () => {
+  s.add("T4 加载更早在列表首行：滚顶可见、逐次 -50 直至消失", async () => {
     await page.goto(URL);
     await open(page, "合成对话 · 分页长会话");
+    await waitAtBottom(page);
+
     const initial = await page.evaluate(`(() => {
+      const container = document.querySelector('.transcript-pane .transcript-messages');
+      const btn = container.querySelector('.transcript-earlier');
+      const cr = container.getBoundingClientRect();
+      const br = btn ? btn.getBoundingClientRect() : null;
       return {
         shown: document.querySelectorAll('.transcript-pane .transcript-msg').length,
-        hasEarlier: Boolean(document.querySelector('.transcript-pane .transcript-earlier')),
+        hasEarlier: Boolean(btn),
+        parentIsContainer: btn ? btn.parentElement === container : false,
+        firstRowIsButton: container.firstElementChild === btn,
+        offscreenAtBottom: br ? br.bottom <= cr.top + 1 : true,
       };
     })()`);
     assertEqual(initial.shown, 50, "默认最近 50 条");
     assertEqual(initial.hasEarlier, true, "提供加载更早");
+    assertEqual(initial.parentIsContainer, true, "按钮在滚动容器内部");
+    assertEqual(initial.firstRowIsButton, true, "按钮是列表第一个内容行");
+    assertEqual(initial.offscreenAtBottom, true, "首开定位底部时按钮不在视口（反向）");
+
+    // 滚到顶部 → 按钮进入视口，文案显示剩余 70
+    await scrollMessagesTop(page);
+    const atTop = await page.evaluate(`(() => {
+      const container = document.querySelector('.transcript-pane .transcript-messages');
+      const btn = container.querySelector('.transcript-earlier');
+      const cr = container.getBoundingClientRect();
+      const br = btn.getBoundingClientRect();
+      return { inView: br.top >= cr.top - 1 && br.bottom <= cr.bottom + 1, text: btn.textContent.trim() };
+    })()`);
+    assert(atTop.inView, "滚到顶部后按钮在视口内");
+    assert(atTop.text.includes("还有 70 条"), `顶部文案显示剩余 70 条（实际「${atTop.text}」）`);
+
+    // 第一次点击 → 100 条；锚定阅读位置会离开顶部，按钮随之不可见（反向）
     await page.evaluate(`document.querySelector('.transcript-pane .transcript-earlier').click()`);
     await page.waitFor("document.querySelectorAll('.transcript-pane .transcript-msg').length === 100");
-    const second = await page.evaluate(`(() => {
-      const msgs = [...document.querySelectorAll('.transcript-pane .transcript-msg')];
+    await page.waitFor(
+      "(() => { const el = document.querySelector('.transcript-pane .transcript-messages'); return el && el.scrollTop > 1; })()",
+    );
+    const afterFirst = await page.evaluate(`(() => {
+      const container = document.querySelector('.transcript-pane .transcript-messages');
+      const btn = container.querySelector('.transcript-earlier');
+      const cr = container.getBoundingClientRect();
+      const br = btn ? btn.getBoundingClientRect() : null;
       return {
-        shown: msgs.length,
-        firstText: msgs[0]?.textContent?.trim() ?? null,
-        hasEarlier: Boolean(document.querySelector('.transcript-pane .transcript-earlier')),
+        shown: document.querySelectorAll('.transcript-pane .transcript-msg').length,
+        hasEarlier: Boolean(btn),
+        belowViewport: br ? br.bottom <= cr.top + 1 : false,
+        text: btn ? btn.textContent.trim() : null,
       };
     })()`);
-    assertEqual(second.shown, 100, "追加 50 条");
-    assertEqual(second.firstText, "长会话演示第 21 条消息，用于分页验收。", "追加的是更早消息");
-    assertEqual(second.hasEarlier, true, "仍有更早");
+    assertEqual(afterFirst.shown, 100, "追加 50 条 → 100");
+    assertEqual(afterFirst.hasEarlier, true, "仍有更早（还剩 20）");
+    assertEqual(afterFirst.belowViewport, true, "未滚回顶部时按钮不可见（反向）");
+    assert(afterFirst.text.includes("还有 20 条"), `文案递减为剩余 20 条（实际「${afterFirst.text}」）`);
+
+    // 再滚到顶 → 点击 → 120 条，按钮从 DOM 消失
+    await scrollMessagesTop(page);
     await page.evaluate(`document.querySelector('.transcript-pane .transcript-earlier').click()`);
     await page.waitFor("document.querySelectorAll('.transcript-pane .transcript-msg').length === 120");
-    const third = await page.evaluate(`(() => ({
+    const done = await page.evaluate(`(() => ({
       shown: document.querySelectorAll('.transcript-pane .transcript-msg').length,
-      hasEarlier: Boolean(document.querySelector('.transcript-pane .transcript-earlier')),
+      gone: document.querySelector('.transcript-pane .transcript-earlier') === null,
     }))()`);
-    assertEqual(third.shown, 120, "全部消息可见");
-    assertEqual(third.hasEarlier, false, "见底后按钮消失");
+    assertEqual(done.shown, 120, "反复点击至全部 120 条");
+    assertEqual(done.gone, true, "剩余为 0 时按钮从 DOM 消失（反向）");
   });
 
   s.add("T5 首开定位最新消息；加载更早保持阅读位置", async () => {
     await page.goto(URL);
     await open(page, "合成对话 · 分页长会话");
-    await page.waitFor("(() => { const el = document.querySelector('.transcript-pane .transcript-messages'); return el && el.scrollHeight > el.clientHeight; })()");
+    await waitAtBottom(page);
     const atBottom = await page.evaluate(`(() => {
       const el = document.querySelector('.transcript-pane .transcript-messages');
       return el.scrollHeight - el.scrollTop - el.clientHeight < 8;
     })()`);
     assertEqual(atBottom, true, "首开定位最新消息");
+    // 滚到顶部，记录当前顶端可见消息及其相对位置
+    await scrollMessagesTop(page);
     const before = await page.evaluate(`(() => {
       const el = document.querySelector('.transcript-pane .transcript-messages');
       const rect = el.getBoundingClientRect();
       const first = [...el.querySelectorAll('.transcript-msg')].find(m => m.getBoundingClientRect().bottom > rect.top);
-      return first?.textContent ?? null;
+      return {
+        text: first?.textContent ?? null,
+        relTop: first ? first.getBoundingClientRect().top - rect.top : null,
+      };
     })()`);
     await page.evaluate(`document.querySelector('.transcript-pane .transcript-earlier').click()`);
     await page.waitFor("document.querySelectorAll('.transcript-pane .transcript-msg').length === 100");
+    await page.waitFor(
+      "(() => { const el = document.querySelector('.transcript-pane .transcript-messages'); return el && el.scrollTop > 1; })()",
+    );
     const after = await page.evaluate(`(() => {
       const el = document.querySelector('.transcript-pane .transcript-messages');
       const rect = el.getBoundingClientRect();
-      const first = [...el.querySelectorAll('.transcript-msg')].find(m => m.getBoundingClientRect().bottom > rect.top);
-      return first?.textContent ?? null;
+      const same = [...el.querySelectorAll('.transcript-msg')].find(m => m.textContent === ${JSON.stringify(before.text)});
+      return {
+        found: Boolean(same),
+        relTop: same ? same.getBoundingClientRect().top - rect.top : null,
+        atTop: el.scrollTop <= 1,
+        atBottom: el.scrollHeight - el.scrollTop - el.clientHeight < 8,
+      };
     })()`);
-    assertEqual(after, before, "阅读位置保持不跳动");
+    assertEqual(after.found, true, "原顶端消息仍在列表");
+    assert(Math.abs(after.relTop - before.relTop) < 3, `阅读位置保持不跳动（原 ${before.relTop} / 后 ${after.relTop}）`);
+    assertEqual(after.atTop, false, "不跳回顶部");
+    assertEqual(after.atBottom, false, "不跳到底部");
+  });
+
+  s.add("短会话一屏内：加载更早在顶部直接可见", async () => {
+    await page.setViewport(1200, 2600);
+    try {
+      await page.goto(URL);
+      await open(page, "合成对话 · 分页长会话");
+      await page.waitFor("document.querySelectorAll('.transcript-pane .transcript-msg').length === 50");
+      const info = await page.evaluate(`(() => {
+        const el = document.querySelector('.transcript-pane .transcript-messages');
+        const btn = el.querySelector('.transcript-earlier');
+        const cr = el.getBoundingClientRect();
+        const br = btn ? btn.getBoundingClientRect() : null;
+        return {
+          notScrollable: el.scrollHeight - el.clientHeight < 2,
+          hasEarlier: Boolean(btn),
+          inView: br ? br.top >= cr.top - 1 && br.bottom <= cr.bottom + 1 : false,
+          text: btn ? btn.textContent.trim() : null,
+        };
+      })()`);
+      assertEqual(info.notScrollable, true, "50 条一屏放得下、容器不可滚");
+      assertEqual(info.hasEarlier, true, "仍有更早消息");
+      assert(info.inView, "按钮在容器视口内直接可见");
+      assert(info.text.includes("还有 70 条"), `文案显示剩余 70 条（实际「${info.text}」）`);
+    } finally {
+      await page.setViewport(1200, 780);
+    }
   });
 
   s.add("T9 读取失败显示原因、不退出；空会话同样", async () => {
@@ -313,5 +410,5 @@ async function run(page) {
 
 }
 
-await runSuite("T2 结果", suite, run);
+await runSuite("T2 结果", suite, run, { viewport: [1200, 780] });
 
