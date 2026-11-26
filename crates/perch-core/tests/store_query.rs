@@ -1,3 +1,5 @@
+use std::fs;
+
 use perch_core::models::{SourceResult, TaskSnapshot, TodoSnapshot};
 use perch_core::query::build_bootstrap;
 use perch_core::store::CacheStore;
@@ -456,4 +458,147 @@ fn scan_runs_are_pruned_per_source() {
         .unwrap();
     assert_eq!(qoder, 200, "old runs beyond the per-source cap are pruned");
     assert_eq!(claude, 1, "pruning one source must not touch another");
+}
+
+fn claude_task_with_pointer(source_path: &str) -> TaskSnapshot {
+    let mut task = TaskSnapshot::new("claude", "session-pointer");
+    task.title = "指针任务".to_owned();
+    task.source_path = Some(source_path.to_owned());
+    task.refresh_fingerprint();
+    task
+}
+
+#[test]
+fn source_path_pointer_is_saved_and_survives_reopen() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let db_path = temp.path().join("cache.db");
+    let pointer = temp.path().join("projects/-tmp-x/session-pointer.jsonl");
+
+    {
+        let store = CacheStore::open(&db_path).unwrap();
+        let scan = store
+            .begin_scan("claude", "full", "source", "test")
+            .unwrap();
+        store
+            .save_result(
+                &SourceResult::ok(
+                    "claude",
+                    vec![claude_task_with_pointer(pointer.to_str().unwrap())],
+                    Vec::new(),
+                ),
+                scan,
+            )
+            .unwrap();
+        let loaded = store.load_task("claude:session-pointer").unwrap().unwrap();
+        assert_eq!(
+            loaded.source_path.as_deref(),
+            Some(pointer.to_str().unwrap())
+        );
+    }
+
+    let store = CacheStore::open(&db_path).unwrap();
+    let loaded = store.load_task("claude:session-pointer").unwrap().unwrap();
+    assert_eq!(
+        loaded.source_path.as_deref(),
+        Some(pointer.to_str().unwrap())
+    );
+}
+
+#[test]
+fn migration_upgrades_v1_cache_idempotently() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let db_path = temp.path().join("cache.db");
+
+    // 以当前结构建库，再人为降级为 v1 形态（无 source_path 列）。
+    {
+        let store = CacheStore::open(&db_path).unwrap();
+        drop(store);
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute_batch("ALTER TABLE task DROP COLUMN source_path; PRAGMA user_version = 1;")
+            .unwrap();
+    }
+
+    // 旧库打开：补列并升到 v2；重复打开幂等。
+    for _ in 0..2 {
+        let store = CacheStore::open(&db_path).unwrap();
+        let scan = store
+            .begin_scan("claude", "full", "source", "test")
+            .unwrap();
+        store
+            .save_result(
+                &SourceResult::ok(
+                    "claude",
+                    vec![claude_task_with_pointer("/tmp/x/s.jsonl")],
+                    Vec::new(),
+                ),
+                scan,
+            )
+            .unwrap();
+        let loaded = store.load_task("claude:session-pointer").unwrap().unwrap();
+        assert_eq!(loaded.source_path.as_deref(), Some("/tmp/x/s.jsonl"));
+        drop(store);
+    }
+
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, 2);
+    let column: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('task') WHERE name = 'source_path'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(column, 1);
+}
+
+#[test]
+fn cache_rebuilds_fresh_after_deletion() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let db_path = temp.path().join("cache.db");
+
+    {
+        let store = CacheStore::open(&db_path).unwrap();
+        let scan = store
+            .begin_scan("claude", "full", "source", "test")
+            .unwrap();
+        store
+            .save_result(
+                &SourceResult::ok(
+                    "claude",
+                    vec![claude_task_with_pointer("/tmp/x/s.jsonl")],
+                    Vec::new(),
+                ),
+                scan,
+            )
+            .unwrap();
+    }
+    fs::remove_file(&db_path).unwrap();
+
+    let store = CacheStore::open(&db_path).unwrap();
+    let loaded = store.load_task("claude:session-pointer").unwrap();
+    assert!(loaded.is_none(), "删库后旧任务不应残留");
+    let scan = store
+        .begin_scan("claude", "full", "source", "test")
+        .unwrap();
+    store
+        .save_result(
+            &SourceResult::ok(
+                "claude",
+                vec![claude_task_with_pointer("/tmp/y/t.jsonl")],
+                Vec::new(),
+            ),
+            scan,
+        )
+        .unwrap();
+    let loaded = store.load_task("claude:session-pointer").unwrap().unwrap();
+    assert_eq!(loaded.source_path.as_deref(), Some("/tmp/y/t.jsonl"));
+
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, 2);
 }
