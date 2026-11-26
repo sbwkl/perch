@@ -1,5 +1,5 @@
 // S2：三组选中样式——柔色底 / 加粗 / 墨色文字与计数 / 无色条 / 对比度 / aria-pressed
-import { runSuite, Suite, assert, assertEqual, contrast } from "./harness.mjs";
+import { runSuite, Suite, assert, assertEqual, contrast, EFFECTIVE_BG_HELPER } from "./harness.mjs";
 
 const URL = "http://localhost:1421/";
 const WS3 = "/Users/demo/code/scratchpad";
@@ -16,46 +16,9 @@ const clickWs = (page, path) =>
 const clickSource = (page, label) =>
   page.evaluate(`[...document.querySelectorAll('.source-item')].find(b => b.getAttribute('aria-label')?.startsWith(${q(label)}))?.click()`);
 
-// 合成后的不透明有效底色：从元素向上逐层读 backgroundColor，收集到第一个
-// alpha=1 为止，再从底往上做 alpha 合成（最底层兜底白色）。harness.contrast
-// 忽略背景 alpha，必须先合成再交给它。
-const EFFECTIVE_BG = `
-  const parseColor = (value) => {
-    const m = value.match(/rgba?\\(([\\d.]+)[,\\s]+([\\d.]+)[,\\s]+([\\d.]+)(?:[,\\s/]+([\\d.]+))?\\)/);
-    if (!m) return null;
-    return {
-      r: Number(m[1]),
-      g: Number(m[2]),
-      b: Number(m[3]),
-      a: m[4] === undefined ? 1 : Number(m[4]),
-    };
-  };
-  const effectiveBg = (el) => {
-    const layers = [];
-    let node = el;
-    while (node) {
-      const color = parseColor(getComputedStyle(node).backgroundColor);
-      if (color && color.a > 0) {
-        layers.push(color);
-        if (color.a >= 1) break;
-      }
-      node = node.parentElement;
-    }
-    let out = { r: 255, g: 255, b: 255 };
-    for (const layer of layers.reverse()) {
-      out = {
-        r: layer.r * layer.a + out.r * (1 - layer.a),
-        g: layer.g * layer.a + out.g * (1 - layer.a),
-        b: layer.b * layer.a + out.b * (1 - layer.a),
-      };
-    }
-    return \`rgb(\${Math.round(out.r)}, \${Math.round(out.g)}, \${Math.round(out.b)})\`;
-  };
-`;
-
 // 读取选中项的样式事实：背景 / 标签字重与颜色 / 计数颜色 / ::before / 有效底色
 const activeStyleExpr = (finder) => `(() => {
-  ${EFFECTIVE_BG}
+  ${EFFECTIVE_BG_HELPER}
   const el = ${finder};
   if (!el) return null;
   const cs = getComputedStyle(el);
@@ -82,7 +45,7 @@ const srcFinder = (label) =>
 const navInactiveFinder = (label) =>
   `[...document.querySelectorAll('.nav-item[aria-pressed="false"]')].find(b => b.querySelector('.nav-label')?.textContent?.trim() === ${q(label)})`;
 const wsInactiveFinder = () =>
-  `[...document.querySelectorAll('.nav-item[aria-pressed="false"]')].find(b => b.getAttribute('title'))`;
+  `[...document.querySelectorAll('.nav-item:not(.search-entry)[aria-pressed="false"][title]')].find(b => b.getAttribute('title'))`;
 const srcInactiveFinder = () =>
   `document.querySelector('.source-item[aria-pressed="false"]')`;
 

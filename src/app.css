@@ -174,7 +174,6 @@ button:focus-visible {
   display: flex;
   align-items: center;
   gap: 8px;
-  position: relative;
   width: 100%;
   padding: 5.5px 8px;
   border: none;

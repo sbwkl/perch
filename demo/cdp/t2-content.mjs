@@ -1,5 +1,6 @@
 // T2：#27 对话内容口径 / 分页 / 截断 / 错误态与重读 / 头部（T3–T5 / T9 / T10 / T12）
 import { runSuite, Suite, assert, assertEqual } from "./harness.mjs";
+import { near, percent, atBottomExpr, bubbleProbeExpr } from "./transcript-probes.mjs";
 
 const URL = "http://localhost:1421/?transcript=1";
 
@@ -26,9 +27,7 @@ async function open(page, title) {
 
 // 等首开「定位最新消息」的滚动落定（tick 后 scrollTop = scrollHeight）。
 async function waitAtBottom(page) {
-  await page.waitFor(
-    "(() => { const el = document.querySelector('.transcript-pane .transcript-messages'); return el && el.scrollHeight > el.clientHeight && el.scrollHeight - el.scrollTop - el.clientHeight < 8; })()",
-  );
+  await page.waitFor(atBottomExpr());
 }
 
 // 把消息列滚到最顶部并等待生效（「加载更早」是第一个内容行，只有滚到顶部才可见）。
@@ -40,44 +39,6 @@ async function scrollMessagesTop(page) {
     "(() => { const el = document.querySelector('.transcript-pane .transcript-messages'); return el && el.scrollTop === 0; })()",
   );
 }
-
-// 气泡几何探针：以消息滚动容器的内容盒为基准，读出各角色消息的边界、宽度与对齐。
-function bubbleProbeExpr() {
-  return `(() => {
-    const el = document.querySelector('.transcript-pane .transcript-messages');
-    const cs = getComputedStyle(el);
-    const padL = parseFloat(cs.paddingLeft);
-    const padR = parseFloat(cs.paddingRight);
-    const left = el.getBoundingClientRect().left + el.clientLeft + padL;
-    const contentWidth = el.clientWidth - padL - padR;
-    const rect = (m) => {
-      const r = m.getBoundingClientRect();
-      const style = getComputedStyle(m);
-      return {
-        left: r.left,
-        right: r.right,
-        width: r.width,
-        textAlign: style.textAlign,
-        background: style.backgroundColor,
-      };
-    };
-    const pick = (role) => [...el.querySelectorAll('.transcript-msg')]
-      .filter((m) => m.dataset.role === role)
-      .map(rect);
-    return {
-      left,
-      right: left + contentWidth,
-      contentWidth,
-      overflowX: el.scrollWidth > el.clientWidth,
-      user: pick('user'),
-      assistant: pick('assistant'),
-      tool: pick('tool_call'),
-    };
-  })()`;
-}
-
-const near = (a, b, tolerance = 2) => Math.abs(a - b) <= tolerance;
-const percent = (part, whole) => `${((part / whole) * 100).toFixed(1)}%`;
 
 async function run(page) {
   const s = suite;
@@ -135,7 +96,7 @@ async function run(page) {
     assertEqual(geo.overflowX, false, "气泡未造成消息区横向溢出");
   });
 
-  s.add("用户长输入：气泡宽度受限且右对齐，助手整行宽", async () => {
+  s.add("T3 用户长输入：气泡宽度受限且右对齐，助手整行宽", async () => {
     await page.goto(URL);
     await open(page, "合成对话 · 长用户输入");
     const geo = await page.evaluate(bubbleProbeExpr());
@@ -240,10 +201,7 @@ async function run(page) {
     await page.goto(URL);
     await open(page, "合成对话 · 分页长会话");
     await waitAtBottom(page);
-    const atBottom = await page.evaluate(`(() => {
-      const el = document.querySelector('.transcript-pane .transcript-messages');
-      return el.scrollHeight - el.scrollTop - el.clientHeight < 8;
-    })()`);
+    const atBottom = await page.evaluate(atBottomExpr());
     assertEqual(atBottom, true, "首开定位最新消息");
     // 滚到顶部，记录当前顶端可见消息及其相对位置
     await scrollMessagesTop(page);
@@ -269,7 +227,7 @@ async function run(page) {
         found: Boolean(same),
         relTop: same ? same.getBoundingClientRect().top - rect.top : null,
         atTop: el.scrollTop <= 1,
-        atBottom: el.scrollHeight - el.scrollTop - el.clientHeight < 8,
+        atBottom: ${atBottomExpr()},
       };
     })()`);
     assertEqual(after.found, true, "原顶端消息仍在列表");
@@ -278,7 +236,7 @@ async function run(page) {
     assertEqual(after.atBottom, false, "不跳到底部");
   });
 
-  s.add("短会话一屏内：加载更早在顶部直接可见", async () => {
+  s.add("T4 短会话一屏内：加载更早在顶部直接可见", async () => {
     await page.setViewport(1200, 2600);
     try {
       await page.goto(URL);
