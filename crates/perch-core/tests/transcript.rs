@@ -1,12 +1,22 @@
 use std::fs;
 use std::path::Path;
 
-use perch_core::models::{TaskSnapshot, TranscriptOutcome, TranscriptRole, SOURCE_CLAUDE};
+use perch_core::models::{
+    TaskSnapshot, TranscriptOutcome, TranscriptRole, SOURCE_CLAUDE, SOURCE_CLINE,
+};
 use perch_core::transcript::read_transcript;
+use serde_json::json;
 use tempfile::TempDir;
 
 fn claude_task(source_path: &Path) -> TaskSnapshot {
     let mut task = TaskSnapshot::new(SOURCE_CLAUDE, "session-transcript");
+    task.title = "合成会话".to_owned();
+    task.source_path = Some(source_path.to_string_lossy().into_owned());
+    task
+}
+
+fn cline_task(source_path: &Path) -> TaskSnapshot {
+    let mut task = TaskSnapshot::new(SOURCE_CLINE, "session-transcript");
     task.title = "合成会话".to_owned();
     task.source_path = Some(source_path.to_string_lossy().into_owned());
     task
@@ -383,6 +393,72 @@ fn claude_collector_pointer_feeds_the_reader_end_to_end() {
             (TranscriptRole::User, "端到端问题"),
             (TranscriptRole::ToolCall, "工具调用 1 次"),
             (TranscriptRole::Assistant, "端到端回答"),
+        ]
+    );
+    assert_source_unchanged(&session, &before);
+}
+
+/// 合成 Cline messages.json：顶层 dict + messages 数组，块类型与真实探针一致
+/// （user 携 text/tool_result，assistant 携 text/thinking/tool_use）。
+fn write_cline_messages(path: &Path, messages: serde_json::Value) {
+    let document = json!({
+        "version": 1,
+        "sessionId": "session-transcript",
+        "messages": messages,
+    });
+    fs::write(path, serde_json::to_string_pretty(&document).unwrap()).unwrap();
+}
+
+#[test]
+fn cline_transcript_reads_turns_in_order_and_counts_tools() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("session.messages.json");
+    write_cline_messages(
+        &session,
+        json!([
+            {"id": "m1", "role": "user", "ts": 1, "content": [
+                {"type": "text", "text": "帮我看看这个函数"}
+            ]},
+            {"id": "m2", "role": "assistant", "ts": 2, "content": [
+                {"type": "thinking", "thinking": "内部推理不渲染"},
+                {"type": "text", "text": "函数缺少错误处理"},
+                {"type": "tool_use", "name": "read_file", "path": "/tmp/a"}
+            ]},
+            {"id": "m3", "role": "user", "ts": 3, "content": [
+                {"type": "tool_result", "content": "工具输出不渲染"}
+            ]},
+            {"id": "m4", "role": "assistant", "ts": 4, "content": [
+                {"type": "tool_use", "name": "edit_file"},
+                {"type": "tool_use", "name": "write_to_file"}
+            ]},
+            {"id": "m5", "role": "assistant", "ts": 5, "content": [
+                {"type": "text", "text": "已修复"}
+            ]},
+            {"id": "m6", "role": "user", "ts": 6, "content": [
+                {"type": "tool_result", "content": "diff 输出"},
+                {"type": "text", "text": "再检查一下"}
+            ]}
+        ]),
+    );
+    let before = fs::read(&session).unwrap();
+
+    let outcome = read_transcript(&cline_task(&session));
+
+    let TranscriptOutcome::Ready { messages, .. } = outcome else {
+        panic!("期望 Ready，实际：{outcome:?}");
+    };
+    let rendered: Vec<(TranscriptRole, &str)> = messages
+        .iter()
+        .map(|message| (message.role, message.text.as_str()))
+        .collect();
+    assert_eq!(
+        rendered,
+        vec![
+            (TranscriptRole::User, "帮我看看这个函数"),
+            (TranscriptRole::Assistant, "函数缺少错误处理"),
+            (TranscriptRole::ToolCall, "工具调用 3 次"),
+            (TranscriptRole::Assistant, "已修复"),
+            (TranscriptRole::User, "再检查一下"),
         ]
     );
     assert_source_unchanged(&session, &before);

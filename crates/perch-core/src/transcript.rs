@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use crate::collectors::claude::strip_injected_wrappers;
 use crate::models::{
-    TaskSnapshot, TranscriptMessage, TranscriptOutcome, TranscriptRole, SOURCE_CLAUDE,
+    TaskSnapshot, TranscriptMessage, TranscriptOutcome, TranscriptRole, SOURCE_CLAUDE, SOURCE_CLINE,
 };
 
 /// 单一公共读取入口：输入任务快照，输出对话记录（角色、文本、是否截断）或错误。
@@ -16,6 +16,7 @@ use crate::models::{
 pub fn read_transcript(task: &TaskSnapshot) -> TranscriptOutcome {
     match task.source.as_str() {
         SOURCE_CLAUDE => read_claude_transcript(task),
+        SOURCE_CLINE => read_cline_transcript(task),
         other if crate::models::transcript_supported(other) => {
             TranscriptOutcome::error("该来源的对话正文读取尚未接入")
         }
@@ -117,6 +118,114 @@ fn tool_call_message(count: usize) -> TranscriptMessage {
         text: format!("工具调用 {count} 次"),
         truncated: false,
     }
+}
+
+/// Cline：`<session-id>.messages.json` 是单个 JSON 文档，顶层 `messages` 数组即
+/// 会话时间序（探针确认 ts 单调递增），按数组顺序产出。thinking 块跳过；
+/// tool_use 只计数并在下一条可见文本前折叠为 tool_call 行；tool_result 与
+/// tool_use 一一配对，吸收为空、不重复计数；无可见文本的消息不产出。
+fn read_cline_transcript(task: &TaskSnapshot) -> TranscriptOutcome {
+    let Some(path_text) = task.source_path.as_deref().filter(|path| !path.is_empty()) else {
+        return TranscriptOutcome::error("缓存中缺少会话源文件指针，请刷新后重试");
+    };
+    let path = PathBuf::from(path_text);
+    let raw = match std::fs::read(&path) {
+        Ok(raw) => raw,
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            return TranscriptOutcome::error(format!("源文件不存在：{}", path.display()))
+        }
+        Err(error) => return TranscriptOutcome::error(format!("读取源文件失败：{error}")),
+    };
+    let Ok(text) = std::str::from_utf8(&raw) else {
+        return TranscriptOutcome::error("源文件不是有效的 UTF-8 文本");
+    };
+    let Ok(document) = serde_json::from_str::<Value>(text) else {
+        return TranscriptOutcome::error("源文件不是合法的 JSON 文档");
+    };
+    let Some(records) = document.get("messages").and_then(Value::as_array) else {
+        return TranscriptOutcome::error("源文件缺少 messages 数组");
+    };
+
+    let mut messages: VecDeque<TranscriptMessage> = VecDeque::new();
+    let mut session_chars = 0usize;
+    let mut session_truncated = false;
+    let mut pending_tools = 0usize;
+
+    for record in records {
+        let role = match record.get("role").and_then(Value::as_str) {
+            Some("user") => TranscriptRole::User,
+            Some("assistant") => TranscriptRole::Assistant,
+            _ => continue,
+        };
+        let (texts, tool_uses) = cline_content_parts(record.get("content"));
+        if let Some(text) = joined_visible_text(&texts) {
+            if pending_tools > 0 {
+                push_message(
+                    &mut messages,
+                    &mut session_chars,
+                    &mut session_truncated,
+                    tool_call_message(pending_tools),
+                );
+                pending_tools = 0;
+            }
+            let (text, truncated) = clip_message_text(text);
+            if !text.is_empty() {
+                push_message(
+                    &mut messages,
+                    &mut session_chars,
+                    &mut session_truncated,
+                    TranscriptMessage {
+                        role,
+                        text,
+                        truncated,
+                    },
+                );
+            }
+        }
+        pending_tools += tool_uses;
+    }
+
+    if pending_tools > 0 {
+        push_message(
+            &mut messages,
+            &mut session_chars,
+            &mut session_truncated,
+            tool_call_message(pending_tools),
+        );
+    }
+
+    if messages.is_empty() {
+        return TranscriptOutcome::error("会话没有可显示的对话内容");
+    }
+    TranscriptOutcome::Ready {
+        messages: messages.into_iter().collect(),
+        session_truncated,
+    }
+}
+
+/// Cline content 归一：字符串内容视作单个文本块（防御历史格式）；数组中只取
+/// text 块文本，tool_use 计数返回，thinking / tool_result / 未知块忽略。
+fn cline_content_parts(content: Option<&Value>) -> (Vec<String>, usize) {
+    let mut texts = Vec::new();
+    let mut tool_uses = 0usize;
+    match content {
+        Some(Value::String(raw)) => texts.push(raw.clone()),
+        Some(Value::Array(blocks)) => {
+            for block in blocks {
+                match block.get("type").and_then(Value::as_str) {
+                    Some("text") => {
+                        if let Some(raw) = block.get("text").and_then(Value::as_str) {
+                            texts.push(raw.to_owned());
+                        }
+                    }
+                    Some("tool_use") => tool_uses += 1,
+                    _ => {}
+                }
+            }
+        }
+        _ => {}
+    }
+    (texts, tool_uses)
 }
 
 enum ClaudeRecord {
