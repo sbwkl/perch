@@ -1,5 +1,5 @@
 // S2：三组选中样式——实底 / 加粗 / 反白计数 / 左侧色条 / 对比度 / aria-pressed
-import { launchChrome, Page, Suite, assert, assertEqual, contrast } from "./harness.mjs";
+import { runSuite, Suite, assert, assertEqual, contrast } from "./harness.mjs";
 
 const URL = "http://localhost:1421/";
 const WS3 = "/Users/demo/code/scratchpad";
@@ -63,9 +63,9 @@ function assertSolidActive(style, expectedInk, context) {
   return style;
 }
 
-export const suite = new Suite("S2 选中样式");
+const suite = new Suite("S2 选中样式");
 
-export async function run(page) {
+async function run(page) {
   const s = suite;
 
   s.add("浅色-任务组选中：实底/加粗/反白计数/色条/对比度", async () => {
@@ -132,20 +132,7 @@ export async function run(page) {
     assertEqual(titles, ["任务", "Workspaces", "来源"], "分组标题");
   });
 
-  const { pass, failures } = await suite.run(process.argv[2]);
-  console.log(`\nS2 结果：${pass} 通过，${failures.length} 失败`);
-  process.exitCode = failures.length === 0 ? 0 : 1;
 }
 
-export async function main() {
-  const chrome = await launchChrome();
-  const page = await Page.connect(chrome.port);
-  await page.setViewport(1200, 780);
-  try {
-    await run(page);
-  } finally {
-    chrome.proc.kill();
-  }
-}
+await runSuite("S2 结果", suite, run, { viewport: [1200, 780] });
 
-await main();

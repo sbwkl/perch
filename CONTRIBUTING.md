@@ -27,14 +27,12 @@ npm run tauri dev
 ## 提交前检查
 
 ```bash
-npm run check
-cargo fmt --all --check
-cargo clippy -p perch-core --all-targets -- -D warnings
-cargo test -p perch-core
+bash scripts/gates.sh   # 六条门禁：fmt / clippy / perch-core 测试 / perch --lib 测试 / svelte-check / build（等价 npm run gates）
+npm run cdp             # 涉及 UI 时：demo（1421）+ headless Chrome 行为验收（CHROME_BIN 可覆盖）
 ```
 
-CI 会执行同样的检查。涉及 UI 的改动请在 `npm run tauri dev` 或 `npm run demo` 中实际走一遍，
-并说明验证方式。
+CI 只跑跨平台子集（前端 check + build、perch-core 的 fmt / clippy / 测试）；`cargo test -p perch --lib` 与 CDP 套件目前只在本地跑。
+涉及 UI 的改动请在 `npm run tauri dev` 中实际走一遍，并说明验证方式。
 
 ## 只读红线
 

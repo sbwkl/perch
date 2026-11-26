@@ -1,7 +1,7 @@
 // T8 补充：评审修复 —— 子会话 / 自动化任务经搜索进入对话后，
 // sources-updated 实时刷新不得关闭面板（兜底口径纳入）；被筛出仍关闭。
 // 入口 npm run cdp（自动起 demo）；单独运行先 npm run demo（端口 1421）。
-import { launchChrome, Page, Suite, assert, assertEqual } from "./harness.mjs";
+import { runSuite, Suite, assert, assertEqual } from "./harness.mjs";
 
 const URL = "http://localhost:1421/";
 const T = "?transcript=1";
@@ -10,7 +10,7 @@ const AUTOMATION = "合成对话 · 自动化任务（搜索可见）";
 const CHILD_TERM = "子会话";
 const AUTOMATION_TERM = "自动化任务";
 
-export const suite = new Suite("T8 子会话/自动化兜底口径");
+const suite = new Suite("T8 子会话/自动化兜底口径");
 
 function rowExpr(title) {
   return `[...document.querySelectorAll('.flat-list .task-row')].find(r =>
@@ -64,7 +64,6 @@ async function revealAndOpenTranscript(page, term, title) {
       pane: Boolean(document.querySelector('.transcript-pane')),
       rowExists: Boolean(${rowExpr(title)}),
       anySelected: document.querySelectorAll('.flat-list .task.selected').length,
-      reads: (window.__perchDemo ?? {}).readSessionCalls,
       searchLayer: Boolean(document.querySelector('.search-layer')),
       flatList: Boolean(document.querySelector('.flat-list')),
     }))())`);
@@ -76,14 +75,15 @@ async function revealAndOpenTranscript(page, term, title) {
   );
 }
 
-export async function run(page) {
+async function run(page) {
   const s = suite;
 
   s.add("子会话经搜索打开对话 → sources-updated 刷新 → 面板保持、选中保持", async () => {
     await page.goto(`${URL}${T}`);
     await revealAndOpenTranscript(page, CHILD_TERM, CHILD);
-    const before = await page.evaluate(
-      `window.__perchDemo.readSessionCalls.length`,
+    // 用户可见代理：面板若被销毁重建，DOM 节点会换新；给当前节点打标，断言「还是同一块面板」。
+    await page.evaluate(
+      `document.querySelector('.transcript-pane').__perchKept = true`,
     );
     // 实时刷新事件（不经过手动刷新路径）
     await page.evaluate(`window.__perchEmit('sources-updated', {})`);
@@ -92,15 +92,15 @@ export async function run(page) {
       const pane = document.querySelector('.transcript-pane');
       return {
         paneOpen: Boolean(pane),
+        keptNode: pane?.__perchKept === true,
         title: pane?.querySelector('.transcript-title')?.textContent?.trim() ?? null,
         messages: pane ? pane.querySelectorAll('.transcript-msg').length : -1,
-        reads: window.__perchDemo.readSessionCalls.length,
       };
     })()`);
     assertEqual(state.paneOpen, true, "sources-updated 后对话面板保持打开");
+    assertEqual(state.keptNode, true, "面板未被关闭重建（DOM 节点保持）");
     assertEqual(state.title, CHILD, "面板标题仍为子会话任务");
     assert(state.messages > 0, `消息仍在（实际 ${state.messages}）`);
-    assertEqual(state.reads, before, "面板保持时正文未重读（无关闭重开）");
     // Esc 关面板（T6：任务保持选中）→ 选中保持可观察
     await page.evaluate(
       `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`,
@@ -159,19 +159,7 @@ export async function run(page) {
     );
   });
 
-  const { pass, failures } = await suite.run(process.argv[2]);
-  console.log(`\nT8 兜底口径结果：${pass} 通过，${failures.length} 失败`);
-  process.exitCode = failures.length === 0 ? 0 : 1;
 }
 
-export async function main() {
-  const chrome = await launchChrome();
-  const page = await Page.connect(chrome.port);
-  try {
-    await run(page);
-  } finally {
-    chrome.proc.kill();
-  }
-}
+await runSuite("T8 兜底口径结果", suite, run);
 
-await main();

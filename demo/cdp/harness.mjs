@@ -1,7 +1,7 @@
 // CDP 验收驱动：连接 headless Chrome，驱动 demo（端口 1421，合成数据）。
 // 统一入口 npm run cdp（自动起 demo 与浏览器）；单独运行某脚本需先 npm run demo。
 import { spawn } from "node:child_process";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -10,6 +10,14 @@ const CHROME =
 
 export async function launchChrome() {
   const dir = mkdtempSync(join(tmpdir(), "perch-cdp-"));
+  // 套件进程结束时删掉本次的临时 profile，避免每跑一轮就在 /tmp 留一份。
+  process.on("exit", () => {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch {
+      // profile 已被清理或仍被占用，留给系统临时目录
+    }
+  });
   const proc = spawn(
     CHROME,
     [
@@ -78,13 +86,22 @@ export class Page {
     const id = ++this.seq;
     this.ws.send(JSON.stringify({ id, method, params }));
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         if (this.pending.has(id)) {
           this.pending.delete(id);
           reject(new Error(`CDP 超时：${method}`));
         }
       }, 20_000);
+      this.pending.set(id, {
+        resolve: (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        reject: (error) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      });
     });
   }
 
@@ -163,6 +180,22 @@ export class Suite {
       }
     }
     return { pass, failures };
+  }
+}
+
+// 套件统一引导：起 Chrome → 连页面 →（可选）设视口 → 跑用例 → 关 Chrome → 汇总退出码。
+// 套件文件只登记用例，末尾一行 `await runSuite("S4 结果", suite, run, { viewport: [1200, 780] });`。
+export async function runSuite(label, suite, run, { viewport } = {}) {
+  const chrome = await launchChrome();
+  const page = await Page.connect(chrome.port);
+  if (viewport) await page.setViewport(...viewport);
+  try {
+    await run(page);
+    const { pass, failures } = await suite.run(process.argv[2]);
+    console.log(`\n${label}：${pass} 通过，${failures.length} 失败`);
+    process.exitCode = failures.length === 0 ? 0 : 1;
+  } finally {
+    chrome.proc.kill();
   }
 }
 

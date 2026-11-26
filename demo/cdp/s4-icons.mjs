@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { launchChrome, Page, Suite, assert, assertEqual } from "./harness.mjs";
+import { runSuite, Suite, assert, assertEqual } from "./harness.mjs";
 
 const URL = "http://localhost:1421/";
 // 验收不依赖当前工作目录：所有路径相对套件文件解析到仓库根。
@@ -20,9 +20,9 @@ const SIGNATURES = [
 ];
 const LINE_BIRD_PATH = "M7 20c0-5.5";
 
-export const suite = new Suite("S4 图标统一");
+const suite = new Suite("S4 图标统一");
 
-export async function run(page) {
+async function run(page) {
   const s = suite;
 
   const iconSvg = readFileSync(ICON, "utf8");
@@ -99,20 +99,7 @@ export async function run(page) {
     }
   });
 
-  const { pass, failures } = await suite.run(process.argv[2]);
-  console.log(`\nS4 结果：${pass} 通过，${failures.length} 失败`);
-  process.exitCode = failures.length === 0 ? 0 : 1;
 }
 
-export async function main() {
-  const chrome = await launchChrome();
-  const page = await Page.connect(chrome.port);
-  await page.setViewport(1200, 780);
-  try {
-    await run(page);
-  } finally {
-    chrome.proc.kill();
-  }
-}
+await runSuite("S4 结果", suite, run, { viewport: [1200, 780] });
 
-await main();

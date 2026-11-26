@@ -1,11 +1,11 @@
 // T1：#27 对话面板入口与退出（T1 / T2 / T6 / T7 / T8）
 // 入口 npm run cdp（自动起 demo）；单独运行先 npm run demo（端口 1421）。
-import { launchChrome, Page, Suite, assert, assertEqual } from "./harness.mjs";
+import { runSuite, Suite, assert, assertEqual } from "./harness.mjs";
 
 const URL = "http://localhost:1421/";
 const T = "?transcript=1";
 
-export const suite = new Suite("T1 对话入口与退出");
+const suite = new Suite("T1 对话入口与退出");
 
 // 帮助：按标题找到任务行容器
 function rowExpr(title) {
@@ -13,7 +13,7 @@ function rowExpr(title) {
     r.querySelector('.task-title')?.textContent?.includes(${JSON.stringify(title)})) ?? null`;
 }
 
-export async function run(page) {
+async function run(page) {
   const s = suite;
 
   s.add("T1 图标点击 = 选中任务 + 打开对话，面板占满 2、3 列", async () => {
@@ -196,19 +196,7 @@ export async function run(page) {
     assertEqual(state.anySelected, false, "选中已清除（与列表选中规则一致）");
   });
 
-  const { pass, failures } = await suite.run(process.argv[2]);
-  console.log(`\nT1 结果：${pass} 通过，${failures.length} 失败`);
-  process.exitCode = failures.length === 0 ? 0 : 1;
 }
 
-export async function main() {
-  const chrome = await launchChrome();
-  const page = await Page.connect(chrome.port);
-  try {
-    await run(page);
-  } finally {
-    chrome.proc.kill();
-  }
-}
+await runSuite("T1 结果", suite, run);
 
-await main();

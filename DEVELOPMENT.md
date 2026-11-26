@@ -24,7 +24,7 @@ npm run build            # 前端生产构建
 npm run tauri build      # 打包 Perch.app / .dmg
 npm run demo             # 仅前端演示模式（端口 1421，假数据，不启动 Tauri）
 npm run cdp              # demo + headless Chrome 行为验收（自动起 1421，CHROME_BIN 可覆盖）
-bash scripts/gates.sh    # 六条门禁一次跑完（提交前）
+bash scripts/gates.sh    # 六条门禁一次跑完（提交前；等价 npm run gates）
 
 cargo fmt --all --check
 cargo clippy -p perch-core --all-targets -- -D warnings
@@ -141,7 +141,9 @@ bash scripts/gates.sh
 
 六条门禁：`cargo fmt --all --check`、`cargo clippy -p perch-core --all-targets -- -D warnings`、`cargo test -p perch-core`、`cargo test -p perch --lib`、`npm run check`、`npm run build`。
 
-UI 行为验收：`npm run cdp`——自动起 demo（1421）与 headless Chrome（`CHROME_BIN` 可覆盖路径），顺序执行 `demo/cdp/` 下全部套件。
+UI 行为验收：`npm run cdp`——自动起 demo（1421，已被别的进程占用时报错退出）与 headless Chrome（`CHROME_BIN` 可覆盖路径），按 `demo/cdp/run.mjs` 里 `SUITES` 的登记顺序逐个执行。
+
+**新增套件**：把 `<name>.mjs` 放进 `demo/cdp/` 并加入 `run.mjs` 的 `SUITES` 数组；runner 只执行登记过的套件，未登记的脚本不会运行（也不会被静默当成通过）。套件只断言用户可见行为（DOM、计算样式、可见文本），数据用合成 fixture。
 
 CI（`.github/workflows/ci.yml`）在 Linux 上执行跨平台子集（`npm run check` + `npm run build`；`perch-core` 的 fmt / clippy / 单元与集成测试）；
 `cargo test -p perch --lib` 与 CDP 套件目前只在本地跑；macOS 打包与 Tauri 壳的实机行为靠手工冒烟验证。

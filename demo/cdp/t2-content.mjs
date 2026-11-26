@@ -1,9 +1,9 @@
 // T2：#27 对话内容口径 / 分页 / 截断 / 错误态与重读 / 头部（T3–T5 / T9 / T10 / T12）
-import { launchChrome, Page, Suite, assert, assertEqual } from "./harness.mjs";
+import { runSuite, Suite, assert, assertEqual } from "./harness.mjs";
 
 const URL = "http://localhost:1421/?transcript=1";
 
-export const suite = new Suite("T2 对话内容与分页");
+const suite = new Suite("T2 对话内容与分页");
 
 function rowExpr(title) {
   return `[...document.querySelectorAll('.flat-list .task-row')].find(r =>
@@ -24,7 +24,7 @@ async function open(page, title) {
   );
 }
 
-export async function run(page) {
+async function run(page) {
   const s = suite;
 
   s.add("T3 角色正序、工具轮折叠、单条截断标注", async () => {
@@ -211,19 +211,7 @@ export async function run(page) {
     assertEqual(info.roles, ["user", "assistant", "user", "assistant"], "顺序保持");
   });
 
-  const { pass, failures } = await suite.run(process.argv[2]);
-  console.log(`\nT2 结果：${pass} 通过，${failures.length} 失败`);
-  process.exitCode = failures.length === 0 ? 0 : 1;
 }
 
-export async function main() {
-  const chrome = await launchChrome();
-  const page = await Page.connect(chrome.port);
-  try {
-    await run(page);
-  } finally {
-    chrome.proc.kill();
-  }
-}
+await runSuite("T2 结果", suite, run);
 
-await main();

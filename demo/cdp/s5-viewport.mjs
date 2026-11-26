@@ -1,11 +1,11 @@
 // S5：900×560 无横向溢出 / 侧栏可滚动 / 页脚可达
-import { launchChrome, Page, Suite, assert, assertEqual } from "./harness.mjs";
+import { runSuite, Suite, assert, assertEqual } from "./harness.mjs";
 
 const URL = "http://localhost:1421/";
 
-export const suite = new Suite("S5 小窗口布局");
+const suite = new Suite("S5 小窗口布局");
 
-export async function run(page) {
+async function run(page) {
   const s = suite;
 
   s.add("900×560 默认数据：无横向溢出，页脚报告图标可达", async () => {
@@ -81,20 +81,7 @@ export async function run(page) {
     }
   });
 
-  const { pass, failures } = await suite.run(process.argv[2]);
-  console.log(`\nS5 结果：${pass} 通过，${failures.length} 失败`);
-  process.exitCode = failures.length === 0 ? 0 : 1;
 }
 
-export async function main() {
-  const chrome = await launchChrome();
-  const page = await Page.connect(chrome.port);
-  await page.setViewport(900, 560);
-  try {
-    await run(page);
-  } finally {
-    chrome.proc.kill();
-  }
-}
+await runSuite("S5 结果", suite, run, { viewport: [900, 560] });
 
-await main();

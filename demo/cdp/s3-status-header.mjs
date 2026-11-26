@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { launchChrome, Page, Suite, assert, assertEqual } from "./harness.mjs";
+import { runSuite, Suite, assert, assertEqual } from "./harness.mjs";
 
 const URL = "http://localhost:1421/";
 // 验收不依赖当前工作目录：所有路径相对套件文件解析到仓库根。
@@ -14,9 +14,9 @@ const q = (s) => JSON.stringify(s);
 const clickSource = (page, label) =>
   page.evaluate(`[...document.querySelectorAll('.source-item')].find(b => b.getAttribute('aria-label')?.startsWith(${q(label)}))?.click()`);
 
-export const suite = new Suite("S3 状态栏与头部提示");
+const suite = new Suite("S3 状态栏与头部提示");
 
-export async function run(page) {
+async function run(page) {
   const s = suite;
 
   s.add("扫描状态栏整条不存在，无暂停/恢复实时入口", async () => {
@@ -112,20 +112,7 @@ export async function run(page) {
     await page.waitFor("!document.querySelector('.refresh-icon.spinning')");
   });
 
-  const { pass, failures } = await suite.run(process.argv[2]);
-  console.log(`\nS3 结果：${pass} 通过，${failures.length} 失败`);
-  process.exitCode = failures.length === 0 ? 0 : 1;
 }
 
-export async function main() {
-  const chrome = await launchChrome();
-  const page = await Page.connect(chrome.port);
-  await page.setViewport(1200, 780);
-  try {
-    await run(page);
-  } finally {
-    chrome.proc.kill();
-  }
-}
+await runSuite("S3 结果", suite, run, { viewport: [1200, 780] });
 
-await main();

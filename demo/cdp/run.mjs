@@ -51,6 +51,8 @@ async function ensureDemo() {
 // 只收拾自己启动的 demo：SIGTERM 整个进程组，5s 内不退出再 SIGKILL，
 // 避免遗留 vite 进程占着 1421 影响下一次运行。
 async function stopDemo(proc) {
+  // demo 可能已经自己退出；这时再按 pid 发信号会误伤复用的进程组。
+  if (proc.exitCode !== null || proc.signalCode !== null) return;
   let exited = false;
   proc.on("exit", () => {
     exited = true;
@@ -75,12 +77,24 @@ function sleep(ms) {
 
 const demo = await ensureDemo();
 let failed = 0;
-for (const suite of SUITES) {
-  console.log(`\n== ${suite}`);
-  const result = spawnSync(process.execPath, [join(here, suite)], { stdio: "inherit" });
-  if (result.status !== 0) failed += 1;
+try {
+  for (const suite of SUITES) {
+    console.log(`\n== ${suite}`);
+    const result = spawnSync(process.execPath, [join(here, suite)], {
+      stdio: "inherit",
+      // 单套件挂死不该拖住整轮：超时按失败计。
+      timeout: 180_000,
+      killSignal: "SIGKILL",
+    });
+    if (result.status !== 0) {
+      failed += 1;
+      if (result.signal) console.log(`  （套件被 ${result.signal} 终止）`);
+    }
+  }
+} finally {
+  // 任何路径退出前都收拾自己启动的 demo，别把 1421 留给下一个进程。
+  if (demo) await stopDemo(demo);
 }
-if (demo) await stopDemo(demo);
 console.log(
   failed === 0
     ? `\n全部 ${SUITES.length} 个套件通过`

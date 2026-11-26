@@ -1,5 +1,5 @@
 // S1：三组单选状态机 / 全部口径 / 报告旁路 / 清除作用域兜底（票据 #25）
-import { launchChrome, Page, Suite, assert, assertEqual } from "./harness.mjs";
+import { runSuite, Suite, assert, assertEqual } from "./harness.mjs";
 
 const URL = "http://localhost:1421/";
 
@@ -60,9 +60,9 @@ const RECENT_ALL = [
   "修复 Cline 配置迁移脚本",
 ];
 
-export const suite = new Suite("S1 三组单选");
+const suite = new Suite("S1 三组单选");
 
-export async function run(page) {
+async function run(page) {
   const s = suite;
 
   s.add("默认：最近高亮，两组未选，列表 11 条按序", async () => {
@@ -286,20 +286,6 @@ export async function run(page) {
     assertEqual((await page.evaluate(expr.titles())).length, 5, "ws0 全部未归档");
   });
 
-  const { pass, failures } = await suite.run(process.argv[2]);
-  console.log(`\nS1 结果：${pass} 通过，${failures.length} 失败`);
-  process.exitCode = failures.length === 0 ? 0 : 1;
 }
 
-export async function main() {
-  const chrome = await launchChrome();
-  const page = await Page.connect(chrome.port);
-  await page.setViewport(1200, 780);
-  try {
-    await run(page);
-  } finally {
-    chrome.proc.kill();
-  }
-}
-
-await main();
+await runSuite("S1 结果", suite, run, { viewport: [1200, 780] });

@@ -1,9 +1,9 @@
 // T3：#27 视觉验收——900×560 无横向溢出、面板内部滚动、深浅色主题
-import { launchChrome, Page, Suite, assert, assertEqual } from "./harness.mjs";
+import { runSuite, Suite, assert, assertEqual } from "./harness.mjs";
 
 const URL = "http://localhost:1421/?transcript=1";
 
-export const suite = new Suite("T3 视口与主题");
+const suite = new Suite("T3 视口与主题");
 
 function rowExpr(title) {
   return `[...document.querySelectorAll('.flat-list .task-row')].find(r =>
@@ -46,7 +46,7 @@ function layoutProbe() {
   })()`;
 }
 
-export async function run(page) {
+async function run(page) {
   const s = suite;
 
   s.add("9 个正文来源任务行有图标，Trae CN / CodeBuddy 无", async () => {
@@ -131,19 +131,7 @@ export async function run(page) {
     assertEqual(lightOk, true, "浅色下消息仍在");
   });
 
-  const { pass, failures } = await suite.run(process.argv[2]);
-  console.log(`\nT3 结果：${pass} 通过，${failures.length} 失败`);
-  process.exitCode = failures.length === 0 ? 0 : 1;
 }
 
-export async function main() {
-  const chrome = await launchChrome();
-  const page = await Page.connect(chrome.port);
-  try {
-    await run(page);
-  } finally {
-    chrome.proc.kill();
-  }
-}
+await runSuite("T3 结果", suite, run);
 
-await main();
