@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS task (
   todo_done       INTEGER,
   deeplink        TEXT,
   resume_cmd      TEXT,
+  source_path     TEXT,
   fingerprint     TEXT,
   seen_at         REAL NOT NULL,
   last_seen_run   INTEGER,
@@ -85,21 +86,23 @@ CREATE TABLE IF NOT EXISTS scan_run (
   error         TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_scan_run_source ON scan_run(source, started_at DESC);
-
-PRAGMA user_version = 1;
 "#;
+
+/// cache.db 自身 schema 版本（与来源侧 schema_version 无关）。
+/// v2：task 增加 source_path 指针列（可重建，删库后重新扫描恢复）。
+const CACHE_SCHEMA_VERSION: i64 = 2;
 
 const TASK_UPSERT: &str = r#"
 INSERT INTO task (
   key, source, source_id, parent_key, title, title_source, project_path, project_name,
   created_at, updated_at, status_source, status_raw, source_archived, source_unread,
   source_pinned, source_missing, model, git_branch, agent_kind, message_count,
-  todo_total, todo_done, deeplink, resume_cmd, fingerprint, seen_at, last_seen_run
+  todo_total, todo_done, deeplink, resume_cmd, source_path, fingerprint, seen_at, last_seen_run
 ) VALUES (
   ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8,
   ?9, ?10, ?11, ?12, ?13, ?14,
   ?15, ?16, ?17, ?18, ?19, ?20,
-  ?21, ?22, ?23, ?24, ?25, ?26, ?27
+  ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28
 )
 ON CONFLICT(key) DO UPDATE SET
   parent_key      = excluded.parent_key,
@@ -123,6 +126,7 @@ ON CONFLICT(key) DO UPDATE SET
   todo_done       = excluded.todo_done,
   deeplink        = excluded.deeplink,
   resume_cmd      = excluded.resume_cmd,
+  source_path     = excluded.source_path,
   fingerprint     = excluded.fingerprint,
   seen_at         = excluded.seen_at,
   last_seen_run   = excluded.last_seen_run
@@ -153,6 +157,29 @@ impl CacheStore {
             "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=5000;",
         )?;
         self.conn.execute_batch(SCHEMA)?;
+        self.migrate()?;
+        Ok(())
+    }
+
+    /// 幂等迁移到 CACHE_SCHEMA_VERSION：缺列则补列（v1 → v2），
+    /// user_version 只升不降；删库后由 SCHEMA 直接以最新结构重建。
+    fn migrate(&self) -> Result<()> {
+        let has_source_path: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('task') WHERE name = 'source_path'",
+            [],
+            |row| row.get(0),
+        )?;
+        if has_source_path == 0 {
+            self.conn
+                .execute_batch("ALTER TABLE task ADD COLUMN source_path TEXT;")?;
+        }
+        let version: i64 = self
+            .conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        if version < CACHE_SCHEMA_VERSION {
+            self.conn
+                .execute_batch(&format!("PRAGMA user_version = {CACHE_SCHEMA_VERSION};"))?;
+        }
         Ok(())
     }
 
@@ -268,6 +295,7 @@ impl CacheStore {
                 task.todo_done,
                 task.deeplink,
                 task.resume_cmd,
+                task.source_path,
                 task.fingerprint,
                 task.seen_at,
                 task.last_seen_run
@@ -362,7 +390,7 @@ impl CacheStore {
                     project_name, created_at, updated_at, status_source, status_raw, \
                     source_archived, source_unread, source_pinned, source_missing, model, \
                     git_branch, agent_kind, message_count, todo_total, todo_done, deeplink, \
-                    resume_cmd, fingerprint, seen_at, last_seen_run \
+                    resume_cmd, source_path, fingerprint, seen_at, last_seen_run \
              FROM task ORDER BY COALESCE(updated_at, seen_at) DESC",
         )?;
         let rows = statement.query_map([], task_from_row)?;
@@ -379,7 +407,7 @@ impl CacheStore {
                     project_name, created_at, updated_at, status_source, status_raw, \
                     source_archived, source_unread, source_pinned, source_missing, model, \
                     git_branch, agent_kind, message_count, todo_total, todo_done, deeplink, \
-                    resume_cmd, fingerprint, seen_at, last_seen_run \
+                    resume_cmd, source_path, fingerprint, seen_at, last_seen_run \
              FROM task WHERE key = ?1",
         )?;
         let mut rows = statement.query_map([key], task_from_row)?;
@@ -468,8 +496,9 @@ fn task_from_row(row: &Row<'_>) -> rusqlite::Result<TaskSnapshot> {
         todo_done: row.get(21)?,
         deeplink: row.get(22)?,
         resume_cmd: row.get(23)?,
-        fingerprint: row.get(24)?,
-        seen_at: row.get(25)?,
-        last_seen_run: row.get(26)?,
+        source_path: row.get(24)?,
+        fingerprint: row.get(25)?,
+        seen_at: row.get(26)?,
+        last_seen_run: row.get(27)?,
     })
 }
