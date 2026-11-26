@@ -580,6 +580,63 @@ fn qoder_transcript_distinguishes_empty_session_from_missing_one() {
 }
 
 #[test]
+fn qoder_transcript_clips_single_message_and_keeps_recent_session_tail() {
+    let _guard = lock_sqlite_fixtures();
+    let temp = TempDir::new().unwrap();
+    let db = temp.path().join("main.sqlite");
+    let conn = create_qoder_fixture(&db);
+    insert_qoder_session(&conn, "q-caps");
+    // 30 条 × 9,000 字符（截后 8,000）：总 240,000 超预算，保留最近 25 条。
+    for index in 1..=30i64 {
+        let text = format!("第{index:02}条{}", "甲".repeat(9_000));
+        insert_qoder_message(
+            &conn,
+            "q-caps",
+            &format!("m{index}"),
+            index,
+            &format!(r#"{{"id":"m{index}","role":"assistant","text":"{text}","timestamp":{index}}}"#),
+        );
+    }
+    // 单条超限：12,000 个 CJK 字符（按字符截到 8,000，而非按字节）。
+    insert_qoder_message(
+        &conn,
+        "q-caps",
+        "m-long",
+        31,
+        &format!(r#"{{"id":"m-long","role":"user","text":"{}","timestamp":31}}"#, "乙".repeat(12_000)),
+    );
+    drop(conn);
+    let before_files = dir_file_names(temp.path());
+    let before_bytes = fs::read(&db).unwrap();
+    std::env::set_var("PERCH_QODER_DB", &db);
+
+    let outcome = read_transcript(&qoder_task("q-caps"));
+
+    let TranscriptOutcome::Ready {
+        messages,
+        session_truncated,
+    } = outcome
+    else {
+        panic!("期望 Ready，实际：{outcome:?}");
+    };
+    assert!(session_truncated, "超预算会话必须标记丢弃");
+    assert_eq!(messages.len(), 25, "31 条 × 8,000 = 248k，保留最近 25 条");
+    assert_eq!(messages[0].text.chars().count(), 8_000);
+    assert!(messages[0].text.starts_with("第07条"));
+    assert_eq!(messages[24].role, TranscriptRole::User);
+    assert_eq!(messages[24].text.chars().count(), 8_000);
+    assert!(messages[24].truncated);
+    assert!(messages[24].text.starts_with("乙乙乙乙"));
+    let total: usize = messages
+        .iter()
+        .map(|message| message.text.chars().count())
+        .sum();
+    assert!(total <= 200_000, "保留部分不得超过会话预算：{total}");
+    assert_db_untouched(&db, &before_files, &before_bytes);
+    std::env::remove_var("PERCH_QODER_DB");
+}
+
+#[test]
 fn qoder_transcript_folds_tool_parts_into_one_count_line() {
     let _guard = lock_sqlite_fixtures();
     let temp = TempDir::new().unwrap();
