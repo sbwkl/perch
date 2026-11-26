@@ -41,6 +41,44 @@ async function scrollMessagesTop(page) {
   );
 }
 
+// 气泡几何探针：以消息滚动容器的内容盒为基准，读出各角色消息的边界、宽度与对齐。
+function bubbleProbeExpr() {
+  return `(() => {
+    const el = document.querySelector('.transcript-pane .transcript-messages');
+    const cs = getComputedStyle(el);
+    const padL = parseFloat(cs.paddingLeft);
+    const padR = parseFloat(cs.paddingRight);
+    const left = el.getBoundingClientRect().left + el.clientLeft + padL;
+    const contentWidth = el.clientWidth - padL - padR;
+    const rect = (m) => {
+      const r = m.getBoundingClientRect();
+      const style = getComputedStyle(m);
+      return {
+        left: r.left,
+        right: r.right,
+        width: r.width,
+        textAlign: style.textAlign,
+        background: style.backgroundColor,
+      };
+    };
+    const pick = (role) => [...el.querySelectorAll('.transcript-msg')]
+      .filter((m) => m.dataset.role === role)
+      .map(rect);
+    return {
+      left,
+      right: left + contentWidth,
+      contentWidth,
+      overflowX: el.scrollWidth > el.clientWidth,
+      user: pick('user'),
+      assistant: pick('assistant'),
+      tool: pick('tool_call'),
+    };
+  })()`;
+}
+
+const near = (a, b, tolerance = 2) => Math.abs(a - b) <= tolerance;
+const percent = (part, whole) => `${((part / whole) * 100).toFixed(1)}%`;
+
 async function run(page) {
   const s = suite;
 
@@ -63,6 +101,68 @@ async function run(page) {
     assertEqual(info.truncatedMarks.length, 1, "单条截断只有一处");
     assert(info.truncatedMarks[0].includes("已截断"), "截断标注文案");
     assertEqual(info.preWrap, "pre-wrap", "消息文本 pre-wrap 可换行复制");
+
+    // 排版几何：用户气泡靠右且限宽，助手整行，工具行居左透明底。
+    const geo = await page.evaluate(bubbleProbeExpr());
+    assertEqual(geo.user.length, 2, "两条用户消息");
+    assertEqual(geo.assistant.length, 3, "三条助手消息");
+    assertEqual(geo.tool.length, 1, "一条工具调用行");
+    for (const [i, u] of geo.user.entries()) {
+      assert(
+        near(u.right, geo.right),
+        `第 ${i + 1} 条用户气泡右边界贴近消息列右内缘（偏差 ${(u.right - geo.right).toFixed(1)}px）`,
+      );
+      assert(
+        u.width <= geo.contentWidth * 0.78 + 0.5,
+        `第 ${i + 1} 条用户气泡宽度不超过内容宽 78%（实际 ${percent(u.width, geo.contentWidth)}）`,
+      );
+      assertEqual(u.textAlign, "left", `第 ${i + 1} 条用户气泡内文左对齐`);
+      assert(u.background !== "rgba(0, 0, 0, 0)", `第 ${i + 1} 条用户气泡保留底色`);
+    }
+    const userBg = geo.user[0].background;
+    for (const [i, a] of geo.assistant.entries()) {
+      assert(
+        a.width >= geo.contentWidth * 0.96,
+        `第 ${i + 1} 条助手消息约占内容整行宽（实际 ${percent(a.width, geo.contentWidth)}）`,
+      );
+      assert(near(a.left, geo.left), `第 ${i + 1} 条助手消息自内容左内缘起排（非右对齐气泡）`);
+      assert(a.background !== userBg, `第 ${i + 1} 条助手消息不套用用户气泡底色`);
+    }
+    for (const [i, t] of geo.tool.entries()) {
+      assert(near(t.left, geo.left), `第 ${i + 1} 条工具调用行左边界贴近内容左内缘`);
+      assertEqual(t.background, "rgba(0, 0, 0, 0)", `第 ${i + 1} 条工具调用行背景透明`);
+    }
+    assertEqual(geo.overflowX, false, "气泡未造成消息区横向溢出");
+  });
+
+  s.add("用户长输入：气泡宽度受限且右对齐，助手整行宽", async () => {
+    await page.goto(URL);
+    await open(page, "合成对话 · 长用户输入");
+    const geo = await page.evaluate(bubbleProbeExpr());
+    assertEqual(geo.user.length, 1, "一条长用户消息");
+    assertEqual(geo.assistant.length, 1, "一条助手回复");
+    const user = geo.user[0];
+    const assistant = geo.assistant[0];
+    assert(
+      user.width <= geo.contentWidth * 0.78 + 0.5,
+      `长用户气泡宽度 ≤ 内容宽 78%（实际 ${percent(user.width, geo.contentWidth)}）`,
+    );
+    assert(
+      user.width < geo.contentWidth * 0.9,
+      `长用户气泡明显窄于整行，最大宽度生效（实际 ${percent(user.width, geo.contentWidth)}）`,
+    );
+    assert(
+      near(user.right, geo.right),
+      `长用户气泡仍右对齐（偏差 ${(user.right - geo.right).toFixed(1)}px）`,
+    );
+    assert(user.left > geo.left + 2, "长用户气泡不贴内容左缘");
+    assertEqual(user.textAlign, "left", "长用户气泡内文左对齐");
+    assert(
+      assistant.width >= geo.contentWidth * 0.96,
+      `助手回复占整行宽（实际 ${percent(assistant.width, geo.contentWidth)}）`,
+    );
+    assert(near(assistant.left, geo.left), "助手回复自内容左缘起排");
+    assertEqual(geo.overflowX, false, "长用户气泡无横向溢出");
   });
 
   s.add("T4 加载更早在列表首行：滚顶可见、逐次 -50 直至消失", async () => {
