@@ -33,6 +33,7 @@ async function run(page) {
         listGone: !document.querySelector('.flat-list'),
         inspectorGone: !document.querySelector('.inspector'),
         column: pane ? getComputedStyle(pane).gridColumnStart : null,
+        columnEnd: pane ? getComputedStyle(pane).gridColumnEnd : null,
         sidebarAlive: Boolean(document.querySelector('.sidebar .nav-section')),
         messages: pane ? pane.querySelectorAll('.transcript-msg').length : -1,
       };
@@ -41,6 +42,7 @@ async function run(page) {
     assertEqual(state.listGone, true, "任务列表让位于对话面板");
     assertEqual(state.inspectorGone, true, "详情面板让位于对话面板");
     assertEqual(state.column, "2", "面板从第 2 列开始");
+    assertEqual(state.columnEnd, "-1", "面板跨到最后一列");
     assertEqual(state.sidebarAlive, true, "侧栏保持可交互（仍在 DOM）");
     assert(state.messages > 0, `消息行已渲染（实际 ${state.messages}）`);
   });

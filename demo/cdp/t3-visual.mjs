@@ -1,5 +1,6 @@
 // T3：#27 视觉验收——900×560 无横向溢出、面板内部滚动、深浅色主题
 import { runSuite, Suite, assert, assertEqual } from "./harness.mjs";
+import { near, percent, bubbleProbeExpr } from "./transcript-probes.mjs";
 
 const URL = "http://localhost:1421/?transcript=1";
 
@@ -32,33 +33,6 @@ async function openTask(page, title) {
   );
 }
 
-// 用户气泡与消息列内容盒的几何关系（不依赖滚动位置）。
-function bubbleProbe() {
-  return `(() => {
-    const el = document.querySelector('.transcript-pane .transcript-messages');
-    const cs = getComputedStyle(el);
-    const padL = parseFloat(cs.paddingLeft);
-    const padR = parseFloat(cs.paddingRight);
-    const left = el.getBoundingClientRect().left + el.clientLeft + padL;
-    const contentWidth = el.clientWidth - padL - padR;
-    const rect = (m) => {
-      const r = m.getBoundingClientRect();
-      return { left: r.left, right: r.right, width: r.width };
-    };
-    const pick = (role) => [...el.querySelectorAll('.transcript-msg')]
-      .filter((m) => m.dataset.role === role)
-      .map(rect);
-    return {
-      left,
-      right: left + contentWidth,
-      contentWidth,
-      overflowX: el.scrollWidth > el.clientWidth,
-      user: pick('user'),
-      assistant: pick('assistant'),
-    };
-  })()`;
-}
-
 function layoutProbe() {
   return `(() => {
     const doc = document.documentElement;
@@ -80,6 +54,8 @@ function layoutProbe() {
         : false,
       headInPane: Boolean(headRect && headRect.left >= pane.getBoundingClientRect().left - 1 && headRect.right <= pane.getBoundingClientRect().right + 1),
       buttonOverlap: overlaps,
+      gridColumnStart: pane ? getComputedStyle(pane).gridColumnStart : null,
+      gridColumnEnd: pane ? getComputedStyle(pane).gridColumnEnd : null,
     };
   })()`;
 }
@@ -122,25 +98,27 @@ async function run(page) {
       assertEqual(layout.messagesScrollable, true, "消息区内部滚动");
       assertEqual(layout.headInPane, true, "头部未超出面板");
       assertEqual(layout.buttonOverlap, false, "头部按钮不重叠");
-      // 长用户输入：气泡不越出消息列、仍右对齐，助手回复仍整行宽。
+      assertEqual(layout.gridColumnStart, "2", "对话面板从第 2 列开始");
+      assertEqual(layout.gridColumnEnd, "-1", "对话面板跨到最后一列");
+      // 用户气泡与消息列内容盒的几何关系（不依赖滚动位置）。
       await page.goto(URL);
       await openTask(page, "合成对话 · 长用户输入");
-      const bubbles = await page.evaluate(bubbleProbe());
+      const bubbles = await page.evaluate(bubbleProbeExpr());
       const user = bubbles.user[0];
       const assistant = bubbles.assistant[0];
       assertEqual(bubbles.overflowX, false, "长用户气泡无横向溢出");
       assert(
-        Math.abs(user.right - bubbles.right) <= 2,
+        near(user.right, bubbles.right),
         `用户气泡右边界在消息列内（偏差 ${(user.right - bubbles.right).toFixed(1)}px）`,
       );
       assert(user.left >= bubbles.left - 1, "用户气泡左边界不越出消息列");
       assert(
         user.width <= bubbles.contentWidth * 0.78 + 0.5,
-        `用户气泡宽度不超过内容宽 78%（实际 ${((user.width / bubbles.contentWidth) * 100).toFixed(1)}%）`,
+        `用户气泡宽度不超过内容宽 78%（实际 ${percent(user.width, bubbles.contentWidth)}）`,
       );
       assert(
         assistant.width >= bubbles.contentWidth * 0.96,
-        `助手回复仍占整行宽（实际 ${((assistant.width / bubbles.contentWidth) * 100).toFixed(1)}%）`,
+        `助手回复仍占整行宽（实际 ${percent(assistant.width, bubbles.contentWidth)}）`,
       );
       const longLayout = await page.evaluate(layoutProbe());
       assertEqual(longLayout.overflowX, false, "长用户输入下文档无横向溢出");
@@ -180,6 +158,9 @@ async function run(page) {
     await page.setViewport(1200, 780);
     await page.goto(URL);
     await openPanel(page);
+    const layout = await page.evaluate(layoutProbe());
+    assertEqual(layout.gridColumnStart, "2", "1200×780 下面板从第 2 列开始");
+    assertEqual(layout.gridColumnEnd, "-1", "1200×780 下面板跨到最后一列");
     await page.setDark(true);
     const darkOk = await page.evaluate(
       `Boolean(document.querySelector('.transcript-pane .transcript-msg'))`,

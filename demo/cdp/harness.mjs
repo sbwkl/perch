@@ -1,5 +1,7 @@
 // CDP 验收驱动：连接 headless Chrome，驱动 demo（端口 1421，合成数据）。
 // 统一入口 npm run cdp（自动起 demo 与浏览器）；单独运行某脚本需先 npm run demo。
+// EFFECTIVE_BG_HELPER 把多层半透明背景合成成不透明色：contrast() 只算前景与背景的
+// 亮度比，不处理背景 alpha。
 import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -231,6 +233,43 @@ export function assertEqual(actual, expected, message) {
     );
   }
 }
+
+// 合成后的不透明有效底色：从元素向上逐层读 backgroundColor，收集到第一个
+// alpha=1 为止，再从底往上做 alpha 合成（最底层兜底白色）。注入页面表达式后即可
+// 放心交给 contrast()。
+export const EFFECTIVE_BG_HELPER = `
+  const parseColor = (value) => {
+    const m = value.match(/rgba?\\(([\\d.]+)[,\\s]+([\\d.]+)[,\\s]+([\\d.]+)(?:[,\\s/]+([\\d.]+))?\\)/);
+    if (!m) return null;
+    return {
+      r: Number(m[1]),
+      g: Number(m[2]),
+      b: Number(m[3]),
+      a: m[4] === undefined ? 1 : Number(m[4]),
+    };
+  };
+  const effectiveBg = (el) => {
+    const layers = [];
+    let node = el;
+    while (node) {
+      const color = parseColor(getComputedStyle(node).backgroundColor);
+      if (color && color.a > 0) {
+        layers.push(color);
+        if (color.a >= 1) break;
+      }
+      node = node.parentElement;
+    }
+    let out = { r: 255, g: 255, b: 255 };
+    for (const layer of layers.reverse()) {
+      out = {
+        r: layer.r * layer.a + out.r * (1 - layer.a),
+        g: layer.g * layer.a + out.g * (1 - layer.a),
+        b: layer.b * layer.a + out.b * (1 - layer.a),
+      };
+    }
+    return \`rgb(\${Math.round(out.r)}, \${Math.round(out.g)}, \${Math.round(out.b)})\`;
+  };
+`;
 
 // WCAG 对比度
 export function contrast(fg, bg) {
