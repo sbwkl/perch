@@ -8,7 +8,7 @@ use serde_json::Value;
 use crate::collectors::claude::strip_injected_wrappers;
 use crate::models::{
     TaskSnapshot, TranscriptMessage, TranscriptOutcome, TranscriptRole, SOURCE_ANTIGRAVITY,
-    SOURCE_CLAUDE, SOURCE_CODEX,
+    SOURCE_CLAUDE, SOURCE_CODEX, SOURCE_MINIMAX,
 };
 
 /// 单一公共读取入口：输入任务快照，输出对话记录（角色、文本、是否截断）或错误。
@@ -19,6 +19,7 @@ pub fn read_transcript(task: &TaskSnapshot) -> TranscriptOutcome {
         SOURCE_CLAUDE => read_claude_transcript(task),
         SOURCE_CODEX => read_codex_transcript(task),
         SOURCE_ANTIGRAVITY => read_antigravity_transcript(task),
+        SOURCE_MINIMAX => read_minimax_transcript(task),
         other if crate::models::transcript_supported(other) => {
             TranscriptOutcome::error("该来源的对话正文读取尚未接入")
         }
@@ -332,6 +333,103 @@ fn unwrap_user_request(content: &str) -> String {
         None => content,
     };
     inner.trim().to_owned()
+}
+
+/// MiniMax messages.jsonl：message.role 区分 user / assistant / toolResult。
+/// user 的 text 内容剥离注入的 reminder 块；assistant 的 thinking 不渲染、
+/// toolCall 只计数、text 是可见文本；toolResult / custom 整条跳过。
+fn read_minimax_transcript(task: &TaskSnapshot) -> TranscriptOutcome {
+    let mut reader = match open_session_file(task) {
+        Ok(reader) => reader,
+        Err(outcome) => return outcome,
+    };
+    let mut builder = SessionBuilder::new();
+    let mut buffer = Vec::new();
+
+    loop {
+        buffer.clear();
+        match reader.read_until(b'\n', &mut buffer) {
+            Ok(0) => break,
+            Ok(_) => {}
+            Err(error) => return TranscriptOutcome::error(format!("读取源文件失败：{error}")),
+        }
+        let Ok(line) = std::str::from_utf8(&buffer) else {
+            continue;
+        };
+        let Ok(value) = serde_json::from_str::<Value>(line.trim()) else {
+            continue;
+        };
+        let Some(message) = value.get("message").filter(|m| m.is_object()) else {
+            continue;
+        };
+        match message.get("role").and_then(Value::as_str) {
+            Some("user") => {
+                let text = minimax_user_text(message);
+                if !text.trim().is_empty() {
+                    builder.push_text(TranscriptRole::User, text);
+                }
+            }
+            Some("assistant") => {
+                let (texts, tool_calls) = minimax_assistant_parts(message);
+                if let Some(text) = joined_visible_text(&texts) {
+                    builder.push_text(TranscriptRole::Assistant, text);
+                }
+                builder.add_tools(tool_calls);
+            }
+            // toolResult 是工具输出（工具调用已在 assistant 记录计数）；
+            // custom 是内部消息，均不属于对话。
+            _ => {}
+        }
+    }
+
+    builder.finish()
+}
+
+/// MiniMax user message 的 content：字符串或 text 分块数组，剥离注入 reminder。
+fn minimax_user_text(message: &Value) -> String {
+    let joined = match message.get("content") {
+        Some(Value::String(raw)) => raw.clone(),
+        Some(Value::Array(parts)) => {
+            let mut texts = Vec::new();
+            for part in parts {
+                if part.get("type").and_then(Value::as_str) == Some("text") {
+                    if let Some(raw) = part.get("text").and_then(Value::as_str) {
+                        texts.push(raw.to_owned());
+                    }
+                }
+            }
+            texts.join("\n")
+        }
+        _ => String::new(),
+    };
+    crate::collectors::minimax::strip_reminder_blocks(&joined)
+        .trim()
+        .to_owned()
+}
+
+/// MiniMax assistant message 的 content 分块 →（可见文本块, toolCall 计数）。
+fn minimax_assistant_parts(message: &Value) -> (Vec<String>, usize) {
+    let mut texts = Vec::new();
+    let mut tool_calls = 0usize;
+    match message.get("content") {
+        Some(Value::String(raw)) => texts.push(raw.clone()),
+        Some(Value::Array(parts)) => {
+            for part in parts {
+                match part.get("type").and_then(Value::as_str) {
+                    Some("text") => {
+                        if let Some(raw) = part.get("text").and_then(Value::as_str) {
+                            texts.push(raw.to_owned());
+                        }
+                    }
+                    Some("toolCall") => tool_calls += 1,
+                    // thinking 是思考过程，不读取不渲染。
+                    _ => {}
+                }
+            }
+        }
+        _ => {}
+    }
+    (texts, tool_calls)
 }
 
 fn tool_call_message(count: usize) -> TranscriptMessage {

@@ -841,6 +841,320 @@ fn antigravity_transcript_reports_missing_file_and_pointer() {
     assert!(reason.contains("源文件指针"), "{reason}");
 }
 
+fn minimax_task(source_path: &Path) -> TaskSnapshot {
+    let mut task = TaskSnapshot::new("minimax", "sess-mm-transcript");
+    task.title = "合成会话".to_owned();
+    task.source_path = Some(source_path.to_string_lossy().into_owned());
+    task
+}
+
+#[test]
+fn minimax_collector_pointer_feeds_the_reader_end_to_end() {
+    use perch_core::collectors::minimax::MiniMaxCollector;
+    use perch_core::collectors::Collector;
+    use perch_core::store::CacheStore;
+
+    let temp = TempDir::new().unwrap();
+    let session_dir = temp
+        .path()
+        .join("v2/sessions/2026/11/01/05-47-46-session_mm");
+    fs::create_dir_all(&session_dir).unwrap();
+    fs::write(
+        session_dir.join("manifest.json"),
+        concat!(
+            "{\"sessionId\":\"sess-mm-transcript\",\"createdAtMs\":1730427600000,\
+             \"updatedAtMs\":1730427700000}"
+        ),
+    )
+    .unwrap();
+    let session = session_dir.join("messages.jsonl");
+    fs::write(
+        &session,
+        concat!(
+            "{\"message_id\":\"m1\",\"turn_id\":\"t1\",\"message\":\
+             {\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"端到端问题\"}]}}\n",
+            "{\"message_id\":\"m2\",\"turn_id\":\"t1\",\"message\":\
+             {\"role\":\"assistant\",\"content\":[\
+             {\"type\":\"thinking\",\"thinking\":\"思考过程不渲染\"},\
+             {\"type\":\"toolCall\",\"name\":\"shell\"},\
+             {\"type\":\"text\",\"text\":\"端到端回答\"}]}}\n",
+            "{\"message_id\":\"m3\",\"turn_id\":\"t1\",\"message\":\
+             {\"role\":\"toolResult\",\"content\":[{\"type\":\"text\",\"text\":\"工具输出\"}]}}\n"
+        ),
+    )
+    .unwrap();
+    let before = fs::read(&session).unwrap();
+
+    let result = MiniMaxCollector::new(temp.path().to_path_buf()).scan();
+    let task = result
+        .tasks
+        .iter()
+        .find(|task| task.source_id == "sess-mm-transcript")
+        .expect("collector 应产出该会话任务")
+        .clone();
+    assert_eq!(
+        task.source_path.as_deref(),
+        Some(session.to_str().unwrap()),
+        "扫描时必须写入 messages.jsonl 源文件指针"
+    );
+
+    let store = CacheStore::open_in_memory().unwrap();
+    let scan_id = store
+        .begin_scan("minimax", "full", "source", "test")
+        .unwrap();
+    store
+        .save_result(
+            &perch_core::models::SourceResult::ok("minimax", vec![task], Vec::new()),
+            scan_id,
+        )
+        .unwrap();
+    let loaded = store
+        .load_task("minimax:sess-mm-transcript")
+        .unwrap()
+        .unwrap();
+
+    let outcome = read_transcript(&loaded);
+    let TranscriptOutcome::Ready { messages, .. } = outcome else {
+        panic!("期望 Ready，实际：{outcome:?}");
+    };
+    let rendered: Vec<(TranscriptRole, &str)> = messages
+        .iter()
+        .map(|message| (message.role, message.text.as_str()))
+        .collect();
+    assert_eq!(
+        rendered,
+        vec![
+            (TranscriptRole::User, "端到端问题"),
+            (TranscriptRole::Assistant, "端到端回答"),
+            (TranscriptRole::ToolCall, "工具调用 1 次"),
+        ]
+    );
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn minimax_transcript_maps_roles_and_strips_injected_blocks() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("messages-roles.jsonl");
+    fs::write(
+        &session,
+        concat!(
+            "{\"message\":{\"role\":\"custom\",\"content\":null}}\n",
+            "{\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":",
+            "\"<system-reminder>\\n注入提醒\\n</system-reminder>\\n真实的问题\"}]}}\n",
+            "{\"message\":{\"role\":\"user\",\"content\":\"裸字符串输入\"}}\n",
+            "{\"message\":{\"role\":\"assistant\",\"content\":[\
+             {\"type\":\"thinking\",\"thinking\":\"思考\"}]}}\n",
+            "{\"message\":{\"role\":\"assistant\",\"content\":\"字符串回答\"}}\n",
+            "{\"message\":{\"role\":\"toolResult\",\"content\":[{\"type\":\"text\",\"text\":\"输出\"}]}}\n"
+        ),
+    )
+    .unwrap();
+    let before = fs::read(&session).unwrap();
+
+    let outcome = read_transcript(&minimax_task(&session));
+
+    let rendered = rendered_roles(outcome);
+    assert_eq!(
+        rendered,
+        vec![
+            (TranscriptRole::User, "真实的问题".to_owned()),
+            (TranscriptRole::User, "裸字符串输入".to_owned()),
+            (TranscriptRole::Assistant, "字符串回答".to_owned()),
+        ]
+    );
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn minimax_transcript_folds_tool_calls_between_texts() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("messages-tools.jsonl");
+    fs::write(
+        &session,
+        concat!(
+            "{\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"继续\"}]}}\n",
+            "{\"message\":{\"role\":\"assistant\",\"content\":[\
+             {\"type\":\"text\",\"text\":\"先执行\"},\
+             {\"type\":\"toolCall\",\"name\":\"shell\"}]}}\n",
+            "{\"message\":{\"role\":\"toolResult\",\"content\":[{\"type\":\"text\",\"text\":\"输出\"}]}}\n",
+            "{\"message\":{\"role\":\"assistant\",\"content\":[\
+             {\"type\":\"toolCall\",\"name\":\"edit\"},\
+             {\"type\":\"toolCall\",\"name\":\"shell\"}]}}\n",
+            "{\"message\":{\"role\":\"toolResult\",\"content\":[{\"type\":\"text\",\"text\":\"输出\"}]}}\n",
+            "{\"message\":{\"role\":\"assistant\",\"content\":[\
+             {\"type\":\"text\",\"text\":\"完成了\"}]}}\n"
+        ),
+    )
+    .unwrap();
+    let before = fs::read(&session).unwrap();
+
+    let outcome = read_transcript(&minimax_task(&session));
+
+    let rendered = rendered_roles(outcome);
+    assert_eq!(
+        rendered,
+        vec![
+            (TranscriptRole::User, "继续".to_owned()),
+            (TranscriptRole::Assistant, "先执行".to_owned()),
+            (TranscriptRole::ToolCall, "工具调用 3 次".to_owned()),
+            (TranscriptRole::Assistant, "完成了".to_owned()),
+        ]
+    );
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn minimax_transcript_clips_single_message_to_eight_thousand_chars() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("messages-long.jsonl");
+    let long_text = "甲".repeat(9_000);
+    let record = format!(
+        "{{\"message\":{{\"role\":\"assistant\",\"content\":[{{\"type\":\"text\",\
+         \"text\":\"{long_text}\"}}]}}}}\n"
+    );
+    fs::write(&session, record).unwrap();
+    let before = fs::read(&session).unwrap();
+
+    let outcome = read_transcript(&minimax_task(&session));
+
+    let TranscriptOutcome::Ready { messages, .. } = outcome else {
+        panic!("期望 Ready，实际：{outcome:?}");
+    };
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0].text.chars().count(), 8_000);
+    assert!(messages[0].truncated);
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn minimax_transcript_keeps_the_recent_part_of_oversized_sessions() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("messages-oversize.jsonl");
+    let mut body = String::new();
+    for index in 1..=30 {
+        let text = format!("第{index:02}条{}", "甲".repeat(9_000));
+        body.push_str(&format!(
+            "{{\"message\":{{\"role\":\"assistant\",\"content\":[{{\"type\":\"text\",\
+             \"text\":\"{text}\"}}]}}}}\n"
+        ));
+    }
+    fs::write(&session, body).unwrap();
+    let before = fs::read(&session).unwrap();
+
+    let outcome = read_transcript(&minimax_task(&session));
+
+    let TranscriptOutcome::Ready {
+        messages,
+        session_truncated,
+    } = outcome
+    else {
+        panic!("期望 Ready，实际：{outcome:?}");
+    };
+    assert!(session_truncated);
+    assert_eq!(messages.len(), 25);
+    assert!(messages[0].text.starts_with("第06条"));
+    assert!(messages[24].text.starts_with("第30条"));
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn minimax_transcript_skips_corrupt_and_non_utf8_lines() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("messages-corrupt.jsonl");
+    let mut body: Vec<u8> = Vec::new();
+    body.extend_from_slice(
+        "{\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"损坏行之前\"}]}}\n"
+            .as_bytes(),
+    );
+    body.extend_from_slice(b"{\"message\":{\"role\":\"user\", broken\n");
+    body.extend_from_slice(&[0xFF, 0xFE, b'\n']);
+    body.extend_from_slice("不是 JSON 的一行\n".as_bytes());
+    body.extend_from_slice(
+        "{\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"损坏行之后\"}]}}\n"
+            .as_bytes(),
+    );
+    fs::write(&session, &body).unwrap();
+    let before = fs::read(&session).unwrap();
+
+    let outcome = read_transcript(&minimax_task(&session));
+
+    let rendered = rendered_roles(outcome);
+    assert_eq!(
+        rendered,
+        vec![
+            (TranscriptRole::User, "损坏行之前".to_owned()),
+            (TranscriptRole::Assistant, "损坏行之后".to_owned()),
+        ]
+    );
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn minimax_transcript_reports_empty_sessions() {
+    let temp = TempDir::new().unwrap();
+    let session = temp.path().join("messages-empty.jsonl");
+    fs::write(
+        &session,
+        concat!(
+            "{\"message\":{\"role\":\"toolResult\",\"content\":[{\"type\":\"text\",\"text\":\"输出\"}]}}\n",
+            "\n\n",
+        ),
+    )
+    .unwrap();
+    let before = fs::read(&session).unwrap();
+
+    let outcome = read_transcript(&minimax_task(&session));
+
+    let TranscriptOutcome::Error { reason } = outcome else {
+        panic!("期望 Error，实际：{outcome:?}");
+    };
+    assert!(reason.contains("没有可显示的对话内容"), "{reason}");
+    assert_source_unchanged(&session, &before);
+}
+
+#[test]
+fn minimax_transcript_reports_missing_file_and_pointer() {
+    let temp = TempDir::new().unwrap();
+    let outcome = read_transcript(&minimax_task(&temp.path().join("messages-missing.jsonl")));
+    let TranscriptOutcome::Error { reason } = outcome else {
+        panic!("期望 Error，实际：{outcome:?}");
+    };
+    assert!(reason.contains("源文件不存在"), "{reason}");
+
+    let mut task = TaskSnapshot::new("minimax", "sess-no-pointer");
+    task.source_path = None;
+    let outcome = read_transcript(&task);
+    let TranscriptOutcome::Error { reason } = outcome else {
+        panic!("期望 Error，实际：{outcome:?}");
+    };
+    assert!(reason.contains("源文件指针"), "{reason}");
+}
+
+#[test]
+fn transcript_supported_set_gains_the_three_jsonl_sources() {
+    use perch_core::models::transcript_supported;
+
+    // 能力集合里的三个 JSONL 系来源：读取已接入并返回真实对话。
+    assert!(transcript_supported("codex"));
+    assert!(transcript_supported("antigravity"));
+    assert!(transcript_supported("minimax"));
+    // 原有首源仍受支持。
+    assert!(transcript_supported("claude"));
+    // 明确不提供正文的来源保持不支持。
+    assert!(!transcript_supported("trae-cn"));
+    assert!(!transcript_supported("codebuddy"));
+    // 能力集合里已声明、但尚未接入的来源继续返回「尚未接入」，不整屏失败。
+    for source in ["qoder", "opencode", "kilo", "cline", "codearts"] {
+        let task = TaskSnapshot::new(source, "pending-1");
+        let outcome = read_transcript(&task);
+        let TranscriptOutcome::Error { reason } = outcome else {
+            panic!("期望 Error，实际：{outcome:?}");
+        };
+        assert!(reason.contains("尚未接入"), "{source}: {reason}");
+    }
+}
+
 #[test]
 fn claude_transcript_marks_unsupported_and_pending_sources() {
     // Trae CN / CodeBuddy 明确不提供正文。
