@@ -49,7 +49,7 @@ Perch 当前覆盖 11 个本地 AI 编码 Agent 来源，与 usage-ledger 的来
 - R9：When 用量报告打开, the system shall 标识当前报告视图为全局报告、提供返回任务路径，且不启动外部浏览器；任务分组不显示报告导航项。
 - R10：While 当前 workspace / 来源筛选生效, the system shall 在搜索弹层明示搜索作用域；When 无筛选时, the system shall 明示忽略任务视图并搜索全部会话（含归档）。
 - R21：When Codex 的子代理会话或侧聊会话被采集, the system shall 将其识别为产生它的主会话的子会话：默认不进入主列表，不计入来源 / workspace / 最近 / 更早计数，但仍保留在快照中、可被搜索，并在详情与搜索结果中标注「子会话」；子代理会话缺少正式标题时以代理昵称派生「子代理 · <昵称>」标题；用户自行 fork / 续接的普通 Codex 会话不受影响，仍按主任务展示与计数。
-- R22：When 用户点击侧边栏的任务视图、workspace 或来源项, the system shall 在组内单选：点击其它项切换，点击组内已选中项则取消该组选中（该组回到「全部」）；When 取消后将导致三组全部未选中, the system shall 保持该组原选中项不变；When 任意操作完成, the system shall 保证三组中至少一组、至多三组有选中项。任务组未选中 = 全部未归档任务，按最近活动倒序；smart list / workspace / 来源计数按全部未归档口径联动；报告视图不计入三组，进入时清空任务选中，返回时恢复原任务视图与筛选。选中项样式须为实底、加粗标签、反白计数与左侧色条，并保留 `aria-pressed`。
+- R22：When 用户点击侧边栏的任务视图、workspace 或来源项, the system shall 在组内单选：点击其它项切换，点击组内已选中项则取消该组选中（该组回到「全部」）；When 取消后将导致三组全部未选中, the system shall 保持该组原选中项不变；When 任意操作完成, the system shall 保证三组中至少一组、至多三组有选中项。任务组未选中 = 全部未归档任务，按最近活动倒序；smart list / workspace / 来源计数按全部未归档口径联动；报告视图不计入三组，进入时清空任务选中，返回时恢复原任务视图与筛选。选中项样式须为柔色底、加粗标签、强调色文字与计数，对比度 ≥ 4.5:1，并保留 `aria-pressed`。
 - R23：When 列表头渲染, the system shall 不显示扫描状态栏、扫描耗时、「用量可能已过期 / 用量快照 X」或「匹配 N 个会话」；选中某来源时只显示 token / credits / est 三个数值 pill；副标题只显示「N 个任务 · 快照 X」。
 
 验证位置：R1–R5 见来源采集器 / probe / continue 测试与当前代码核对；R6–R7 见侧栏布局实机验证；R8–R23 见对应变更文档的 core / Tauri 测试、demo UI 验收与 `npm run check`，其中 R22 / R23 见 [三组选中收敛与会话对话视图](../exec-plans/completed/2026-11-26-ui-convergence-and-transcript-view.md)；R3 / R12 的事件与提示一致性见 [代码审核修复](../exec-plans/completed/2026-11-23-code-review-fixes.md) 单测与实机验证。
@@ -72,7 +72,7 @@ Perch 当前覆盖 11 个本地 AI 编码 Agent 来源，与 usage-ledger 的来
 | 2026-11-25 | Claude 会话标题派生与人工标题 sidecar | 已验证 | [../exec-plans/completed/2026-11-25-claude-session-titles.md](../exec-plans/completed/2026-11-25-claude-session-titles.md) |
 | 2026-11-25 | Codex 子代理 / 侧聊会话归为子会话 | 开发中 | [../exec-plans/active/2026-11-25-codex-subagent-sessions.md](../exec-plans/active/2026-11-25-codex-subagent-sessions.md) |
 | 2026-11-24 | 继续工作入口收敛为单按钮（打开 / 激活）与来源品牌色 | 已验证 | [../exec-plans/completed/2026-11-24-continue-work-affordance.md](../exec-plans/completed/2026-11-24-continue-work-affordance.md) |
-| 2026-11-26 | 三组选中收敛、扫描状态栏 / 提示语删除、app icon 对齐与会话对话视图 | 已验证 | [../exec-plans/completed/2026-11-26-ui-convergence-and-transcript-view.md](../exec-plans/completed/2026-11-26-ui-convergence-and-transcript-view.md) |
+| 2026-11-26 | 三组选中收敛与回退柔色底、扫描状态栏 / 提示语删除、app icon 对齐与会话对话视图 | 已验证 | [../exec-plans/completed/2026-11-26-ui-convergence-and-transcript-view.md](../exec-plans/completed/2026-11-26-ui-convergence-and-transcript-view.md) |
 
 ## 6. 链接
 
