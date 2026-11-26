@@ -1,12 +1,15 @@
 // 统一入口：npm run cdp —— 确保 demo 服务就绪，顺序执行全部验收套件。
 // 依赖：Node 22（内置 fetch / WebSocket）、headless Chrome（CHROME_BIN 可覆盖）。
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const BASE = "http://localhost:1421/";
 const DEMO_MARKER = "Perch · Demo";
+const SUITE_TIMEOUT_MS = 180_000;
 const SUITES = [
   "s1-selection.mjs",
   "s2-style.mjs",
@@ -19,6 +22,10 @@ const SUITES = [
   "t8-filter-close.mjs",
   "t8-subsession-keep.mjs",
 ];
+
+// 本轮所有套件的 Chrome profile 都落在这个目录下：套件被 SIGKILL 时退出钩子跑不到，
+// 由这里在收尾时整目录回收。
+const tmpRoot = mkdtempSync(join(tmpdir(), "perch-cdp-run-"));
 
 // 1421 的三种状态：demo 就绪 / 端口被别的进程占着 / 没有服务。
 async function demoState() {
@@ -75,25 +82,50 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// 每个套件跑在自己的进程组里：挂死时连同它起的 headless Chrome 一起 SIGKILL，
+// 否则只杀套件进程会留下孤儿浏览器。
+function runSuiteProcess(file) {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [file], {
+      stdio: "inherit",
+      detached: true,
+      env: { ...process.env, PERCH_CDP_TMP: tmpRoot },
+    });
+    const timer = setTimeout(() => {
+      try {
+        process.kill(-child.pid, "SIGKILL");
+      } catch {
+        // 进程组已退出
+      }
+    }, SUITE_TIMEOUT_MS);
+    child.on("exit", (code, signal) => {
+      clearTimeout(timer);
+      resolve({ code, signal });
+    });
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      console.error(`  套件启动失败：${error.message}`);
+      resolve({ code: 1, signal: null });
+    });
+  });
+}
+
 const demo = await ensureDemo();
 let failed = 0;
 try {
   for (const suite of SUITES) {
     console.log(`\n== ${suite}`);
-    const result = spawnSync(process.execPath, [join(here, suite)], {
-      stdio: "inherit",
-      // 单套件挂死不该拖住整轮：超时按失败计。
-      timeout: 180_000,
-      killSignal: "SIGKILL",
-    });
-    if (result.status !== 0) {
+    const result = await runSuiteProcess(join(here, suite));
+    if (result.code !== 0) {
       failed += 1;
       if (result.signal) console.log(`  （套件被 ${result.signal} 终止）`);
     }
   }
 } finally {
-  // 任何路径退出前都收拾自己启动的 demo，别把 1421 留给下一个进程。
+  // 任何路径退出前都收拾自己启动的 demo，别把 1421 留给下一个进程；
+  // 再回收本轮 profile（含被超时杀掉、来不及自清的套件目录）。
   if (demo) await stopDemo(demo);
+  rmSync(tmpRoot, { recursive: true, force: true });
 }
 console.log(
   failed === 0

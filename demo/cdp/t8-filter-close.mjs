@@ -9,6 +9,11 @@ const STAY_OPEN = "合成对话 · 工具轮与截断"; // 仍在可见列表
 
 const suite = new Suite("T8 当前筛选列表口径");
 
+// 侧栏任务组计数：刷新落地后的用户可见信号（filterout 生效后该组少一条）。
+function navCountExpr(label) {
+  return `[...document.querySelectorAll('.nav-item')].find(b => b.querySelector('.nav-label')?.textContent?.trim() === ${JSON.stringify(label)})?.querySelector('.nav-count')?.textContent?.trim()`;
+}
+
 function rowExpr(title) {
   return `[...document.querySelectorAll('.flat-list .task-row')].find(r =>
     r.querySelector('.task-title')?.textContent?.includes(${JSON.stringify(title)})) ?? null`;
@@ -57,10 +62,14 @@ async function run(page) {
     await page.waitFor(
       "document.querySelectorAll('.transcript-pane .transcript-msg').length > 0",
     );
+    const before = await page.evaluate(navCountExpr("最近"));
     await page.evaluate(
       `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', metaKey: true }))`,
     );
-    await page.waitFor("!document.querySelector('.refresh-icon.spinning')");
+    // 面板打开时刷新按钮不在 DOM，等 spinner 消失恒为真；改为等侧栏「最近」计数变化，
+    // 确认刷新（refresh_sources + bootstrap）真正落地，再断言面板仍在。
+    await page.waitFor(`${navCountExpr("最近")} !== ${JSON.stringify(before)}`);
+    // 防回归：若刷新逻辑退化成「刷新后关闭面板」，上面的等待就不会被面板提前满足。
     const state = await page.evaluate(`(() => {
       const pane = document.querySelector('.transcript-pane');
       return {

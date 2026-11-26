@@ -9,7 +9,9 @@ const CHROME =
   process.env.CHROME_BIN ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
 export async function launchChrome() {
-  const dir = mkdtempSync(join(tmpdir(), "perch-cdp-"));
+  // runner 会传 PERCH_CDP_TMP：套件被超时 SIGKILL 时退出钩子跑不到，
+  // 由 runner 整目录回收；单独运行时退回系统临时目录。
+  const dir = mkdtempSync(join(process.env.PERCH_CDP_TMP ?? tmpdir(), "perch-cdp-"));
   // 套件进程结束时删掉本次的临时 profile，避免每跑一轮就在 /tmp 留一份。
   process.on("exit", () => {
     try {
@@ -187,9 +189,10 @@ export class Suite {
 // 套件文件只登记用例，末尾一行 `await runSuite("S4 结果", suite, run, { viewport: [1200, 780] });`。
 export async function runSuite(label, suite, run, { viewport } = {}) {
   const chrome = await launchChrome();
-  const page = await Page.connect(chrome.port);
-  if (viewport) await page.setViewport(...viewport);
   try {
+    // 连页面 / 设视口也纳入 try：启动期抛错同样要关掉自己起的 Chrome。
+    const page = await Page.connect(chrome.port);
+    if (viewport) await page.setViewport(...viewport);
     await run(page);
     const { pass, failures } = await suite.run(process.argv[2]);
     console.log(`\n${label}：${pass} 通过，${failures.length} 失败`);
