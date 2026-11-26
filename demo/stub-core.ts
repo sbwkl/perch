@@ -94,8 +94,6 @@ export async function invoke<T>(
         })),
       } as T;
     }
-    case "set_live_refresh":
-      return { paused: Boolean(args?.paused) } as T;
     case "continue_task": {
       const taskKey = String(args?.taskKey ?? "");
       const payload = demoPayload();

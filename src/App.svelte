@@ -15,19 +15,11 @@
   } from "./lib/types";
   import { sourceIconMarkup } from "./lib/source-icons";
 
-  type ViewMode = "recent" | "older" | "archived" | "report";
+  type TaskViewSelection = "recent" | "older" | "archived";
 
   interface ScanNotice {
     label: string;
     message: string;
-  }
-
-  interface ScanStatusEvent {
-    source: string;
-    trigger: "manual" | "live";
-    phase: "start" | "end";
-    duration_ms: number | null;
-    live_paused: boolean;
   }
 
   const ICONS = {
@@ -36,7 +28,6 @@
     archive: "M4 7h16M6 7v12h12V7M9 11h6",
     refresh: "M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6",
     folder: "M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z",
-    bird: "M7 20c0-5.5 4.5-10 10-10h4l-3-4-5 2-4 4-3 6 1 2zM9 20h10",
     pin: "M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z",
     report: "M18 20V10M12 20V4M6 20v-6",
     search: "M21 21l-4.35-4.35M11 19a8 8 0 1 1 0-16 8 8 0 0 1 0 16z",
@@ -88,11 +79,14 @@
   let refreshing = $state(false);
   let errorMessage = $state("");
   let scanNotices = $state<ScanNotice[]>([]);
-  let lastScanSummary = $state("");
-  let view = $state<ViewMode>("recent");
-  let taskReturnView = $state<Exclude<ViewMode, "report">>("recent");
+  // 任务组可空：null = 全部（最近 + 更早，不含归档）。三组选中数 ∈ [1, 3]
+  // 的不变量由 setTaskView / setWorkspaceFilter / setSourceFilter 集中维护。
+  let view = $state<TaskViewSelection | null>("recent");
+  let taskReturnView = $state<TaskViewSelection | null>("recent");
   let workspaceFilter = $state<string | null>(null);
   let sourceFilter = $state<string | null>(null);
+  // 报告是一次旁路：独立于三组选中，进入清空任务组选中，返回恢复。
+  let reportView = $state(false);
   let selectedKey = $state<string | null>(null);
   let continuing = $state(false);
   let continueError = $state("");
@@ -115,18 +109,15 @@
   let searchResultList = $state<HTMLDivElement>();
   let listLimit = $state(60);
   let searchLimit = $state(50);
-  let livePaused = $state(false);
-  let scanStatus = $state("");
-  let activeScans = $state<Record<string, string>>({});
 
   const NAV_VISIBLE_LIMIT = 8;
   const RECENT_WINDOW_SECONDS = 7 * 24 * 60 * 60;
   const TASK_PAGE_SIZE = 60;
   const SEARCH_PAGE_SIZE = 50;
 
-  function matchesView(task: TaskView, mode: ViewMode): boolean {
+  function matchesView(task: TaskView, mode: TaskViewSelection | null): boolean {
+    if (mode === null) return !task.source_archived;
     if (mode === "archived") return task.source_archived;
-    if (mode === "report") return false;
     return !task.source_archived && task.is_recent === (mode === "recent");
   }
 
@@ -138,8 +129,8 @@
     (payload?.workspaces ?? []).flatMap((group) => group.tasks).filter(primaryTask),
   );
 
-  const countView = $derived<Exclude<ViewMode, "report">>(
-    view === "report" ? taskReturnView : view,
+  const countView = $derived<TaskViewSelection | null>(
+    reportView ? taskReturnView : view,
   );
   interface ActivityRank {
     recentCount: number;
@@ -182,7 +173,7 @@
 
 
   function tasksMatching(
-    mode: ViewMode,
+    mode: TaskViewSelection | null,
     workspace: string | null,
     source: string | null,
   ): TaskView[] {
@@ -195,9 +186,9 @@
   }
 
   const smartLists = $derived([
-    { id: "recent" as ViewMode, label: "最近", icon: ICONS.clock, count: tasksMatching("recent", workspaceFilter, sourceFilter).length },
-    { id: "older" as ViewMode, label: "更早", icon: ICONS.history, count: tasksMatching("older", workspaceFilter, sourceFilter).length },
-    { id: "archived" as ViewMode, label: "已归档", icon: ICONS.archive, count: tasksMatching("archived", workspaceFilter, sourceFilter).length },
+    { id: "recent" as TaskViewSelection, label: "最近", icon: ICONS.clock, count: tasksMatching("recent", workspaceFilter, sourceFilter).length },
+    { id: "older" as TaskViewSelection, label: "更早", icon: ICONS.history, count: tasksMatching("older", workspaceFilter, sourceFilter).length },
+    { id: "archived" as TaskViewSelection, label: "已归档", icon: ICONS.archive, count: tasksMatching("archived", workspaceFilter, sourceFilter).length },
   ]);
 
   const workspaceItems = $derived.by(() => {
@@ -437,7 +428,7 @@
   );
 
   const heading = $derived.by(() => {
-    if (view === "report") return "用量报告";
+    if (reportView) return "用量报告";
     const parts: string[] = [];
     if (workspaceFilter) {
       parts.push(
@@ -452,49 +443,17 @@
   });
 
   const subheading = $derived.by(() => {
-    if (view === "report") return "usage-ledger 生成 · 全局报告 · 不随任务筛选变化";
+    if (reportView) return "usage-ledger 生成 · 全局报告 · 不随任务筛选变化";
     const generated = payload ? fullTime(payload.generated_at) : "—";
-    const summary = lastScanSummary ? ` · ${lastScanSummary}` : "";
     const shown = Math.min(totalVisible, listLimit);
     const count = totalVisible > shown ? `${shown} / ${totalVisible} 个任务` : `${totalVisible} 个任务`;
-    return `${count} · 快照 ${generated}${summary}`;
+    return `${count} · 快照 ${generated}`;
   });
 
   async function loadBootstrap() {
     payload = await invoke<BootstrapPayload>("bootstrap");
   }
 
-  function formatScanStatus(status: ScanStatusEvent): string {
-    const source = status.source === "all" ? "全部来源" : SOURCE_LABELS[status.source] ?? status.source;
-    const trigger = status.trigger === "manual" ? "手动刷新" : "后台更新";
-    if (status.phase === "start") return `${trigger} · 正在扫描 ${source}`;
-    return `${trigger} · ${source} 扫描完成 · ${status.duration_ms ?? 0} ms`;
-  }
-
-  function handleScanStatus(status: ScanStatusEvent) {
-    livePaused = status.live_paused;
-    const label = formatScanStatus(status);
-    if (status.phase === "start") {
-      activeScans = { ...activeScans, [`${status.trigger}:${status.source}`]: label };
-    } else {
-      const next = { ...activeScans };
-      delete next[`${status.trigger}:${status.source}`];
-      activeScans = next;
-    }
-    scanStatus = Object.values(activeScans)[0] ?? label;
-    if (status.trigger === "manual" && status.phase === "start") lastScanSummary = "手动扫描中";
-  }
-
-  async function toggleLiveRefresh() {
-    const next = !livePaused;
-    try {
-      const result = await invoke<{ paused: boolean }>("set_live_refresh", { paused: next });
-      livePaused = result.paused;
-      scanStatus = result.paused ? "实时刷新已暂停；⌘R 可手动刷新" : "实时刷新已恢复";
-    } catch (error) {
-      errorMessage = error instanceof Error ? error.message : String(error);
-    }
-  }
   async function refresh() {
     if (refreshing) return;
     refreshing = true;
@@ -507,10 +466,6 @@
           label: SOURCE_LABELS[item.source] ?? item.source,
           message: item.error as string,
         }));
-      lastScanSummary = `扫描 ${report.reports.length} 个来源 · ${Math.max(
-        0,
-        Math.round((report.finished_at - report.started_at) * 1000),
-      )} ms`;
       await loadBootstrap();
       if (selectedKey && !flatTasks.some((task) => task.key === selectedKey)) {
         selectedKey = null;
@@ -564,6 +519,54 @@
     );
   }
 
+  // 三组选中数 ∈ [1, 3] 的唯一守门入口：只有当被取消的组是当前唯一选中组时
+  // 才拒绝取消（保持原选中）。选中转移与多组并存下的取消都从这里经过。
+  function selectedGroupCount(
+    viewSelection: TaskViewSelection | null,
+    workspace: string | null,
+    source: string | null,
+  ): number {
+    return (
+      (viewSelection !== null ? 1 : 0) +
+      (workspace !== null ? 1 : 0) +
+      (source !== null ? 1 : 0)
+    );
+  }
+
+  function setTaskView(next: TaskViewSelection | null) {
+    if (
+      view !== null &&
+      next === null &&
+      selectedGroupCount(view, workspaceFilter, sourceFilter) === 1
+    ) {
+      return;
+    }
+    view = next;
+    if (!reportView) taskReturnView = next;
+  }
+
+  function setWorkspaceFilter(next: string | null) {
+    if (
+      workspaceFilter !== null &&
+      next === null &&
+      selectedGroupCount(view, workspaceFilter, sourceFilter) === 1
+    ) {
+      return;
+    }
+    workspaceFilter = next;
+  }
+
+  function setSourceFilter(next: string | null) {
+    if (
+      sourceFilter !== null &&
+      next === null &&
+      selectedGroupCount(view, workspaceFilter, sourceFilter) === 1
+    ) {
+      return;
+    }
+    sourceFilter = next;
+  }
+
   async function generateUsageReport(silent: boolean) {
     if (reportOpen) return;
     reportOpen = true;
@@ -586,22 +589,28 @@
   }
 
   function openUsageReport() {
-    view = "report";
+    taskReturnView = view;
+    // 报告不计入三组：进入时清空任务组选中（workspaces / 来源筛选保留），
+    // 返回时经 taskReturnView 恢复原任务视图。
+    view = null;
+    reportView = true;
     clearSelection();
     closeSearch();
     void generateUsageReport(false);
   }
 
   function returnToTasks() {
+    reportView = false;
     view = taskReturnView;
     clearSelection();
     reportNotice = "";
     reportFailed = false;
   }
 
-  function selectView(next: ViewMode) {
-    if (next !== "report") taskReturnView = next;
-    view = next;
+  function selectView(next: TaskViewSelection) {
+    // 任务组点击总是退出报告；组内转移或取消经 setTaskView 守门。
+    reportView = false;
+    setTaskView(view === next ? null : next);
     clearSelection();
     closeSearch();
   }
@@ -632,11 +641,15 @@
   }
 
   function revealTask(task: TaskView) {
-    const nextView = task.source_archived ? "archived" : task.is_recent ? "recent" : "older";
-    view = nextView;
-    taskReturnView = nextView;
+    const nextView: TaskViewSelection = task.source_archived
+      ? "archived"
+      : task.is_recent
+        ? "recent"
+        : "older";
+    reportView = false;
+    setTaskView(nextView);
     workspaceFilter = task.workspace_key;
-    sourceFilter = null;
+    setSourceFilter(null);
     selectTask(task.key);
     void tick().then(() => {
       const index = flatTasks.findIndex((item) => item.key === task.key);
@@ -670,18 +683,21 @@
   }
 
   function selectWorkspace(key: string) {
-    workspaceFilter = workspaceFilter === key ? null : key;
+    setWorkspaceFilter(workspaceFilter === key ? null : key);
     clearSelection();
   }
 
   function selectSource(source: string) {
-    sourceFilter = sourceFilter === source ? null : source;
+    setSourceFilter(sourceFilter === source ? null : source);
     clearSelection();
   }
 
   function clearSearchScope() {
-    workspaceFilter = null;
-    sourceFilter = null;
+    // 清除作用域只针对 workspace / 来源；若任务组本来就未选中，
+    // 清除会让三组全空，此时任务组回落「最近」而不是保持空。
+    if (view === null) setTaskView("recent");
+    setWorkspaceFilter(null);
+    setSourceFilter(null);
     clearSelection();
     void tick().then(() => searchInput?.focus());
   }
@@ -792,11 +808,6 @@
     return value.toLocaleString("zh-CN", { maximumFractionDigits: 2 });
   }
 
-  function usageSnapshotLabel(seconds: number | null): string {
-    if (!seconds) return "用量快照时间未知";
-    return `用量快照 ${relativeTime(seconds)}`;
-  }
-
   function joinModels(models: string[]): string {
     return models.length > 0 ? models.join(" · ") : "模型未知";
   }
@@ -810,7 +821,7 @@
     }
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "r") {
       event.preventDefault();
-      if (view === "report") void generateUsageReport(false);
+      if (reportView) void generateUsageReport(false);
       else void refresh();
     }
     if (searchOpen) {
@@ -835,7 +846,6 @@
   onMount(() => {
     let disposed = false;
     let unlisten: (() => void) | null = null;
-    let unlistenScan: (() => void) | null = null;
 
     void (async () => {
       try {
@@ -854,7 +864,7 @@
         } catch {
           return;
         }
-        if (disposed || view !== "report") return;
+        if (disposed || !reportView) return;
         // `usage html` rewrites db mtimes on every run, so as_of cannot gate
         // regeneration; only a change in usage totals reloads the iframe.
         if (usageContentKey(payload?.usage) !== reportUsageKey) {
@@ -866,17 +876,10 @@
       else unlisten = stop;
     });
 
-    void listen("scan-status", (event) => {
-      if (!disposed) handleScanStatus(event.payload as ScanStatusEvent);
-    }).then((stop) => {
-      if (disposed) stop();
-      else unlistenScan = stop;
-    });
 
     return () => {
       disposed = true;
       unlisten?.();
-      unlistenScan?.();
     };
   });
 </script>
@@ -886,6 +889,36 @@
 {#snippet pinIcon()}
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
     <path d={ICONS.pin} />
+  </svg>
+{/snippet}
+
+{#snippet appIcon(uid: string)}
+  <!-- 与 src-tauri/icons/icon.svg 同一矢量图形；渐变 id 加位置后缀避免同页重复 -->
+  <svg viewBox="0 0 1024 1024" role="img" aria-label="Perch">
+    <defs>
+      <linearGradient id={`perch-icon-bg-${uid}`} x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#e2a56f" />
+        <stop offset="1" stop-color="#a35626" />
+      </linearGradient>
+      <radialGradient id={`perch-icon-glow-${uid}`} cx="0.3" cy="0.2" r="0.9">
+        <stop offset="0" stop-color="#ffffff" stop-opacity="0.22" />
+        <stop offset="1" stop-color="#ffffff" stop-opacity="0" />
+      </radialGradient>
+    </defs>
+    <g transform="translate(100 100) scale(0.8046875)">
+      <rect width="1024" height="1024" rx="228" fill={`url(#perch-icon-bg-${uid})`} />
+      <rect width="1024" height="1024" rx="228" fill={`url(#perch-icon-glow-${uid})`} />
+      <rect x="188" y="706" width="648" height="44" rx="22" fill="#6f3a1a" />
+      <path d="M356 548 L176 646 L320 690 Z" fill="#f7ead9" />
+      <ellipse cx="512" cy="566" rx="196" ry="174" fill="#fbeedd" />
+      <circle cx="660" cy="386" r="122" fill="#fbeedd" />
+      <path d="M772 372 L872 406 L770 442 Z" fill="#f2b45f" />
+      <circle cx="700" cy="360" r="15" fill="#3a2317" />
+      <circle cx="705" cy="355" r="4.5" fill="#ffffff" opacity="0.85" />
+      <path d="M424 556c64-44 170-44 232 0-42 96-182 106-232 0z" fill="#ecd7bf" />
+      <path d="M492 704v34M566 704v34" stroke="#6f3a1a" stroke-width="20" stroke-linecap="round" />
+      <path d="M472 738h44M546 738h44" stroke="#6f3a1a" stroke-width="18" stroke-linecap="round" />
+    </g>
   </svg>
 {/snippet}
 
@@ -927,9 +960,7 @@
   <aside class="sidebar">
     <header class="brand">
       <span class="brand-mark">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-          <path d={ICONS.bird} />
-        </svg>
+        {@render appIcon("brand")}
       </span>
       <span class="brand-text">
         <strong>Perch</strong>
@@ -944,7 +975,6 @@
           <button
             class="nav-item"
             class:active={view === item.id}
-            aria-current={view === item.id ? "page" : undefined}
             aria-pressed={view === item.id}
             onclick={() => selectView(item.id)}
           >
@@ -1011,6 +1041,7 @@
             class:active={sourceFilter === source.source}
             class:degraded={source.status !== "ok"}
             aria-pressed={sourceFilter === source.source}
+            style={`--source:${sourceColor(source.source)}`}
             data-recent-count={source.activity.recentCount}
             data-last-activity={source.activity.lastActivity}
             aria-label={`${source.label}，${sourceStatusLabel(source.status)}，当前视图 ${source.count} 个任务`}
@@ -1046,21 +1077,21 @@
       {#if payload?.usage}
         <button
           class="sidebar-report"
-          class:active={view === "report"}
+          class:active={reportView}
           onclick={openUsageReport}
           disabled={reportOpen}
           title={reportOpen
             ? "正在生成用量报告"
-            : view === "report"
+            : reportView
               ? "重新生成用量报告"
               : "在应用内查看 usage-ledger 用量报告"}
           aria-label={reportOpen
             ? "正在生成用量报告"
-            : view === "report"
+            : reportView
               ? "重新生成用量报告"
               : "在应用内查看 usage-ledger 用量报告"}
-          aria-current={view === "report" ? "page" : undefined}
-          aria-pressed={view === "report"}
+          aria-current={reportView ? "page" : undefined}
+          aria-pressed={reportView}
         >
           <svg
             class="report-icon"
@@ -1090,13 +1121,13 @@
     </footer>
   </aside>
 
-  <main class="list-pane" class:report-wide={view === "report"}>
+  <main class="list-pane" class:report-wide={reportView}>
     <header class="list-head">
       <div class="head-text">
         <h2>{heading}</h2>
         <p>{subheading}</p>
       </div>
-      {#if view === "report"}
+      {#if reportView}
         <button class="refresh-button" onclick={returnToTasks} title="返回任务视图">
           <span>返回任务</span>
         </button>
@@ -1160,29 +1191,9 @@
               <strong>{formatTokens(sourceUsage.est_total)}</strong><span>est · 全量</span>
             </span>
           {/if}
-          <span class="usage-pill muted" class:stale={payload?.usage?.stale}>
-            {payload?.usage?.stale
-              ? "用量可能已过期"
-              : usageSnapshotLabel(payload?.usage?.as_of ?? null)}
-          </span>
-          {#if sourceUsage.matched_tasks > 0}
-            <span class="usage-pill muted">匹配 {sourceUsage.matched_tasks} 个会话</span>
-          {/if}
         </div>
       {/if}
     </header>
-
-    {#if scanStatus || (view !== "report" && !busy)}
-      <div class="scan-status" class:paused={livePaused}>
-        <span class="scan-dot" class:busy={Object.keys(activeScans).length > 0}></span>
-        <span>{scanStatus || (livePaused ? "实时刷新已暂停" : "实时刷新已开启")}</span>
-        {#if view !== "report"}
-          <button class="scan-toggle" onclick={() => void toggleLiveRefresh()} aria-pressed={livePaused}>
-            {livePaused ? "恢复实时" : "暂停实时"}
-          </button>
-        {/if}
-      </div>
-    {/if}
 
     {#if errorMessage}
       <div class="banner error">{errorMessage}</div>
@@ -1205,7 +1216,7 @@
       </details>
     {/if}
 
-    {#if view === "report"}
+    {#if reportView}
       <div class="report-pane">
         {#if reportUrl}
           {#key reportGeneration}
@@ -1240,7 +1251,7 @@
     {/if}
   </main>
 
-  {#if view !== "report"}
+  {#if !reportView}
   <aside class="inspector">
     {#if selected}
       <div class="inspector-content">
@@ -1379,9 +1390,9 @@
       </div>
     {:else}
       <div class="inspector-empty">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-          <path d={ICONS.bird} />
-        </svg>
+        <span class="inspector-empty-icon">
+          {@render appIcon("empty")}
+        </span>
         <p>选择一个任务查看详情</p>
         <p class="subtle">详情只读；置顶将在下一阶段加入。</p>
       </div>
