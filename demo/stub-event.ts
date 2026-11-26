@@ -13,3 +13,8 @@ export async function listen(
 export function emit(event: string, payload: unknown): void {
   for (const handler of listeners.get(event) ?? []) handler({ payload });
 }
+
+// 供 CDP 验收驱动实时事件（如 sources-updated），仅 demo 存在。
+if (typeof window !== "undefined") {
+  (window as unknown as { __perchEmit?: typeof emit }).__perchEmit = emit;
+}

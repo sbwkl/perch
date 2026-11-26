@@ -69,6 +69,8 @@ interface TaskSeed {
   agent_kind?: string;
   source_id?: string;
   usage?: TaskUsage;
+  is_child?: boolean;
+  is_automation?: boolean;
 }
 
 const UUID_PATTERN =
@@ -94,8 +96,8 @@ function makeTask(seed: TaskSeed): TaskView {
     source_label: SOURCE_LABELS[seed.source],
     source_id: sourceId,
     parent_key: null,
-    is_child: false,
-    is_automation: false,
+    is_child: Boolean(seed.is_child),
+    is_automation: Boolean(seed.is_automation),
     title: seed.title,
     title_source: seed.title_source ?? "source",
     project_path: workspace.path,
@@ -526,6 +528,10 @@ if (TRANSCRIPT_SCENARIO) {
     { source: "codearts", title: "合成对话 · CodeArts 来源", workspace: 0, status: "idle", updated_minutes_ago: 70, created_days_ago: 2 },
     { source: "trae-cn", title: "合成对话 · Trae CN 无图标", workspace: 0, status: "idle", updated_minutes_ago: 30, created_days_ago: 1 },
     { source: "codebuddy", title: "合成对话 · CodeBuddy 无图标", workspace: 0, status: "idle", updated_minutes_ago: 45, created_days_ago: 1 },
+    // 子会话 / 自动化任务：不进 primary 集合，仅经搜索 reveal 后以选中态出现在
+    // 列表并可点开对话（T8 判定兜底口径的驱动场景）；默认列表口径不变。
+    { source: "claude", title: "合成对话 · 子会话（搜索可见）", workspace: 0, status: "idle", updated_minutes_ago: 20, created_days_ago: 1, is_child: true },
+    { source: "codex", title: "合成对话 · 自动化任务（搜索可见）", workspace: 0, status: "running", updated_minutes_ago: 22, created_days_ago: 1, agent_kind: "automation", is_automation: true },
   ];
   for (const seed of scenarioTasks) TASKS.push(makeTask(seed));
 }
