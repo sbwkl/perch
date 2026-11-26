@@ -531,6 +531,13 @@ mod read_session_content_tests {
                     .filter(|t| t.source == "codebuddy")
                     .collect::<Vec<_>>(),
             ),
+            (
+                "qoder",
+                tasks
+                    .iter()
+                    .filter(|t| t.source == "qoder")
+                    .collect::<Vec<_>>(),
+            ),
         ] {
             if group.is_empty() {
                 continue;
@@ -650,6 +657,84 @@ mod read_session_content_tests {
             serde_json::to_value(store.load_tasks().unwrap()).unwrap()
         );
         assert_eq!(before_file, std::fs::read(&session).unwrap());
+    }
+
+    /// SQLite 系来源经命令层直通核心读取入口：指针列留空，读取器按配置路径定位。
+    #[test]
+    fn reads_sqlite_source_tasks_through_the_command_chain() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let db = temp.path().join("main.sqlite");
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE chat_sessions (session_id TEXT PRIMARY KEY, title TEXT NOT NULL);
+             CREATE TABLE chat_session_messages (
+               session_id TEXT NOT NULL,
+               message_id TEXT NOT NULL,
+               sequence INTEGER NOT NULL,
+               payload_json TEXT NOT NULL,
+               PRIMARY KEY (session_id, message_id));",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO chat_sessions (session_id, title) VALUES ('ses-cmd', '命令层合成会话')",
+            [],
+        )
+        .unwrap();
+        for (id, seq, payload) in [
+            (
+                "m1",
+                1,
+                r#"{"id":"m1","role":"user","text":"命令层问题","timestamp":1}"#,
+            ),
+            (
+                "m2",
+                2,
+                r#"{"id":"m2","role":"assistant","text":"命令层回答","timestamp":2}"#,
+            ),
+        ] {
+            conn.execute(
+                "INSERT INTO chat_session_messages (session_id, message_id, sequence, payload_json) \
+                 VALUES ('ses-cmd', ?1, ?2, ?3)",
+                rusqlite::params![id, seq, payload],
+            )
+            .unwrap();
+        }
+        drop(conn);
+        let before_bytes = std::fs::read(&db).unwrap();
+
+        let mut task = TaskSnapshot::new("qoder", "ses-cmd");
+        task.title = "命令层合成会话".to_owned();
+        task.refresh_fingerprint();
+        let store = store_with(&[task]);
+        std::env::set_var("PERCH_QODER_DB", &db);
+
+        let outcome = read_session_content_impl(&store, "qoder:ses-cmd").unwrap();
+
+        std::env::remove_var("PERCH_QODER_DB");
+        let TranscriptOutcome::Ready {
+            messages,
+            session_truncated,
+        } = outcome
+        else {
+            panic!("期望 Ready，实际：{outcome:?}");
+        };
+        assert!(!session_truncated);
+        let rendered: Vec<(TranscriptRole, &str)> = messages
+            .iter()
+            .map(|message| (message.role, message.text.as_str()))
+            .collect();
+        assert_eq!(
+            rendered,
+            vec![
+                (TranscriptRole::User, "命令层问题"),
+                (TranscriptRole::Assistant, "命令层回答"),
+            ]
+        );
+        assert_eq!(
+            before_bytes,
+            std::fs::read(&db).unwrap(),
+            "读取前后源库字节必须一致"
+        );
     }
 }
 

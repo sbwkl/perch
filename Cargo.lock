@@ -2218,6 +2218,7 @@ name = "perch"
 version = "0.1.0"
 dependencies = [
  "perch-core",
+ "rusqlite",
  "serde",
  "serde_json",
  "tauri",
