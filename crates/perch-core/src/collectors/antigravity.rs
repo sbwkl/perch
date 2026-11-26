@@ -74,6 +74,7 @@ impl AntigravityCollector {
             };
             let mut entry = parse_transcript(path, &mut warnings);
             entry.agent_kind = (*agent).to_owned();
+            entry.path = Some(path.to_path_buf());
             if let Some(item) = summary.get(&conv) {
                 // summaries 的标题/项目是权威来源，覆盖转录推导值。
                 if item.title.is_some() {
@@ -105,6 +106,11 @@ impl AntigravityCollector {
         let mut tasks: Vec<TaskSnapshot> = Vec::new();
         for (conv, entry) in sessions {
             let mut task = TaskSnapshot::new(SOURCE_ANTIGRAVITY, &conv);
+            // 可重建的源文件定位指针：对话正文按需读取时据此定位转录。
+            task.source_path = entry
+                .path
+                .as_ref()
+                .map(|path| path.to_string_lossy().into_owned());
             task.title = match entry
                 .title
                 .as_deref()
@@ -239,6 +245,8 @@ struct SessionEntry {
     updated_at: Option<f64>,
     model: Option<String>,
     agent_kind: String,
+    /// 去重后胜出的转录文件路径，作为正文读取的源文件指针。
+    path: Option<PathBuf>,
 }
 
 fn parse_transcript(path: &Path, warnings: &mut Vec<String>) -> SessionEntry {
@@ -250,6 +258,7 @@ fn parse_transcript(path: &Path, warnings: &mut Vec<String>) -> SessionEntry {
         updated_at: None,
         model: None,
         agent_kind: "unknown".to_owned(),
+        path: None,
     };
     let text = match std::fs::read_to_string(path) {
         Ok(text) => text,
