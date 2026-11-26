@@ -660,7 +660,9 @@ fn qoder_transcript_clips_single_message_and_keeps_recent_session_tail() {
             "q-caps",
             &format!("m{index}"),
             index,
-            &format!(r#"{{"id":"m{index}","role":"assistant","text":"{text}","timestamp":{index}}}"#),
+            &format!(
+                r#"{{"id":"m{index}","role":"assistant","text":"{text}","timestamp":{index}}}"#
+            ),
         );
     }
     // 单条超限：12,000 个 CJK 字符（按字符截到 8,000，而非按字节）。
@@ -669,7 +671,10 @@ fn qoder_transcript_clips_single_message_and_keeps_recent_session_tail() {
         "q-caps",
         "m-long",
         31,
-        &format!(r#"{{"id":"m-long","role":"user","text":"{}","timestamp":31}}"#, "乙".repeat(12_000)),
+        &format!(
+            r#"{{"id":"m-long","role":"user","text":"{}","timestamp":31}}"#,
+            "乙".repeat(12_000)
+        ),
     );
     drop(conn);
     let before_files = dir_file_names(temp.path());
@@ -713,19 +718,61 @@ fn opencode_family_reads_shared_schema_identically_for_all_three_sources() {
     insert_oc_session(&conn, "ses-shared");
     // 用户消息：synthetic 注入块与 file 附件块不渲染。
     insert_oc_message(&conn, "ses-shared", "m1", 100, "user");
-    insert_oc_part(&conn, "m1", "p1", 100, r#"{"type":"text","synthetic":true,"text":"环境上下文"}"#);
-    insert_oc_part(&conn, "m1", "p1b", 101, r#"{"type":"file","mime":"image/png","filename":"a.png"}"#);
-    insert_oc_part(&conn, "m1", "p1c", 102, r#"{"type":"text","text":"第一个问题"}"#);
+    insert_oc_part(
+        &conn,
+        "m1",
+        "p1",
+        100,
+        r#"{"type":"text","synthetic":true,"text":"环境上下文"}"#,
+    );
+    insert_oc_part(
+        &conn,
+        "m1",
+        "p1b",
+        101,
+        r#"{"type":"file","mime":"image/png","filename":"a.png"}"#,
+    );
+    insert_oc_part(
+        &conn,
+        "m1",
+        "p1c",
+        102,
+        r#"{"type":"text","text":"第一个问题"}"#,
+    );
     // 助手消息：step-start/reasoning 跳过；text → 工具 ×2 → text。
     insert_oc_message(&conn, "ses-shared", "m2", 110, "assistant");
     insert_oc_part(&conn, "m2", "p2a", 110, r#"{"type":"step-start"}"#);
-    insert_oc_part(&conn, "m2", "p2b", 111, r#"{"type":"reasoning","text":"思考不渲染"}"#);
-    insert_oc_part(&conn, "m2", "p2c", 112, r#"{"type":"text","text":"开始排查"}"#);
+    insert_oc_part(
+        &conn,
+        "m2",
+        "p2b",
+        111,
+        r#"{"type":"reasoning","text":"思考不渲染"}"#,
+    );
+    insert_oc_part(
+        &conn,
+        "m2",
+        "p2c",
+        112,
+        r#"{"type":"text","text":"开始排查"}"#,
+    );
     insert_oc_part(&conn, "m2", "p2d", 113, r#"{"type":"tool","tool":"read"}"#);
     insert_oc_part(&conn, "m2", "p2e", 114, r#"{"type":"tool","tool":"grep"}"#);
-    insert_oc_part(&conn, "m2", "p2f", 115, r#"{"type":"text","text":"定位到了"}"#);
+    insert_oc_part(
+        &conn,
+        "m2",
+        "p2f",
+        115,
+        r#"{"type":"text","text":"定位到了"}"#,
+    );
     insert_oc_message(&conn, "ses-shared", "m3", 120, "user");
-    insert_oc_part(&conn, "m3", "p3a", 120, r#"{"type":"text","text":"修一下"}"#);
+    insert_oc_part(
+        &conn,
+        "m3",
+        "p3a",
+        120,
+        r#"{"type":"text","text":"修一下"}"#,
+    );
     // 纯工具回合：三个工具块，无文本。
     insert_oc_message(&conn, "ses-shared", "m4", 130, "assistant");
     insert_oc_part(&conn, "m4", "p4a", 130, r#"{"type":"tool","tool":"edit"}"#);
@@ -871,7 +918,10 @@ fn opencode_family_distinguishes_empty_missing_and_db_absent() {
         panic!("期望 Error，实际：{absent:?}");
     };
     assert!(reason.contains("未找到Kilo数据库"), "{reason}");
-    assert!(reason.contains(&absent_db.to_string_lossy().as_ref()), "{reason}");
+    assert!(
+        reason.contains(absent_db.to_string_lossy().as_ref()),
+        "{reason}"
+    );
     std::env::remove_var("PERCH_KILO_DB");
 }
 
@@ -886,9 +936,21 @@ fn opencode_family_wal_db_stays_byte_identical_with_live_writer() {
     conn.execute_batch("PRAGMA journal_mode=WAL;").unwrap();
     insert_oc_session(&conn, "ses-wal");
     insert_oc_message(&conn, "ses-wal", "m1", 100, "user");
-    insert_oc_part(&conn, "m1", "p1", 100, r#"{"type":"text","text":"WAL 会话提问"}"#);
+    insert_oc_part(
+        &conn,
+        "m1",
+        "p1",
+        100,
+        r#"{"type":"text","text":"WAL 会话提问"}"#,
+    );
     insert_oc_message(&conn, "ses-wal", "m2", 110, "assistant");
-    insert_oc_part(&conn, "m2", "p2", 110, r#"{"type":"text","text":"WAL 会话回答"}"#);
+    insert_oc_part(
+        &conn,
+        "m2",
+        "p2",
+        110,
+        r#"{"type":"text","text":"WAL 会话回答"}"#,
+    );
     // 写连接保持打开（-shm/-wal 存在，数据可能未 checkpoint），模拟应用运行中。
     let before_files = dir_file_names(temp.path());
     assert!(
@@ -929,7 +991,13 @@ fn opencode_family_skips_broken_payloads_and_keeps_the_rest() {
     let conn = create_opencode_fixture(&db);
     insert_oc_session(&conn, "ses-broken");
     insert_oc_message(&conn, "ses-broken", "m1", 100, "user");
-    insert_oc_part(&conn, "m1", "p1", 100, r#"{"type":"text","text":"损坏行之前"}"#);
+    insert_oc_part(
+        &conn,
+        "m1",
+        "p1",
+        100,
+        r#"{"type":"text","text":"损坏行之前"}"#,
+    );
     // 消息 data 损坏：整条消息无法判角色，其 part 一并跳过。
     conn.execute(
         "INSERT INTO message (id, session_id, time_created, time_updated, data) \
@@ -937,11 +1005,23 @@ fn opencode_family_skips_broken_payloads_and_keeps_the_rest() {
         [],
     )
     .unwrap();
-    insert_oc_part(&conn, "m2", "p2", 110, r#"{"type":"text","text":"不该出现"}"#);
+    insert_oc_part(
+        &conn,
+        "m2",
+        "p2",
+        110,
+        r#"{"type":"text","text":"不该出现"}"#,
+    );
     // part data 损坏：跳过该块，其余照常。
     insert_oc_part(&conn, "m3", "p3-broken", 120, "{\"type\":");
     insert_oc_message(&conn, "ses-broken", "m3", 120, "assistant");
-    insert_oc_part(&conn, "m3", "p3", 121, r#"{"type":"text","text":"损坏行之后"}"#);
+    insert_oc_part(
+        &conn,
+        "m3",
+        "p3",
+        121,
+        r#"{"type":"text","text":"损坏行之后"}"#,
+    );
     drop(conn);
     let before_files = dir_file_names(temp.path());
     let before_bytes = fs::read(&db).unwrap();
@@ -967,6 +1047,47 @@ fn opencode_family_skips_broken_payloads_and_keeps_the_rest() {
     );
     assert_db_untouched(&db, &before_files, &before_bytes);
     std::env::remove_var("PERCH_KILO_DB");
+}
+
+#[test]
+fn sqlite_sources_report_missing_message_tables() {
+    let _guard = lock_sqlite_fixtures();
+    // Qoder：只有会话表没有消息表。
+    let temp = TempDir::new().unwrap();
+    let db = temp.path().join("main.sqlite");
+    let conn = rusqlite::Connection::open(&db).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE chat_sessions (session_id TEXT PRIMARY KEY, title TEXT NOT NULL);",
+    )
+    .unwrap();
+    insert_qoder_session(&conn, "q-notable");
+    drop(conn);
+    std::env::set_var("PERCH_QODER_DB", &db);
+    let outcome = read_transcript(&qoder_task("q-notable"));
+    let TranscriptOutcome::Error { reason } = outcome else {
+        panic!("期望 Error，实际：{outcome:?}");
+    };
+    assert!(reason.contains("缺少消息表"), "{reason}");
+    std::env::remove_var("PERCH_QODER_DB");
+
+    // OpenCode 系：只有 session 表，message/part/session_message 全缺。
+    let temp2 = TempDir::new().unwrap();
+    let db2 = temp2.path().join("opencode.db");
+    let conn2 = rusqlite::Connection::open(&db2).unwrap();
+    conn2
+        .execute_batch("CREATE TABLE session (id TEXT PRIMARY KEY, title TEXT NOT NULL);")
+        .unwrap();
+    insert_oc_session(&conn2, "ses-notable");
+    drop(conn2);
+    std::env::set_var("PERCH_CODEARTS_DB", &db2);
+    let mut task = TaskSnapshot::new(SOURCE_CODEARTS, "ses-notable");
+    task.title = "合成会话".to_owned();
+    let outcome = read_transcript(&task);
+    let TranscriptOutcome::Error { reason } = outcome else {
+        panic!("期望 Error，实际：{outcome:?}");
+    };
+    assert!(reason.contains("CodeArts 数据库缺少消息表"), "{reason}");
+    std::env::remove_var("PERCH_CODEARTS_DB");
 }
 
 /// 旧库没有 message/part 表时回退 session_message（data 内嵌 parts）。
@@ -1001,7 +1122,12 @@ fn opencode_family_falls_back_to_legacy_session_message_table() {
             110,
             r#"{"role":"assistant","parts":[{"type":"tool","tool":"read"},{"type":"text","text":"旧库回答"}]}"#,
         ),
-        ("s3", "assistant", 120, r#"{"role":"assistant","text":"纯文本旧格式"}"#),
+        (
+            "s3",
+            "assistant",
+            120,
+            r#"{"role":"assistant","text":"纯文本旧格式"}"#,
+        ),
     ] {
         conn.execute(
             "INSERT INTO session_message (id, session_id, type, time_created, time_updated, data) \

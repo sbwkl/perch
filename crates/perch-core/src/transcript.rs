@@ -156,8 +156,11 @@ fn read_qoder_transcript(task: &TaskSnapshot) -> TranscriptOutcome {
         Ok(conn) => conn,
         Err(outcome) => return outcome,
     };
-    if source_session_exists(&conn, "SELECT 1 FROM chat_sessions WHERE session_id = ?1", &task.source_id)
-        == Some(false)
+    if source_session_exists(
+        &conn,
+        "SELECT 1 FROM chat_sessions WHERE session_id = ?1",
+        &task.source_id,
+    ) == Some(false)
     {
         return TranscriptOutcome::error(format!("会话不存在：{}", task.source_id));
     }
@@ -256,7 +259,8 @@ impl FoldState {
     }
 
     /// 收尾：冲刷剩余工具计数，空会话给出错误；否则产出正序消息。
-    fn finish(mut self) -> TranscriptOutcome {        if self.pending_tools > 0 {
+    fn finish(mut self) -> TranscriptOutcome {
+        if self.pending_tools > 0 {
             let count = self.pending_tools;
             self.pending_tools = 0;
             self.push_message(tool_call_message(count));
@@ -272,10 +276,7 @@ impl FoldState {
 }
 
 enum TranscriptEvent {
-    Text {
-        role: TranscriptRole,
-        text: String,
-    },
+    Text { role: TranscriptRole, text: String },
     Tools(usize),
 }
 
@@ -391,20 +392,26 @@ fn read_opencode_transcript(task: &TaskSnapshot) -> TranscriptOutcome {
 
     // 会话存在性与空会话区分：session_v2 优先（新版 OpenCode），Kilo / CodeArts 用 session。
     if table_exists(&conn, "session_v2").unwrap_or(false) {
-        if source_session_exists(&conn, "SELECT 1 FROM session_v2 WHERE id = ?1", &task.source_id)
-            == Some(false)
+        if source_session_exists(
+            &conn,
+            "SELECT 1 FROM session_v2 WHERE id = ?1",
+            &task.source_id,
+        ) == Some(false)
         {
             return TranscriptOutcome::error(format!("会话不存在：{}", task.source_id));
         }
     } else if table_exists(&conn, "session").unwrap_or(false)
-        && source_session_exists(&conn, "SELECT 1 FROM session WHERE id = ?1", &task.source_id)
-            == Some(false)
+        && source_session_exists(
+            &conn,
+            "SELECT 1 FROM session WHERE id = ?1",
+            &task.source_id,
+        ) == Some(false)
     {
         return TranscriptOutcome::error(format!("会话不存在：{}", task.source_id));
     }
 
-    let has_message_part =
-        table_exists(&conn, "message").unwrap_or(false) && table_exists(&conn, "part").unwrap_or(false);
+    let has_message_part = table_exists(&conn, "message").unwrap_or(false)
+        && table_exists(&conn, "part").unwrap_or(false);
     if !has_message_part && !table_exists(&conn, "session_message").unwrap_or(false) {
         return TranscriptOutcome::error(format!("{label} 数据库缺少消息表"));
     }
@@ -430,7 +437,9 @@ fn read_opencode_transcript(task: &TaskSnapshot) -> TranscriptOutcome {
         } {
             let message_id: String = match row.get(0) {
                 Ok(value) => value,
-                Err(error) => return TranscriptOutcome::error(format!("读取会话消息失败：{error}")),
+                Err(error) => {
+                    return TranscriptOutcome::error(format!("读取会话消息失败：{error}"))
+                }
             };
             if last_message_id.as_deref() != Some(message_id.as_str()) {
                 let message_data: String = match row.get(1) {
@@ -449,7 +458,9 @@ fn read_opencode_transcript(task: &TaskSnapshot) -> TranscriptOutcome {
             };
             let part_data: String = match row.get(2) {
                 Ok(value) => value,
-                Err(error) => return TranscriptOutcome::error(format!("读取会话消息失败：{error}")),
+                Err(error) => {
+                    return TranscriptOutcome::error(format!("读取会话消息失败：{error}"))
+                }
             };
             // 损坏的 part JSON 跳过并继续，不整屏失败。
             let Ok(value) = serde_json::from_str::<Value>(&part_data) else {
@@ -479,11 +490,15 @@ fn read_opencode_transcript(task: &TaskSnapshot) -> TranscriptOutcome {
         } {
             let row_type: Option<String> = match row.get(0) {
                 Ok(value) => value,
-                Err(error) => return TranscriptOutcome::error(format!("读取会话消息失败：{error}")),
+                Err(error) => {
+                    return TranscriptOutcome::error(format!("读取会话消息失败：{error}"))
+                }
             };
             let data: String = match row.get(1) {
                 Ok(value) => value,
-                Err(error) => return TranscriptOutcome::error(format!("读取会话消息失败：{error}")),
+                Err(error) => {
+                    return TranscriptOutcome::error(format!("读取会话消息失败：{error}"))
+                }
             };
             // 损坏的消息 JSON 跳过并继续，不整屏失败。
             let Ok(value) = serde_json::from_str::<Value>(&data) else {
@@ -525,7 +540,11 @@ enum OpenCodePart {
 fn opencode_part(value: &Value) -> Option<OpenCodePart> {
     match value.get("type").and_then(Value::as_str) {
         Some("text") => {
-            if value.get("synthetic").and_then(Value::as_bool).unwrap_or(false) {
+            if value
+                .get("synthetic")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+            {
                 return None;
             }
             let raw = value.get("text").and_then(Value::as_str)?;
