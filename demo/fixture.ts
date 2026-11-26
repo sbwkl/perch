@@ -585,13 +585,18 @@ if (STRESS_COUNT > 0) {
   }
 }
 
-function buildWorkspaces(excludeTitle: string | null = null): WorkspaceGroup[] {
+function buildWorkspaces(
+  excludeTitle: string | null = null,
+  demoteTitle: string | null = null,
+): WorkspaceGroup[] {
   return WORKSPACES.map((workspace) => {
     const tasks = TASKS.filter(
       (task) =>
         task.workspace_key === workspace.path &&
         (!excludeTitle || task.title !== excludeTitle),
-    ).sort((left, right) => (right.updated_at ?? 0) - (left.updated_at ?? 0));
+    )
+      .map((task) => (demoteTitle && task.title === demoteTitle ? { ...task, is_recent: false } : task))
+      .sort((left, right) => (right.updated_at ?? 0) - (left.updated_at ?? 0));
     return {
       key: workspace.path,
       name: workspace.name,
@@ -642,11 +647,20 @@ function buildSources(tasks: TaskView[]): SourceView[] {
   }));
 }
 
-export function demoPayload(options: { excludeTitle?: string | null } = {}): BootstrapPayload {
+export function demoPayload(
+  options: { excludeTitle?: string | null; demoteTitle?: string | null } = {},
+): BootstrapPayload {
   // excludeTitle 仅供 T8 驱动（?vanish=<标题>）：刷新后任务从快照中消失。
+  // demoteTitle 仅供 T8 驱动（?filterout=<标题>）：任务仍在快照中，但被移出
+  // 「最近」视图（is_recent 翻转），验证「被筛出当前筛选列表 → 关闭」。
   const excludeTitle = options.excludeTitle ?? null;
-  const tasks = excludeTitle ? TASKS.filter((task) => task.title !== excludeTitle) : TASKS;
-  const workspaces = buildWorkspaces(excludeTitle);
+  const demoteTitle = options.demoteTitle ?? null;
+  const demote = (task: TaskView): TaskView =>
+    demoteTitle && task.title === demoteTitle ? { ...task, is_recent: false } : task;
+  const tasks = (excludeTitle ? TASKS.filter((task) => task.title !== excludeTitle) : TASKS).map(
+    demote,
+  );
+  const workspaces = buildWorkspaces(excludeTitle, demoteTitle);
   const visible = tasks.filter((task) => !task.source_archived);
   return {
     generated_at: NOW,

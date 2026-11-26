@@ -115,7 +115,9 @@
   let searchLimit = $state(50);
   // 对话面板（#27）：按需读取、只在内存中；打开时替换第 2、3 列，侧栏保持可交互。
   // transcriptKey 是唯一开关；读取 Err 与 Outcome error 统一为面板内一行原因。
-  type TranscriptPhase = "loading" | "ready";
+  // 状态机对齐 #24 决策的 loading / ready / error；idle 无真实用途
+  // （面板未打开时不渲染状态，复用 loading 作重置值），不引入。
+  type TranscriptPhase = "loading" | "ready" | "error";
   const TRANSCRIPT_PAGE_SIZE = 50;
   let transcriptKey = $state<string | null>(null);
   let transcriptPhase = $state<TranscriptPhase>("loading");
@@ -307,6 +309,11 @@
     flatTasks.find((task) => task.key === selectedKey) ?? null,
   );
 
+  // 当前筛选列表（T8 判定口径）：view / workspace / source 三重筛选后的任务，
+  // 复用 tasksMatching，不含 flatTasks 对选中任务的兜底纳入 ——
+  // 刷新后任务被筛出当前列表即视为「不再出现」，对话面板随之关闭。
+  const filteredListTasks = $derived(tasksMatching(view, workspaceFilter, sourceFilter));
+
   const continueHint = $derived<ContinueHint | null>(selected?.continue_hint ?? null);
 
   // The verb carries the channel: "打开" means the session is located,
@@ -380,7 +387,7 @@
     transcriptMessages.length - transcriptVisible.length,
   );
   const transcriptReason = $derived(
-    transcriptPhase === "ready" && transcriptOutcome?.status === "error"
+    transcriptPhase === "error" && transcriptOutcome?.status === "error"
       ? transcriptOutcome.reason
       : "",
   );
@@ -401,7 +408,8 @@
       const outcome = await invoke<TranscriptOutcome>("read_session_content", { taskKey: key });
       if (seq !== transcriptSeq || transcriptKey !== key) return;
       transcriptOutcome = outcome;
-      transcriptPhase = "ready";
+      // Outcome 的 error 与读取 Err 同权：显式进入 error 态渲染面板内原因。
+      transcriptPhase = outcome.status === "ready" ? "ready" : "error";
       // 首屏定位最新消息（正序渲染，最新在底部）。
       void tick().then(() => {
         const el = transcriptMessagesEl;
@@ -414,7 +422,7 @@
         status: "error",
         reason: error instanceof Error ? error.message : String(error),
       };
-      transcriptPhase = "ready";
+      transcriptPhase = "error";
     }
   }
 
@@ -571,7 +579,7 @@
         selectedKey = null;
       }
       // 刷新后任务不在当前筛选列表：关闭对话并清除选中（T8，与列表选中规则一致）。
-      if (transcriptKey && !flatTasks.some((task) => task.key === transcriptKey)) {
+      if (transcriptKey && !filteredListTasks.some((task) => task.key === transcriptKey)) {
         closeTranscript();
         if (selectedKey) selectedKey = null;
       }
@@ -980,8 +988,8 @@
           return;
         }
         if (disposed) return;
-        // 实时刷新后任务不在当前列表：关闭对话（T8）；选中沿用既有规则。
-        if (transcriptKey && !flatTasks.some((task) => task.key === transcriptKey)) {
+        // 实时刷新后任务不在当前筛选列表：关闭对话（T8）；选中沿用既有规则。
+        if (transcriptKey && !filteredListTasks.some((task) => task.key === transcriptKey)) {
           closeTranscript();
         }
         if (!reportView) return;

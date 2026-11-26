@@ -21,12 +21,24 @@ if (typeof window !== "undefined") {
 // 用于驱动「刷新后任务不在当前列表 → 关闭对话并清除选中」（T8）。
 const VANISH_PARAM = new URLSearchParams(location.search).get("vanish") ?? "";
 
+// ?filterout=<标题>：第二次刷新后任务仍在快照中，但被移出「最近」视图，
+// 用于驱动「任务被筛出当前筛选列表但仍在全量快照 → 关闭对话」（T8）。
+const FILTEROUT_PARAM = new URLSearchParams(location.search).get("filterout") ?? "";
+
 function currentVanishTitle(): string | null {
   return demoState.refreshCount >= 2 && VANISH_PARAM ? VANISH_PARAM : null;
 }
 
+function currentFilterOutTitle(): string | null {
+  return demoState.refreshCount >= 2 && FILTEROUT_PARAM ? FILTEROUT_PARAM : null;
+}
+
+function demoOptions(): { excludeTitle: string | null; demoteTitle: string | null } {
+  return { excludeTitle: currentVanishTitle(), demoteTitle: currentFilterOutTitle() };
+}
+
 function findDemoTask(taskKey: string) {
-  const payload = demoPayload({ excludeTitle: currentVanishTitle() });
+  const payload = demoPayload(demoOptions());
   return (
     payload.workspaces
       .flatMap((group) => group.tasks)
@@ -42,13 +54,13 @@ export async function invoke<T>(
 
   switch (command) {
     case "bootstrap":
-      return demoPayload({ excludeTitle: currentVanishTitle() }) as T;
+      return demoPayload(demoOptions()) as T;
     case "open_usage_report":
       return { path: "/demo-usage-report.html" } as T;
     case "refresh_sources": {
       demoState.refreshCount += 1;
       const started = Date.now() / 1000;
-      const payload = demoPayload({ excludeTitle: currentVanishTitle() });
+      const payload = demoPayload(demoOptions());
       const report: SyncReport = {
         started_at: started,
         finished_at: started + 0.012,
@@ -71,7 +83,7 @@ export async function invoke<T>(
       const source = args?.source ? String(args.source) : null;
       const workspace = args?.workspace ? String(args.workspace) : null;
       const terms = query.split(/\s+/).filter(Boolean);
-      const payload = demoPayload({ excludeTitle: currentVanishTitle() });
+      const payload = demoPayload(demoOptions());
       const matches: Array<{
         task_key: string;
         score: number;
