@@ -33,7 +33,7 @@ Perch 的详情面板呈现会话元数据；用户在任务行点击对话图�
 - T1：When 用户在任务行点击对话图标, the system shall 选中该任务并在第 2、3 列展示该会话的对话记录；侧边栏保持可交互，任务列表与详情面板在返回后恢复。
 - T2：When 任务所属来源为 Trae CN 或 CodeBuddy, the system shall 不渲染对话图标，也不在详情面板说明缺失原因。
 - T3：When 对话视图渲染, the system shall 按时间正序呈现 user 与 assistant 的纯文本消息；只含工具调用的轮次折叠为一行「工具调用 N 次」且不展开内容；不渲染 tool 输入/输出、思考过程、附件或系统注入包装。
-- T4：When 会话消息数超过 50, the system shall 默认只加载最近 50 条，并提供「加载更早」每次追加 50 条；When 单条消息超过 8,000 字符, the system shall 截断并标注「已截断」；When 单会话累计正文超过 200,000 字符, the system shall 只保留最近部分并保持消息顺序。
+- T4：When 会话消息数超过 50, the system shall 默认只加载最近 50 条，并提供「加载更早」每次追加 50 条（该按钮位于消息列表第一行，只有滚到最上面时才可见；剩余为 0 时不在列表中渲染）；When 单条消息超过 8,000 字符, the system shall 截断并标注「已截断」；When 单会话累计正文超过 200,000 字符, the system shall 只保留最近部分并保持消息顺序。
 - T5：When 对话首次打开, the system shall 定位到最新一条消息；When 用户加载更早, the system shall 保持当前阅读位置，不强制跳到顶部或底部。
 - T6：When 用户点击「返回」或按 `Esc`, the system shall 关闭对话视图并回到打开前的列表与详情（该任务仍为选中态）。
 - T7：When 对话视图打开时用户切换任务视图、workspace 或来源筛选, the system shall 关闭对话视图并返回列表。

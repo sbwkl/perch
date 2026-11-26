@@ -1455,6 +1455,11 @@
       {:else if transcriptVisible.length === 0}
         <div class="transcript-state error">会话没有可显示的对话内容</div>
       {:else}
+        {#if transcriptEarlierCount > 0}
+          <button class="transcript-earlier" onclick={showEarlierMessages}>
+            加载更早（还有 {transcriptEarlierCount} 条）
+          </button>
+        {/if}
         {#each transcriptVisible as message, index (index)}
           <div class="transcript-msg" data-role={message.role}>
             <span class="transcript-text">{message.text}</span>
@@ -1463,12 +1468,6 @@
         {/each}
       {/if}
     </div>
-
-    {#if transcriptEarlierCount > 0}
-      <button class="transcript-earlier" onclick={showEarlierMessages}>
-        加载更早（还有 {transcriptEarlierCount} 条）
-      </button>
-    {/if}
   </section>
   {/if}
 
