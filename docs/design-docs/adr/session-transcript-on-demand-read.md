@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 | --- | --- |
-| 状态 | proposed（随 2026-11-26 变更实现） |
+| 状态 | accepted（已随 2026-11-26 变更实现并并入集成 `integration/ui-convergence-transcript`） |
 | 领域 | 读取范围、隐私边界、缓存最小化、对话视图 |
 | 当前事实源 | [session-transcript.md](../../product-specs/session-transcript.md)、`SECURITY.md`、`ARCHITECTURE.md` |
 | 修订 | 部分取代 [ADR：Claude 会话标题读取范围](claude-session-title-read-scope.md) 中「Claude 是唯一放宽读取范围的来源」的表述 |
@@ -32,7 +32,8 @@ Perch 此前把「除 Claude 标题派生外不读取消息正文」写成只读
 ## 后果
 
 - 「不读取正文」不再是全局不变量，改为「默认不读取；用户打开对话视图时按需、只读、内存内读取」。`SECURITY.md`、`ARCHITECTURE.md`、`core-beliefs.md`、`FAQ.md`、`README.md`、`SEARCH.md` 的对应表述必须同步修订，否则文档与实现冲突。
-- 新命令 `read_session_content` 进入窄命令清单；`SECURITY.md` / `ARCHITECTURE.md` 的命令数量与清单需一并更新（既有文档把命令数写成五个，已与六个的现状漂移）。
+- 新命令 `read_session_content` 进入窄命令清单；`SECURITY.md` / `ARCHITECTURE.md` 的命令数量与清单需一并更新
+  （现为七个注册命令：五个既有命令 + `read_session_content` + 保留的 `set_live_refresh`，前端不再调用后者）。
 - 会话正文可能含密钥或隐私内容；截图、issue、日志仍需脱敏。关闭视图即丢弃正文，不做「最近查看」缓存。
 - 单会话读取受 8,000 字符 / 条、200,000 字符 / 会话上限约束，超大会话只保留最近部分，可能看不到开头。
 - 源文件读取失败不视为来源扫描失败，只影响该次对话视图；不写入 `sync_state`、不改变来源状态。
