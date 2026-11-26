@@ -26,6 +26,9 @@ const SUITES = [
 // 本轮所有套件的 Chrome profile 都落在这个目录下：套件被 SIGKILL 时退出钩子跑不到，
 // 由这里在收尾时整目录回收。
 const tmpRoot = mkdtempSync(join(tmpdir(), "perch-cdp-run-"));
+// 中断时要能收拾的两样东西：自己起的 demo、正在跑的套件进程组。
+let demoProc = null;
+let currentChild = null;
 
 // 1421 的三种状态：demo 就绪 / 端口被别的进程占着 / 没有服务。
 async function demoState() {
@@ -46,12 +49,14 @@ async function ensureDemo() {
   }
   const proc = spawn("npm", ["run", "demo"], { stdio: "ignore", detached: true });
   proc.unref();
+  demoProc = proc; // 立即登记：启动等待期间被 Ctrl+C 也要能收拾
   const started = Date.now();
   while (Date.now() - started < 30_000) {
     if ((await demoState()) === "ready") return proc;
     await sleep(200);
   }
   await stopDemo(proc);
+  demoProc = null;
   throw new Error("demo 服务未在 30s 内就绪（npm run demo，端口 1421）");
 }
 
@@ -91,6 +96,7 @@ function runSuiteProcess(file) {
       detached: true,
       env: { ...process.env, PERCH_CDP_TMP: tmpRoot },
     });
+    currentChild = child;
     const timer = setTimeout(() => {
       try {
         process.kill(-child.pid, "SIGKILL");
@@ -100,20 +106,57 @@ function runSuiteProcess(file) {
     }, SUITE_TIMEOUT_MS);
     child.on("exit", (code, signal) => {
       clearTimeout(timer);
+      currentChild = null;
       resolve({ code, signal });
     });
     child.on("error", (error) => {
       clearTimeout(timer);
+      currentChild = null;
       console.error(`  套件启动失败：${error.message}`);
       resolve({ code: 1, signal: null });
     });
   });
 }
 
-const demo = await ensureDemo();
+// Ctrl+C / kill：默认行为只会终止 runner，套件（独立进程组）、它的 headless Chrome
+// 与自起的 demo 都会变成孤儿。这里按进程组收拾干净再以 130 退出。
+let shuttingDown = false;
+async function shutdown(code) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  if (currentChild) {
+    try {
+      process.kill(-currentChild.pid, "SIGTERM");
+    } catch {
+      // 已退出
+    }
+    for (let i = 0; i < 10 && currentChild; i += 1) await sleep(200);
+    if (currentChild) {
+      try {
+        process.kill(-currentChild.pid, "SIGKILL");
+      } catch {
+        // 已退出
+      }
+    }
+  }
+  if (demoProc) await stopDemo(demoProc);
+  rmSync(tmpRoot, { recursive: true, force: true });
+  process.exit(code);
+}
+
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.on(signal, () => {
+    console.log(`\n收到 ${signal}，收拾套件与 demo 后退出`);
+    void shutdown(130);
+  });
+}
+
 let failed = 0;
 try {
+  await ensureDemo();
   for (const suite of SUITES) {
+    // 中断已经开始收尾，别再起新套件，否则它的进程组会漏在 runner 之外。
+    if (shuttingDown) break;
     console.log(`\n== ${suite}`);
     const result = await runSuiteProcess(join(here, suite));
     if (result.code !== 0) {
@@ -124,7 +167,7 @@ try {
 } finally {
   // 任何路径退出前都收拾自己启动的 demo，别把 1421 留给下一个进程；
   // 再回收本轮 profile（含被超时杀掉、来不及自清的套件目录）。
-  if (demo) await stopDemo(demo);
+  if (demoProc) await stopDemo(demoProc);
   rmSync(tmpRoot, { recursive: true, force: true });
 }
 console.log(
