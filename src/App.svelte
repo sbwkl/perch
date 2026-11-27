@@ -537,11 +537,6 @@
     listLimit = TASK_PAGE_SIZE;
   });
 
-  const selectedUsage = $derived(selected?.usage ?? null);
-  const selectedToken = $derived(selectedUsage?.token ?? null);
-  const selectedCredits = $derived(selectedUsage?.credits ?? null);
-  const selectedEst = $derived(selectedUsage?.est ?? null);
-
   // Sources do not share a unit: Qoder reports credits plus estimated tokens,
   // while the CLI agents report token truth. A mixed summary would be
   // meaningless, so only show totals once a single source is selected.
@@ -862,26 +857,6 @@
     return SOURCE_COLORS[source] ?? "#8e8e93";
   }
 
-  // Picks the label colour with the better WCAG contrast against the source
-  // brand fill. Almost every brand is light enough for the dark ink — Codex
-  // white, Cline grey, Kilo yellow, but also Claude's brown and CodeArts'
-  // magenta; only the near-black OpenCode fill and MiniMax's dark magenta take
-  // white. Every current source clears 4.5:1 this way, so the brand colour
-  // itself never has to be darkened.
-  function contrastText(hex: string): string {
-    const value = hex.replace("#", "");
-    const channels = [0, 2, 4].map((offset) => {
-      const channel = parseInt(value.slice(offset, offset + 2), 16) / 255;
-      return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
-    });
-    const luminance = 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
-    const dark = 0.0104; // #1d1d1f
-    const light = 1;
-    return (light + 0.05) / (luminance + 0.05) > (luminance + 0.05) / (dark + 0.05)
-      ? "#ffffff"
-      : "#1d1d1f";
-  }
-
   function statusLabel(task: TaskView): string {
     return STATUS_LABELS[task.status] ?? task.status;
   }
@@ -942,10 +917,6 @@
 
   function formatCredits(value: number): string {
     return value.toLocaleString("zh-CN", { maximumFractionDigits: 2 });
-  }
-
-  function joinModels(models: string[]): string {
-    return models.length > 0 ? models.join(" · ") : "模型未知";
   }
 
   function handleKeydown(event: KeyboardEvent) {
@@ -1101,18 +1072,20 @@
       </span>
       <span class="status {statusClass(task)}">{statusLabel(task)}</span>
     </button>
-    {#if transcriptSupported(task.source)}
-      <button
-        class="task-transcript"
-        aria-label="查看对话"
-        title="查看对话"
-        onclick={() => openTranscript(task.key)}
-      >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d={ICONS.transcript} />
-        </svg>
-      </button>
-    {/if}
+    <span class="task-transcript-slot">
+      {#if transcriptSupported(task.source)}
+        <button
+          class="task-transcript"
+          aria-label="查看对话"
+          title="查看对话"
+          onclick={() => openTranscript(task.key)}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d={ICONS.transcript} />
+          </svg>
+        </button>
+      {/if}
+    </span>
   </div>
 {/snippet}
 
@@ -1426,7 +1399,6 @@
         {#if continueError}<span class="continue-note error">{continueError}</span>{/if}
         <button
           class="transcript-continue"
-          style={`--source:${sourceColor(transcriptTask.source)};--on-source:${contrastText(sourceColor(transcriptTask.source))}`}
           onclick={() => void continueTask()}
           disabled={continuing}
         >
@@ -1494,7 +1466,6 @@
         <div class="continue-row">
           <button
             class="continue-button"
-            style={`--source:${sourceColor(selected.source)};--on-source:${contrastText(sourceColor(selected.source))}`}
             onclick={() => void continueTask()}
             disabled={continuing}
           >
@@ -1518,72 +1489,6 @@
           </dl>
         </section>
 
-        {#if payload?.usage}
-          <section class="detail-block usage-block">
-            <h3>用量 <span class="subtle">usage-ledger · 只读</span></h3>
-            {#if selectedUsage}
-              {#if selectedToken}
-                <div class="usage-track">
-                  <div class="usage-track-head">
-                    <span class="usage-track-label">token 真值</span>
-                    <span class="usage-track-total">{formatTokens(selectedToken.total)}</span>
-                  </div>
-                  <div class="usage-grid">
-                    <span>输入</span><strong>{formatTokens(selectedToken.input)}</strong>
-                    <span>输出</span><strong>{formatTokens(selectedToken.output)}</strong>
-                    {#if selectedToken.cache_read > 0}
-                      <span>缓存读</span><strong>{formatTokens(selectedToken.cache_read)}</strong>
-                    {/if}
-                    {#if selectedToken.cache_write > 0}
-                      <span>缓存写</span><strong>{formatTokens(selectedToken.cache_write)}</strong>
-                    {/if}
-                    {#if selectedToken.reasoning > 0}
-                      <span>推理</span><strong>{formatTokens(selectedToken.reasoning)}</strong>
-                    {/if}
-                  </div>
-                  <p class="usage-meta">
-                    {joinModels(selectedToken.models)} · {selectedToken.turns} 轮
-                    · 最近 {selectedToken.last_day ?? "—"}
-                  </p>
-                </div>
-              {/if}
-              {#if selectedCredits}
-                <div class="usage-track">
-                  <div class="usage-track-head">
-                    <span class="usage-track-label credits">credits · 服务端计费</span>
-                    <span class="usage-track-total">{formatCredits(selectedCredits.billable)}</span>
-                  </div>
-                  <p class="usage-meta">
-                    {selectedCredits.billable_requests} 个计费请求
-                    {#if selectedCredits.free > 0}
-                      · 免费 {formatCredits(selectedCredits.free)} credits / {selectedCredits.free_requests} 请求
-                    {/if}
-                    · 最近 {selectedCredits.last_day ?? "—"}
-                  </p>
-                </div>
-              {/if}
-              {#if selectedEst}
-                <div class="usage-track">
-                  <div class="usage-track-head">
-                    <span class="usage-track-label est">est 估算</span>
-                    <span class="usage-track-total">{formatTokens(selectedEst.total)}</span>
-                  </div>
-                  <div class="usage-grid">
-                    <span>输入</span><strong>{formatTokens(selectedEst.input)}</strong>
-                    <span>输出</span><strong>{formatTokens(selectedEst.output)}</strong>
-                  </div>
-                  <p class="usage-meta">
-                    {selectedEst.source} · {selectedEst.requests} 请求
-                    · 最近 {selectedEst.last_day ?? "—"}
-                  </p>
-                </div>
-              {/if}
-            {:else}
-              <p class="usage-empty">usage-ledger 中没有该会话的用量记录。</p>
-            {/if}
-            <p class="usage-note">四轨口径不同：token / credits / est 永不相加。</p>
-          </section>
-        {/if}
 
         {#if selected.todos.length > 0}
           <section class="detail-block">
@@ -1606,7 +1511,6 @@
           </section>
         {/if}
 
-        <footer class="inspector-foot">Perch 只读取源元数据，不会修改任何 agent 数据。</footer>
       </div>
     {:else}
       <div class="inspector-empty">

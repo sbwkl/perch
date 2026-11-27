@@ -9,8 +9,9 @@
   --text-tertiary: #9a9aa0;
   --accent: #b96a35;
   --accent-soft: rgba(185, 106, 53, 0.12);
-  /* 侧栏三组选中态：柔色底 + 墨色成对出现，合成后 ≥ 4.5:1。 */
+  /* 侧栏三组选中态与统一按钮填充：柔色底 + 墨色成对出现，合成后 ≥ 4.5:1。 */
   --nav-active-ink: #8f4f24;
+  --action-fill: #8f4f24;
   --danger: #c0392b;
   --warn: #a46a12;
   --ok: #0f9f6e;
@@ -30,6 +31,7 @@
     --accent: #e0965c;
     --accent-soft: rgba(224, 150, 92, 0.16);
     --nav-active-ink: #e0965c;
+    --action-fill: #e0965c;
     --danger: #ff6b5e;
     --warn: #e0b252;
     --ok: #3ddc97;
@@ -803,8 +805,8 @@ kbd {
 }
 
 .transcript-actions .transcript-continue {
-  border-color: color-mix(in srgb, var(--source, var(--accent)) 45%, var(--border));
-  color: var(--source, var(--accent));
+  border-color: color-mix(in srgb, var(--action-fill) 45%, var(--border));
+  color: var(--action-fill);
 }
 
 .transcript-actions .transcript-continue:hover:not(:disabled) {
@@ -941,7 +943,7 @@ kbd {
   background: var(--accent-soft);
 }
 
-.task-transcript {
+.task-transcript-slot {
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -949,6 +951,14 @@ kbd {
   width: 26px;
   height: 26px;
   margin-top: 3px;
+}
+
+.task-transcript {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
   padding: 0;
   border: none;
   border-radius: 6px;
@@ -1187,27 +1197,15 @@ kbd {
   margin-top: 14px;
 }
 
-/* Only one control: the verb states the channel, the fill states the source.
-   The inset ring has to sit on the far side of the fill from the pane: on the
-   light pane a dark ring rescues white (Codex) and near-white (Cline) fills, on
-   the dark pane a light ring rescues the near-black OpenCode fill, whose own
-   luminance is only 1.02:1 against `--pane`. */
 .continue-button {
   padding: 6px 14px;
   border: none;
   border-radius: 7px;
-  background: var(--source, var(--accent));
-  color: var(--on-source, var(--bg));
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.14);
+  background: var(--action-fill);
+  color: var(--bg);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-}
-
-@media (prefers-color-scheme: dark) {
-  .continue-button {
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
-  }
 }
 
 .continue-button:hover:not(:disabled) {
@@ -1350,13 +1348,6 @@ kbd {
   color: var(--text-tertiary);
 }
 
-.usage-note {
-  margin: 9px 0 0;
-  font-size: 9.5px;
-  line-height: 1.5;
-  color: var(--text-tertiary);
-}
-
 .meta-grid {
   display: grid;
   grid-template-columns: 74px minmax(0, 1fr);
@@ -1442,13 +1433,6 @@ kbd {
   white-space: pre-wrap;
   word-break: break-all;
   user-select: text;
-}
-
-.inspector-foot {
-  margin-top: 24px;
-  font-size: 10px;
-  line-height: 1.5;
-  color: var(--text-tertiary);
 }
 
 .inspector-empty {

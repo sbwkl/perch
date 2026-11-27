@@ -21,6 +21,7 @@ const SUITES = [
   "t3-visual.mjs",
   "t8-filter-close.mjs",
   "t8-subsession-keep.mjs",
+  "u1-list-inspector-ux.mjs",
 ];
 
 // 本轮所有套件的 Chrome profile 都落在这个目录下：套件被 SIGKILL 时退出钩子跑不到，

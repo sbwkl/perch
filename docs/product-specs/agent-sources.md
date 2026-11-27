@@ -30,7 +30,7 @@ Perch 当前覆盖 11 个本地 AI 编码 Agent 来源，与 usage-ledger 的来
 
 - R1：When 某来源的本地数据目录存在, the system shall 扫描其会话并在任务列表展示，字段语义与既有来源一致（标题、项目、时间、状态）。Claude 标题按 JSONL `custom-title` → `custom-title.json` sidecar → JSONL `ai-title` → 首条候选用户消息派生标题 → `新会话` 重新计算；派生标题为单行并截断到 60 个字符，首条候选不可用或清洗后为空时回退 `新会话`。
 - R2：If 某来源的数据目录不存在或采集失败, then the system shall 标记来源状态并保留旧快照，不影响其他来源与其他功能；状态需在侧栏可读暴露，不只依赖颜色。
-- R3：When 用户对某来源的会话触发“继续工作”, the system shall 按该 Agent 的固定方式恢复会话；Qoder 会话在合法 session id 下使用 `qoder://chat/open?sessionId=<id>`、Codex 桌面 / 自动化会话在 UUID 形态的 session id 下使用 `codex://threads/<id>` 精确定位，其余来源（含 session id 不合法的 Qoder / 非 UUID 的 Codex）只激活对应 App，不启动终端或 CLI 恢复；详情面板只呈现一个继续工作按钮，不另设通道标签或说明段：按钮文案为「动词 + 来源名称」，能定位到具体会话的来源用 `打开 X`，只激活 App 的来源用 `激活 X`，动词必须与 Rust `plan_continue` 的决策分支一致（App 通道不得承诺定位具体会话）；若某来源的继续工作通道未知（`continue_hint` 缺失），按钮仍在，但动词取不承诺定位也不承诺激活的 `继续 X`，点击后失败原因由错误通道返回；按钮以该来源的品牌色填充，前景色按品牌色对比度自动选择，保证在浅色与深色面板上都可读；点击成功后不显示提示，失败显示危险色错误文本；URL 不得来自前端。
+- R3：When 用户对某来源的会话触发“继续工作”, the system shall 按该 Agent 的固定方式恢复会话；Qoder 会话在合法 session id 下使用 `qoder://chat/open?sessionId=<id>`、Codex 桌面 / 自动化会话在 UUID 形态的 session id 下使用 `codex://threads/<id>` 精确定位，其余来源（含 session id 不合法的 Qoder / 非 UUID 的 Codex）只激活对应 App，不启动终端或 CLI 恢复；详情面板只呈现一个继续工作按钮，不另设通道标签或说明段：按钮文案为「动词 + 来源名称」，能定位到具体会话的来源用 `打开 X`，只激活 App 的来源用 `激活 X`，动词必须与 Rust `plan_continue` 的决策分支一致（App 通道不得承诺定位具体会话）；若某来源的继续工作通道未知（`continue_hint` 缺失），按钮仍在，但动词取不承诺定位也不承诺激活的 `继续 X`，点击后失败原因由错误通道返回；按钮统一使用深色 / 浅色主题下均满足 WCAG AA ≥ 4.5:1 的动作填充色，不按来源变色；点击成功后不显示提示，失败显示危险色错误文本；URL 不得来自前端。
 - R4：When usage-ledger 报告包含某来源的用量, the system shall 将该来源计入 `PERCH_SOURCES` 用量子集。
 - R5：While 窗口可见, the system shall 每 3 秒检查 SQLite `data_version`，按不超过 15 秒的节流周期计算 JSONL / 日志目录签名；When 变化源经去抖 / 冷却 / 最长等待判定需要更新, the system shall 只重扫该来源；手动刷新期间后台 live scan 不争用 engine 锁。
 - R11：While 应用运行, the system shall 保持实时刷新常开，不提供暂停 / 恢复入口，也不显示扫描状态栏；根命令 `set_live_refresh` 保留为后端能力但前端不调用；来源行不显示触发方式或更新时间。
@@ -51,8 +51,9 @@ Perch 当前覆盖 11 个本地 AI 编码 Agent 来源，与 usage-ledger 的来
 - R21：When Codex 的子代理会话或侧聊会话被采集, the system shall 将其识别为产生它的主会话的子会话：默认不进入主列表，不计入来源 / workspace / 最近 / 更早计数，但仍保留在快照中、可被搜索，并在详情与搜索结果中标注「子会话」；子代理会话缺少正式标题时以代理昵称派生「子代理 · <昵称>」标题；用户自行 fork / 续接的普通 Codex 会话不受影响，仍按主任务展示与计数。
 - R22：When 用户点击侧边栏的任务视图、workspace 或来源项, the system shall 在组内单选：点击其它项切换，点击组内已选中项则取消该组选中（该组回到「全部」）；When 取消后将导致三组全部未选中, the system shall 保持该组原选中项不变；When 任意操作完成, the system shall 保证三组中至少一组、至多三组有选中项。任务组未选中 = 全部未归档任务，按最近活动倒序；smart list / workspace / 来源计数按全部未归档口径联动；报告视图不计入三组，进入时清空任务选中，返回时恢复原任务视图与筛选。选中项样式须为柔色底、加粗标签、强调色文字与计数，对比度 ≥ 4.5:1，并保留 `aria-pressed`。
 - R23：When 列表头渲染, the system shall 不显示扫描状态栏、扫描耗时、「用量可能已过期 / 用量快照 X」或「匹配 N 个会话」；选中某来源时只显示 token / credits / est 三个数值 pill；副标题只显示「N 个任务 · 快照 X」。
+- R24：When 任务列表混排有 / 无对话图标的来源, the system shall 为对话图标保留固定列宽，使状态胶囊右边界在所有来源一致；When 用户点击「激活 X」或「打开 X」, the system shall 使用统一中性按钮样式，文案与继续工作通道不变；When 会话详情渲染, the system shall 不显示 usage-ledger 用量区块或只读来源数据脚注。
 
-验证位置：R1–R5 见来源采集器 / probe / continue 测试与当前代码核对；R6–R7 见侧栏布局实机验证；R8–R23 见对应变更文档的 core / Tauri 测试、demo UI 验收与 `npm run check`，其中 R22 / R23 见 [三组选中收敛与会话对话视图](../exec-plans/completed/2026-11-26-ui-convergence-and-transcript-view.md)，R22 另见 [侧栏选中态回退柔色底与对话视图排版](../exec-plans/completed/2026-11-26-sidebar-selection-and-transcript-layout.md)；R3 / R12 的事件与提示一致性见 [代码审核修复](../exec-plans/completed/2026-11-23-code-review-fixes.md) 单测与实机验证。
+验证位置：R1–R5 见来源采集器 / probe / continue 测试与当前代码核对；R6–R7 见侧栏布局实机验证；R8–R23 见对应变更文档的 core / Tauri 测试、demo UI 验收与 `npm run check`，其中 R22 / R23 见 [三组选中收敛与会话对话视图](../exec-plans/completed/2026-11-26-ui-convergence-and-transcript-view.md)，R22 另见 [侧栏选中态回退柔色底与对话视图排版](../exec-plans/completed/2026-11-26-sidebar-selection-and-transcript-layout.md)；R24 见 [2026-11-27 列表状态对齐与详情精简](../exec-plans/active/2026-11-27-list-inspector-ux-fixes.md)；R3 / R12 的事件与提示一致性见 [代码审核修复](../exec-plans/completed/2026-11-23-code-review-fixes.md) 单测与实机验证。
 
 ## 5. 变更索引
 
