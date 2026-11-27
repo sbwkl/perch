@@ -4,7 +4,8 @@ import { runSuite, Suite, assert, assertEqual, contrast, EFFECTIVE_BG_HELPER } f
 const URL = "http://localhost:1421/?transcript=1";
 
 const rowExpr = (label) => `[...document.querySelectorAll('.flat-list .task-row')].find(r =>
-  r.querySelector('.task-meta')?.textContent?.includes(${JSON.stringify(label)})) ?? null`;
+  (r.querySelector('.task-title')?.textContent?.includes(${JSON.stringify(label)}) ||
+   r.querySelector('.task-meta')?.textContent?.includes(${JSON.stringify(label)}))) ?? null`;
 
 const selectTask = (page, label) => page.evaluate(`(() => {
   const row = ${rowExpr(label)};
@@ -78,30 +79,57 @@ async function run(page) {
 
   s.add("U1 继续工作按钮浅色 / 深色主题均满足 WCAG AA", async () => {
     for (const dark of [false, true]) {
+      await page.goto(URL);
       await page.setDark(dark);
       try {
-        await page.goto(URL);
-        await selectTask(page, "Claude Code");
-        const colors = await page.evaluate(`(() => {
+        await page.waitFor(`document.querySelectorAll('.flat-list .task-row').length > 0`);
+        await page.evaluate(`(() => {
+          const row = ${rowExpr("合成对话 · 分页长会话")};
+          row?.querySelector('.task-transcript')?.click();
+        })()`);
+        await page.waitFor("Boolean(document.querySelector('.transcript-continue'))");
+        const transcript = await page.evaluate(`(() => {
           ${EFFECTIVE_BG_HELPER}
-          const button = document.querySelector('.inspector .continue-button');
+          const button = document.querySelector('.transcript-continue');
           if (!button) return null;
           const cs = getComputedStyle(button);
           return {
             foreground: cs.color,
             background: effectiveBg(button),
+            inlineStyle: button.getAttribute('style'),
           };
         })()`);
-        assert(colors, `${dark ? "深色" : "浅色"}主题有继续工作按钮`);
-        const ratio = contrast(colors.foreground, colors.background);
+        assert(transcript, `${dark ? "深色" : "浅色"}主题有对话头部继续工作按钮`);
+        assertEqual(transcript.inlineStyle, null, "对话头部继续按钮无来源色内联变量");
+        const transcriptRatio = contrast(transcript.foreground, transcript.background);
         assert(
-          ratio >= 4.5,
-          `${dark ? "深色" : "浅色"}主题按钮对比度 ≥ 4.5（实际 ${ratio.toFixed(2)}:1）`,
+          transcriptRatio >= 4.5,
+          `${dark ? "深色" : "浅色"}主题对话头部按钮对比度 ≥ 4.5（实际 ${transcriptRatio.toFixed(2)}:1）`,
         );
       } finally {
         await page.setDark(false);
       }
     }
+    await page.goto(URL);
+    await page.setDark(false);
+    await page.waitFor(`document.querySelectorAll('.flat-list .task-row').length > 0`);
+    await selectTask(page, "Claude Code");
+    const inspector = await page.evaluate(`(() => {
+      ${EFFECTIVE_BG_HELPER}
+      const button = document.querySelector('.inspector .continue-button');
+      if (!button) return null;
+      const cs = getComputedStyle(button);
+      return {
+        foreground: cs.color,
+        background: effectiveBg(button),
+      };
+    })()`);
+    assert(inspector, "浅色主题有详情继续工作按钮");
+    const inspectorRatio = contrast(inspector.foreground, inspector.background);
+    assert(
+      inspectorRatio >= 4.5,
+      `浅色主题详情按钮对比度 ≥ 4.5（实际 ${inspectorRatio.toFixed(2)}:1）`,
+    );
   });
 
   s.add("U1 Inspector 无用量块与只读脚注", async () => {

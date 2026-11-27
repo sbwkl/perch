@@ -805,8 +805,8 @@ kbd {
 }
 
 .transcript-actions .transcript-continue {
-  border-color: color-mix(in srgb, var(--source, var(--accent)) 45%, var(--border));
-  color: var(--source, var(--accent));
+  border-color: color-mix(in srgb, var(--action-fill) 45%, var(--border));
+  color: var(--action-fill);
 }
 
 .transcript-actions .transcript-continue:hover:not(:disabled) {
