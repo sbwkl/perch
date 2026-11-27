@@ -42,11 +42,12 @@ Perch 的详情面板呈现会话元数据；用户在任务行点击对话图�
 - T10：When 用户点击「重新读取」, the system shall 重新按需解析该会话并替换当前内容，保留对话视图与返回路径。
 - T11：While 对话视图使用中, the system shall 只读打开源文件，不写入、不重命名、不删除任何源数据；正文只存在于本机内存，关闭视图后丢弃，不写入 `cache.db`、不写日志、不联网。
 - T12：When 对话视图打开, the system shall 在头部显示来源图标、标题、状态徽标、「继续工作」、「重新读取」与「返回」，且不显示一次性隐私说明或常驻只读小字。
+- T13：When 任务列表混排有 / 无对话图标的来源, the system shall 为对话图标列保留固定宽度，使状态胶囊右边界对齐；无正文来源仅留空占位、不渲染对话图标按钮。
 - 边界：空会话、只有工具轮、消息全为截断超限、子会话、归档任务、源文件读取中被删除、非 UTF-8 / 损坏 JSON 行（跳过该行并继续）、900×560 小窗口、浅色 / 深色主题均须可回到列表，不得卡死或静默白屏。
 
 验证位置：T1–T10 / T12 见 [2026-11-26 变更文档](../exec-plans/completed/2026-11-26-ui-convergence-and-transcript-view.md) 的 core / Tauri 测试与 demo UI 验收；T3 / T4 的排版调整另见 [2026-11-26 侧栏选中态回退柔色底与对话视图排版变更文档](../exec-plans/completed/2026-11-26-sidebar-selection-and-transcript-layout.md)；T11（只读、内存内、
 不落盘）见 core 测试的源文件字节一致断言与 `cache.db` 无正文字段断言；每个来源的字段映射见
-[SOURCES.md](../design-docs/source-designs/SOURCES.md)；隐私与读取范围见 [ADR](../design-docs/adr/session-transcript-on-demand-read.md)。
+[SOURCES.md](../design-docs/source-designs/SOURCES.md)；T13 见 [2026-11-27 列表状态对齐与详情精简](../exec-plans/active/2026-11-27-list-inspector-ux-fixes.md)；隐私与读取范围见 [ADR](../design-docs/adr/session-transcript-on-demand-read.md)。
 
 ## 5. 变更索引
 
