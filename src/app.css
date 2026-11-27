@@ -9,8 +9,9 @@
   --text-tertiary: #9a9aa0;
   --accent: #b96a35;
   --accent-soft: rgba(185, 106, 53, 0.12);
-  /* 侧栏三组选中态：柔色底 + 墨色成对出现，合成后 ≥ 4.5:1。 */
+  /* 侧栏三组选中态与统一按钮填充：柔色底 + 墨色成对出现，合成后 ≥ 4.5:1。 */
   --nav-active-ink: #8f4f24;
+  --action-fill: #8f4f24;
   --danger: #c0392b;
   --warn: #a46a12;
   --ok: #0f9f6e;
@@ -30,6 +31,7 @@
     --accent: #e0965c;
     --accent-soft: rgba(224, 150, 92, 0.16);
     --nav-active-ink: #e0965c;
+    --action-fill: #e0965c;
     --danger: #ff6b5e;
     --warn: #e0b252;
     --ok: #3ddc97;
@@ -1199,7 +1201,7 @@ kbd {
   padding: 6px 14px;
   border: none;
   border-radius: 7px;
-  background: var(--accent);
+  background: var(--action-fill);
   color: var(--bg);
   font-size: 12px;
   font-weight: 600;

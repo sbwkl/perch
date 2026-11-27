@@ -1,5 +1,5 @@
 // U1：列表状态列对齐、继续工作按钮统一样式、Inspector 删除用量块与只读脚注
-import { runSuite, Suite, assert, assertEqual } from "./harness.mjs";
+import { runSuite, Suite, assert, assertEqual, contrast, EFFECTIVE_BG_HELPER } from "./harness.mjs";
 
 const URL = "http://localhost:1421/?transcript=1";
 
@@ -74,6 +74,34 @@ async function run(page) {
     }
     assertEqual(styles[0].inlineStyle, null, "按钮无来源色内联样式");
     assertEqual(styles[0].boxShadow, "none", "按钮无品牌色描边");
+  });
+
+  s.add("U1 继续工作按钮浅色 / 深色主题均满足 WCAG AA", async () => {
+    for (const dark of [false, true]) {
+      await page.setDark(dark);
+      try {
+        await page.goto(URL);
+        await selectTask(page, "Claude Code");
+        const colors = await page.evaluate(`(() => {
+          ${EFFECTIVE_BG_HELPER}
+          const button = document.querySelector('.inspector .continue-button');
+          if (!button) return null;
+          const cs = getComputedStyle(button);
+          return {
+            foreground: cs.color,
+            background: effectiveBg(button),
+          };
+        })()`);
+        assert(colors, `${dark ? "深色" : "浅色"}主题有继续工作按钮`);
+        const ratio = contrast(colors.foreground, colors.background);
+        assert(
+          ratio >= 4.5,
+          `${dark ? "深色" : "浅色"}主题按钮对比度 ≥ 4.5（实际 ${ratio.toFixed(2)}:1）`,
+        );
+      } finally {
+        await page.setDark(false);
+      }
+    }
   });
 
   s.add("U1 Inspector 无用量块与只读脚注", async () => {
